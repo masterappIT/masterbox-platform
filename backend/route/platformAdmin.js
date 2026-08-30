@@ -4,13 +4,17 @@ import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { prisma } from '../lib/db/prisma.js';
 import { getJwtSecret } from '../lib/auth/jwtSecret.js';
-import { isPlatformAdminAccount, requirePlatformAdmin, requirePlatformAdminRole } from '../middleware/platformAdminAuth.js';
+import { decryptTotpSecret } from '../lib/auth/totpCrypto.js';
 
 const router = express.Router();
 const loginAttempts = new Map();
 const MAX_LOGIN_ATTEMPTS = 10;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const CHALLENGE_TTL = '5m';
+const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
+const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const hashRefreshToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
+const newRefreshToken = () => crypto.randomBytes(48).toString('base64url');
 
 function decodeBase32(value) {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
