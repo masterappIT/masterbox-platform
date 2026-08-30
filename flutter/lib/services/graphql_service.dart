@@ -235,7 +235,10 @@ class GraphQLService {
       );
       request.headers.contentType = ContentType.json;
       if (isAuthenticated) {
-        request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+        request.headers.set(
+          HttpHeaders.authorizationHeader,
+          'Bearer $token',
+        );
       }
       request.write(jsonEncode(body));
       final response = await request.close();
