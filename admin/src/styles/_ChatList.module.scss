@@ -1,0 +1,11 @@
+.chatList {
+	@apply w-full flex flex-col;
+	&-custom {
+		@apply bg-black_white;
+	}
+	&-user {
+		@apply bg-black_tertiary;
+	}
+
+
+}

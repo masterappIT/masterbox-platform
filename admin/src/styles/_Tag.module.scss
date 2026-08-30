@@ -1,0 +1,7 @@
+@import '_Common.module.scss';
+
+.tagLabel {
+	@apply py-[4px] px-[6px] h-[28px] mr-2 my-1 rounded-[4px] w-fit  border text-button_primary text-primary border-primary;
+
+	@include row;
+}

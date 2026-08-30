@@ -1,0 +1,15 @@
+@import '_Common.module.scss';
+
+.bubble {
+	@apply max-w-[50%] w-fit bg-[#F7DFBA] rounded-[10px] py-[10px] px-[12px] text-[15px] font-normal text-black_primary;
+	word-break: break-all;
+	word-wrap: break-word;
+	white-space: pre-wrap;
+	&-primary {
+		@apply bg-bubble_primary;
+	}
+
+	&-secondary {
+		@apply bg-bubble_secondary shadow-[0px_1px_2px_0_rgba(90,90,90,0.36)];
+	}
+}

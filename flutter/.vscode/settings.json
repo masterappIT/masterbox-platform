@@ -1,0 +1,13 @@
+{
+    "chat.mcp.serverSampling": {
+        "masterbox_flutter/.vscode/mcp.json: figma-developer-mcp": {
+            "allowedModels": [
+                "copilotcli/auto",
+                "agent-host-copilotcli:auto",
+                "copilot/auto",
+                "customendpoint/dkby gpt‑5.6‑sol/gpt-5.6-sol",
+                "agent-host-copilotcli:customendpoint/dkby gpt‑5.6‑sol/gpt-5.6-sol"
+            ]
+        }
+    }
+}

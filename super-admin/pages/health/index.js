@@ -1,0 +1,4 @@
+import Layout,{PagePanel} from '../../components/Layout'
+import {services as mock} from '../../components/data'
+import {usePlatformData,DataNotice} from '../../lib/platformApi'
+export default function Health(){const r=usePlatformData('/health',mock);const data=Array.isArray(r.data)?r.data:mock;return <Layout title='系統健康' subtitle='即時監控平台核心服務與基礎設施'><DataNotice loading={r.loading} error={r.error}/><PagePanel><div className='panel-title'><div><h2>服務狀態</h2><p>最後更新：即時</p></div><button className='primary-action'>↻ 執行健康檢查</button></div><div className='health-summary'><strong>99.8%</strong><span>平台健康度</span><b>● 所有服務正常</b></div>{data.map(s=><div className='health-row' key={s.name}><span className={'service-dot '+s.state}>●</span><div><b>{s.name}</b><small>區域：多區域部署</small></div><span>{s.uptime}</span><code>{s.latency}</code></div>)}</PagePanel></Layout>}

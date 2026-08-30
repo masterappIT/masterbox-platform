@@ -1,0 +1,30 @@
+.avatar {
+	@apply overflow-hidden aspect-square;
+	&-mini{
+		@apply w-[28px] h-[28px];
+
+	}
+	&-small {
+		@apply w-[40px] h-[40px];
+
+	}
+	&-normal {
+		@apply w-[48px] h-[48px];
+	}
+	&-medium {
+		@apply w-[64px] h-[64px];
+	}
+
+	&-large {
+		@apply w-[84px] h-[84px];
+	}
+
+	&-border {
+		@apply border border-secondary;
+	}
+
+	&-img {
+		@apply w-full h-full object-cover;
+	}
+
+}

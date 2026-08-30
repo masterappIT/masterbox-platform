@@ -1,0 +1,33 @@
+.dropdown {
+	// @apply flex flex-row-reverse justify-start items-start cursor-pointer;
+	@apply flex flex-row justify-start items-start cursor-pointer;
+	&-item {
+		@apply relative w-[0px] h-[0px]  p-0 ;
+		// @apply relative  p-0 ;
+		&-list {
+			@apply absolute   bg-white z-[50] rounded shadow-lg min-w-[50px] w-fit overflow-hidden;
+
+			// @apply absolute top-[40px] right-0  bg-white z-[50] rounded shadow-lg min-w-[50px] w-fit;
+			&-left{
+				@apply left-0 
+			}
+			&-right{
+				@apply right-0 
+			}
+			&-center{
+				@apply right-0 left-0 translate-x-[-50%]
+			}
+
+			&-close{
+				@apply top-[0px]
+			}
+			&-normal{
+				@apply top-[20px] 
+			}
+			&-far{
+				@apply top-[40px]
+			}
+		}
+	}
+
+}

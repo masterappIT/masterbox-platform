@@ -1,0 +1,38 @@
+@import "Common.module.scss";
+
+.customerDetailInfo {
+    @apply w-full h-full bg-white text-[#666666] flex rounded-[10px];
+    &-cuntomer {
+        @apply w-[300px] h-[100%]  flex flex-col items-center pt-[20px];
+
+        .bar {
+            @apply bg-[#D9D9D9] h-[1px] w-[85%] my-[20px] mx-0;
+        }
+    }
+    &-history {
+        @apply  flex-1 lg:w-[45%] min-w-[300px] h-[100%] flex flex-col items-center border-l lg:border-r border-[#D9D9D9];
+        &-top {
+            @apply w-[90%] flex justify-between items-start py-[30px] px-0;
+            &-search {
+                @apply w-[50%] relative border-b bg-[#FFFFFF] pr-[10px];
+                @include row;
+                &-input {
+                    @apply w-full h-[30px] border-none bg-transparent text-[15px];
+                }
+                icon{
+                    filter: brightness(0.5) invert(1);
+                }
+            }
+        }
+        &-bottom {
+            @apply w-[90%] my-[5px] mx-0;
+        }
+    }
+    &-others {
+        @apply hidden h-[100%] p-[20px] w-[300px] lg:block;
+
+    }
+    &-hidden {
+        @apply hidden;
+    }
+}

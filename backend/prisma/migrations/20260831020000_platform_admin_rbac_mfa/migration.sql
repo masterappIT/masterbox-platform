@@ -1,0 +1,3 @@
+CREATE TYPE "PlatformAdminRole" AS ENUM ('owner', 'operator', 'auditor');
+CREATE TABLE "platform_admin_profiles" ("id" TEXT NOT NULL, "account_id" TEXT NOT NULL, "role" "PlatformAdminRole" NOT NULL DEFAULT 'auditor', "mfa_enabled" BOOLEAN NOT NULL DEFAULT false, "totp_secret" TEXT, "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updated_at" TIMESTAMP(3) NOT NULL, CONSTRAINT "platform_admin_profiles_pkey" PRIMARY KEY ("id"), CONSTRAINT "platform_admin_profiles_account_id_key" UNIQUE ("account_id"), CONSTRAINT "platform_admin_profiles_account_id_fkey" FOREIGN KEY ("account_id") REFERENCES "accounts"("id") ON DELETE CASCADE ON UPDATE CASCADE);
+CREATE INDEX "platform_admin_profiles_role_idx" ON "platform_admin_profiles"("role");

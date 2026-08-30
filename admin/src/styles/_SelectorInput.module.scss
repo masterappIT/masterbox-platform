@@ -1,0 +1,41 @@
+@import '_Common.module.scss';
+
+.selectInput {
+	&-small {
+		@apply h-[65px];
+	}
+
+	&-large {
+		@apply h-[90px];
+	}
+	&-none {
+		@apply h-fit;
+	}
+
+	&-bar {
+		// @apply w-full flex-1 h-[32px] py-[12px] mt-[4px];
+		@apply w-full flex-1 h-[32px] mt-[4px]  flex;
+
+		&:-webkit-autofill,
+		&:-webkit-autofill:hover,
+		&:-webkit-autofill:focus,
+		&:-webkit-autofill:active {
+			@apply outline-none;
+			transition: color 99999s ease-out, background-color 99999s ease-out;
+		}
+
+		&-outlined {
+			@apply px-[12px] rounded-[5px] border border-black_tertiary text-[14px] bg-transparent outline-none;
+		}
+
+		&-border_b {
+			@apply rounded-none border-b border-black_white text-[14px] text-black_white bg-transparent outline-none;
+		}
+	}
+}
+
+// @media (min-width:640px) {
+//     .messenger-room-send-inputArea-iconArea-icon{
+//     filter: brightness(0.5) invert(1);
+//     }
+// }

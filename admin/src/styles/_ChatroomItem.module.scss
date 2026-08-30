@@ -1,0 +1,25 @@
+@import '_Common.module.scss';
+
+.ChatroomItem {
+	// @apply w-full flex justify-start items-center text-white py-[8px] px-[16px] space-x-3;
+
+	.account-info-box {
+		@apply flex-1 truncate;
+		// @apply flex-1;
+		// .contentText{
+		// 	@apply flex-1 text-ellipsis;
+		// 	-webkit-line-clamp: 2;
+		// }
+		.account-state {
+			@apply flex flex-row  flex-1 justify-start items-center space-x-2;
+		}
+		.ChatroomItem-endElement {
+			@apply justify-self-end;
+		}
+	}
+	* {
+		&:nth-child(2) {
+			@apply flex-1;
+		}
+	}
+}

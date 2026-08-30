@@ -1,0 +1,18 @@
+{
+	"failingEmail": {
+		"chinese_name": "測試",
+		"english_name": "test",
+		"email": "test@gmail.com",
+		"password": "test",
+		"country": "台灣",
+		"mobile": "1415234"
+	},
+	"failingMobile": {
+		"chinese_name": "測試",
+		"english_name": "test",
+		"email": "test123@gmail.com",
+		"password": "test",
+		"country": "台灣",
+		"mobile": "9090909090"
+	}
+}

@@ -1,0 +1,77 @@
+@import '_Common.module.scss';
+
+.selecties {
+	&-small {
+		@apply min-h-[65px];
+	}
+
+	&-large {
+		@apply min-h-[92px];
+	}
+
+	&-large {
+		@apply min-h-fit;
+	}
+
+	&-selectiesBar {
+		@apply relative cursor-pointer w-full;
+		position: relative;
+
+		&-selecties {
+			// @apply w-full flex-1 h-[32px] py-[12px] mt-[4px] outline-none;
+			@apply w-full flex-1 py-[12px] mt-[4px] text-[14px] bg-transparent  p-[12px];
+			position: absolute;
+
+			
+
+		}
+
+		&-icon {
+			@apply absolute right-[10px] top-[13px];
+
+			&-border_b {
+				filter: invert(100%) brightness(250%) saturate(0%);
+			}
+
+			&-none {
+				filter: invert(100%) brightness(250%) saturate(0%);
+			}
+		}
+
+		&-outlined {
+			@apply px-[12px] rounded-[5px] border border-black_tertiary text-[14px] bg-transparent outline-none;
+
+			&:-webkit-autofill:focus {
+				@apply outline-none border-primary;
+			}
+			&:focus {
+				@apply outline-none border-primary;
+			}
+
+		}
+
+		&-border_b {
+			@apply rounded-none border-b border-black_white text-[14px] text-black_white bg-transparent outline-none;
+
+			&:-webkit-autofill,
+			&:-webkit-autofill:hover,
+			&:-webkit-autofill:focus,
+			&:-webkit-autofill:active {
+				@apply outline-none;
+				transition: color 99999s ease-out, background-color 99999s ease-out;
+			}
+		}
+
+		&-none {
+			@apply rounded-none border-none text-[14px] text-black_white bg-transparent;
+		}
+
+
+	}
+}
+
+// @media (min-width:640px) {
+//     .messenger-room-send-selectiesArea-iconArea-icon{
+//     filter: brightness(0.5) invert(1);
+//     }
+// }

@@ -1,0 +1,15 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+node_modules/
+.next/
+build/
+.dart_tool/
+.packages
+.pub-cache/
+Pods/
+DerivedData/
+coverage/
+*.iml
+*.log

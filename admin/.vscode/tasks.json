@@ -1,0 +1,29 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Start management dev server",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": { "cwd": "${workspaceFolder}" },
+      "inAgents": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Lint management app",
+      "type": "shell",
+      "command": "npm run lint",
+      "options": { "cwd": "${workspaceFolder}" },
+      "inAgents": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Build management app",
+      "type": "shell",
+      "command": "npm run build",
+      "options": { "cwd": "${workspaceFolder}" },
+      "inAgents": true,
+      "problemMatcher": []
+    }
+  ]
+}

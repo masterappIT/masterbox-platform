@@ -1,0 +1,12 @@
+.form {
+	@apply w-full h-full space-y-[16px] mt-[-16px];
+
+	&-btnArea {
+		@apply w-full h-0 overflow-visible relative;
+
+		&-btnList {
+			@apply absolute top-[24px] right-[24px] flex flex-row items-center space-x-[8px];
+		}
+	}
+
+}

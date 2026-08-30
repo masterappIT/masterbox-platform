@@ -1,0 +1,19 @@
+@import '_Common.module.scss';
+
+.userInfoPopup {
+	@apply flex flex-col ;
+
+	&-top {
+		@apply flex flex-col justify-start items-center;
+
+	}
+
+	&-body {
+		@apply flex-1;
+
+	}
+
+	&-bottom {
+		@apply flex flex-row items-stretch space-x-[15px];
+	}
+}

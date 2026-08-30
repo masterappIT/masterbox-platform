@@ -1,0 +1,69 @@
+@import '_Common.module.scss';
+
+.selector {
+	// @apply flex;
+
+
+	&-small {
+		@apply h-[65px];
+	}
+
+	&-large {
+		@apply h-[90px];
+	}
+	&-none {
+		@apply h-fit;
+	}
+
+
+	// &-row{
+	// 	@apply flex-row justify-start items-center;
+	// 	// .dropdown{
+	// 	// 	@apply flex flex-none;
+	// 	// }
+	// }
+	// &-col{
+	// 	@apply flex-col ;
+	// }
+
+
+	&-selectorBar {
+		@apply relative cursor-pointer w-full;
+
+		&-icon {
+			// @apply absolute right-[10px] top-[13px];
+
+			// &-start{
+			// 	@apply absolute right-[10px] top-[13px];
+
+			// }
+			// &-end{
+			// 	@apply absolute right-[10px] top-[13px];
+
+			// }
+
+			&-border_b {
+				filter: invert(100%) brightness(250%) saturate(0%);
+			}
+			&-none {
+				filter: invert(100%) brightness(250%) saturate(0%);
+			}
+		}
+	}
+
+
+	// &-selector {
+
+	//     @apply w-full flex-1 rounded-[5px] h-[32px] border border-black_tertiary text-[14px] bg-transparent outline-none p-[12px] mt-[4px] ;
+	//     &-outlined {
+	//         @apply rounded-[5px] border border-black_tertiary text-[14px] bg-transparent outline-none;
+	//     }
+
+	//     &-border_b {
+	//         @apply rounded-none border-b border-black_white text-[14px] text-black_white bg-transparent outline-none;
+
+	//     }
+
+	//     // &-input {}
+	// }
+}

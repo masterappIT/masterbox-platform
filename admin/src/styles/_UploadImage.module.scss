@@ -1,0 +1,34 @@
+.upload {
+	@apply overflow-hidden aspect-square cursor-pointer;
+	&-mini{
+		@apply w-[28px] h-[28px];
+
+	}
+	&-small {
+		@apply w-[40px] h-[40px];
+
+	}
+	&-normal {
+		@apply w-[48px] h-[48px];
+	}
+	&-medium {
+		@apply w-[64px] h-[64px];
+	}
+
+	&-large {
+		@apply w-[84px] h-[84px];
+	}
+
+	&-border {
+		@apply border-dashed border border-primary;
+	}
+
+	&-img {
+		@apply w-full h-full object-cover;
+	}
+
+	&-add {
+		@apply mt-6 mb-6 ml-6
+	}
+
+}

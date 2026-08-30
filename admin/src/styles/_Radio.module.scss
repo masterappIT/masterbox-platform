@@ -1,0 +1,46 @@
+@import '_Common.module.scss';
+
+.radio {
+	// @apply min-h-[90px];
+
+	&-list {
+		@apply w-full flex items-center space-x-[8px];
+
+		//  @apply w-full flex-1 rounded-[5px] h-[32px] border border-black_tertiary text-[14px] bg-transparent outline-none p-[12px] mt-[4px] ;
+		&-item {
+			@apply flex items-center justify-start mr-1;
+			&-radio {
+				@apply rounded-[5px] border border-[#D9D9D9] bg-white outline-none p-[12px] cursor-pointer mr-[4px];
+				background-color: white !important;
+				// filter: invert(100%) brightness(250%) saturate(0%);
+				user-select: none;
+
+				/* 防止文字被滑鼠選取反白 */
+				&:checked {
+					@apply bg-primary;
+					filter: hue-rotate(193deg) saturate(700%) brightness(130%); //反轉、亮度、色相、飽和度
+
+					// filter: hue-rotate(195deg) saturate(804%);
+					//反轉、亮度、色相、飽和度
+				}
+
+				&:hover {
+					// filter: hue-rotate(190deg) saturate(700%) brightness(110%); //反轉、亮度、色相、飽和度
+					filter: hue-rotate(195deg) saturate(850%);
+
+				}
+
+				// &-small{
+				//     @a
+				// }
+				&-normal {
+					@apply w-[16px] h-[16px];
+				}
+
+				&-large {
+					@apply w-[24px] h-[24px];
+				}
+			}
+		}
+	}
+}

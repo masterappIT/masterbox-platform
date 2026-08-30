@@ -1,0 +1,11 @@
+.list {
+	@apply w-full flex justify-start flex-col list-none;
+
+	&-item {
+		@apply w-full flex flex-row justify-start items-center text-black py-[10px] px-[16px] space-x-3;
+	}
+
+	&-channel {
+		@apply  pl-[0px];
+	}
+}

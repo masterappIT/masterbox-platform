@@ -1,0 +1,42 @@
+@import '_Common.module.scss';
+
+.table {
+	@apply min-w-full h-[667px] max-w-fit overflow-x-auto overflow-y-auto bg-bg_primary;
+
+	&-top {
+		@apply w-full px-[24px] pt-[24px] flex flex-col justify-center;
+		// box-shadow: 0px 1px 0px rgba(0, 0, 0, 0.25);
+		// &-search {
+		// 	@apply w-[220px];
+		// }
+		// &-btn {
+		// 	@apply flex space-x-2;
+		// }
+	}
+
+	&-body {
+		&-noData{
+			@apply w-full flex justify-center items-start mt-[48px];
+		}
+	}
+
+	&-row {
+		@apply w-full grid content-center gap-1 px-[24px] py-[8px] h-[71px];
+
+		// grid-template-columns: 50px repeat(8, minmax(0, 1fr));
+
+		box-shadow: 0px 1px 0px rgba(0, 0, 0, 0.25);
+
+		// &:last-child {
+		// 	box-shadow: 0px 0px 0px rgba(0, 0, 0, 0);
+		// }
+	}
+
+	&-header {
+		@apply text-headline_small font-[500];
+	}
+
+	&-cell {
+		@apply min-w-full text-contentText_normal font-[400] flex justify-start items-center;
+	}
+}

@@ -1,0 +1,19 @@
+.linebar {
+	@apply w-full my-[20px];
+
+	&-light {
+		@apply h-[0.5px];
+	}
+
+	&-normal {
+		@apply h-[1px];
+	}
+
+	&-bold {
+		@apply h-[2px];
+	}
+	&-normal {
+		@apply bg-black_quaternary;
+	}
+
+}

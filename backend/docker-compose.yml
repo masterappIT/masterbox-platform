@@ -1,0 +1,26 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: masterbox-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: masterbox
+      POSTGRES_PASSWORD: masterbox_dev_password
+      POSTGRES_DB: masterbox
+    ports:
+      - "5432:5432"
+    volumes:
+      - masterbox-postgres-data:/var/lib/postgresql/data
+
+  livekit:
+    image: livekit/livekit-server:v1.9.3
+    container_name: masterbox-livekit
+    restart: unless-stopped
+    command: --dev --bind 0.0.0.0
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+
+volumes:
+  masterbox-postgres-data:

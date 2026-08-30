@@ -1,0 +1,16 @@
+@import '_Common.module.scss';
+
+.badge {
+	@apply bg-primary text-black_white rounded-[50%];
+	@include row;
+	&-small {
+		@apply w-[22px] h-[22px];
+	}
+	&-normal {
+		@apply w-[25px] h-[25px];
+	}
+
+	&-large {
+		@apply w-[28px] h-[28px];
+	}
+}

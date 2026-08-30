@@ -1,0 +1,20 @@
+@import '_Common.module.scss';
+
+.search {
+	@apply w-full relative border-b bg-[#FFFFFF] pr-[10px] flex items-center cursor-pointer;
+	&-input {
+		@apply w-full h-[30px] border-none bg-transparent text-[15px] outline-none pl-[5px];
+		&:-webkit-autofill,
+		&:-webkit-autofill:hover,
+		&:-webkit-autofill:focus,
+		&:-webkit-autofill:active {
+			@apply outline-none;
+			transition: color 99999s ease-out, background-color 99999s ease-out;
+		}
+	}
+	icon{
+		@apply cursor-pointer;
+		filter: brightness(0.5) invert(1);
+	}
+}
+

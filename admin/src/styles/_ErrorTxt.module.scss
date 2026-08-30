@@ -1,0 +1,5 @@
+@import '_Common.module.scss';
+
+.errorTxt {
+	@apply flex flex-row justify-start items-center;
+}

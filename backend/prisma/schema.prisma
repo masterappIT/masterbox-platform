@@ -1,0 +1,394 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ChannelPlatform {
+  fb
+  ig
+  whatsapp
+  line
+  wechat
+}
+
+enum AccountRole {
+  admin
+  user
+}
+
+enum PlatformAdminRole {
+  owner
+  operator
+  auditor
+}
+
+enum EncryptionMode {
+  server
+  e2ee
+}
+
+enum CallKind {
+  voice
+  video
+}
+
+enum CallStatus {
+  ringing
+  active
+  ended
+  declined
+  missed
+}
+
+model Company {
+  id                       String                    @id @default(cuid()) @db.Text
+  chineseName              String                    @map("chinese_name")
+  englishName              String                    @map("english_name")
+  email                    String                    @unique
+  logo                     String?
+  mobile                   String?                   @unique
+  subscriptionName         String                    @default("trial") @map("subscription_name")
+  subscriptionStart        DateTime?                 @map("subscription_start")
+  subscriptionEnd          DateTime?                 @map("subscription_end")
+  country                  String
+  pinNumber                String?                   @unique @map("pin_number")
+  address                  String?
+  principalInfo            Json?                     @map("principal_info")
+  createdAt                DateTime                  @default(now()) @map("created_at")
+  updatedAt                DateTime                  @updatedAt @map("updated_at")
+  channels                 CompanyChannel[]
+  labels                   CompanyLabel[]
+  accounts                 Account[]
+  chatRooms                ChatRoom[]
+  messages                 Message[]
+  messageTemplates         MessageTemplate[]
+  integrations             ThirdPartyIntegration[]
+  integrationConversations IntegrationConversation[]
+  deepLinkSessions         DeepLinkSession[]
+  callSessions             CallSession[]
+  embedTokens              EmbedToken[]
+  auditLogs                AuditLog[]
+
+  @@map("companies")
+}
+
+model CompanyChannel {
+  id         String           @id @default(cuid()) @db.Text
+  companyId  String           @map("company_id") @db.Text
+  platform   String
+  name       String
+  accessInfo Json             @map("access_info")
+  info       Json
+  company    Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  accounts   AccountChannel[]
+  chatRooms  ChatRoom[]
+
+  @@index([companyId])
+  @@map("company_channels")
+}
+
+model CompanyLabel {
+  id        String  @id @default(cuid()) @db.Text
+  companyId String  @map("company_id") @db.Text
+  type      String
+  value     String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@map("company_labels")
+}
+
+model Account {
+  id                 String            @id @default(cuid()) @db.Text
+  email              String            @unique
+  password           String
+  role               AccountRole       @default(admin)
+  permissions        String            @default("all")
+  userInfo           Json?             @map("user_info")
+  companyId          String            @map("company_id") @db.Text
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
+  company            Company           @relation(fields: [companyId], references: [id])
+  subscribedChannels AccountChannel[]
+  createdMessages    Message[]         @relation("MessageCreatedBy")
+  updatedMessages    Message[]         @relation("MessageUpdatedBy")
+  createdTemplates   MessageTemplate[] @relation("TemplateCreatedBy")
+  updatedTemplates   MessageTemplate[] @relation("TemplateUpdatedBy")
+  callParticipants   CallParticipant[]
+  initiatedCalls     CallSession[]     @relation("CallInitiatedBy")
+  callSignalEvents    CallSignalEvent[] @relation("CallSignalSender")
+  platformAdminProfile PlatformAdminProfile?
+  refreshSessions     PlatformAdminRefreshSession[]
+
+  @@index([companyId])
+  @@map("accounts")
+}
+
+model AccountChannel {
+  accountId String         @map("account_id") @db.Text
+  channelId String         @map("channel_id") @db.Text
+  account   Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  channel   CompanyChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@id([accountId, channelId])
+  @@map("account_channels")
+}
+
+model ChatRoom {
+  id           String          @id @default(cuid()) @db.Text
+  companyId    String          @map("company_id") @db.Text
+  platform     ChannelPlatform
+  channelId    String          @map("channel_id") @db.Text
+  chatRoomId   String?         @map("chat_room_id")
+  users        Json?
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+  company      Company         @relation(fields: [companyId], references: [id])
+  callSessions CallSession[]
+  channel      CompanyChannel  @relation(fields: [channelId], references: [id])
+
+  @@index([companyId])
+  @@index([platform, chatRoomId])
+  @@map("chat_rooms")
+}
+
+model Message {
+  id                       String             @id @default(cuid()) @db.Text
+  companyId                String             @map("company_id") @db.Text
+  createdBy                String             @map("created_by") @db.Text
+  updatedBy                String?            @map("updated_by") @db.Text
+  platform                 ChannelPlatform
+  contents                 Json?
+  encryptionMode           EncryptionMode     @default(server) @map("encryption_mode")
+  disappearingAfterSeconds Int?               @map("disappearing_after_seconds")
+  expiresAt                DateTime?          @map("expires_at")
+  readAt                   DateTime?          @map("read_at")
+  createdAt                DateTime           @default(now()) @map("created_at")
+  updatedAt                DateTime           @updatedAt @map("updated_at")
+  company                  Company            @relation(fields: [companyId], references: [id])
+  creator                  Account            @relation("MessageCreatedBy", fields: [createdBy], references: [id])
+  updater                  Account?           @relation("MessageUpdatedBy", fields: [updatedBy], references: [id])
+  recipients               MessageRecipient[]
+
+  @@index([companyId])
+  @@map("messages")
+}
+
+model MessageRecipient {
+  id          String   @id @default(cuid()) @db.Text
+  messageId   String   @map("message_id") @db.Text
+  channelId   String   @map("channel_id")
+  chatRoomIds String[] @map("to_chat_room_id")
+  message     Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@map("message_recipients")
+}
+
+model MessageTemplate {
+  id        String          @id @default(cuid()) @db.Text
+  companyId String          @map("company_id") @db.Text
+  createdBy String          @map("created_by") @db.Text
+  updatedBy String          @map("updated_by") @db.Text
+  name      String
+  category  String
+  platform  ChannelPlatform
+  contents  Json
+  createdAt DateTime        @default(now()) @map("created_at")
+  updatedAt DateTime        @updatedAt @map("updated_at")
+  company   Company         @relation(fields: [companyId], references: [id])
+  creator   Account         @relation("TemplateCreatedBy", fields: [createdBy], references: [id])
+  updater   Account         @relation("TemplateUpdatedBy", fields: [updatedBy], references: [id])
+
+  @@index([companyId])
+  @@map("message_templates")
+}
+
+model ThirdPartyIntegration {
+  id               String                    @id @default(cuid()) @db.Text
+  companyId        String                    @map("company_id") @db.Text
+  appId            String                    @unique @map("app_id") @db.Text
+  name             String
+  apiKeyHash       String                    @map("api_key_hash") @db.Text
+  apiKeyPrefix     String                    @map("api_key_prefix") @db.Text
+  active           Boolean                   @default(true)
+  lastUsedAt       DateTime?                 @map("last_used_at")
+  createdAt        DateTime                  @default(now()) @map("created_at")
+  updatedAt        DateTime                  @updatedAt @map("updated_at")
+  company          Company                   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  conversations    IntegrationConversation[]
+  deepLinkSessions DeepLinkSession[]
+  embedTokens      EmbedToken[]
+
+  @@index([companyId])
+  @@map("third_party_integrations")
+}
+
+model IntegrationConversation {
+  id               String                @id @default(cuid()) @db.Text
+  companyId        String                @map("company_id") @db.Text
+  integrationId    String                @map("integration_id") @db.Text
+  externalId       String                @map("external_id") @db.Text
+  subject          String?
+  metadata         Json?
+  createdAt        DateTime              @default(now()) @map("created_at")
+  updatedAt        DateTime              @updatedAt @map("updated_at")
+  company          Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  integration      ThirdPartyIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  messages         IntegrationMessage[]
+  deepLinkSessions DeepLinkSession[]
+
+  @@unique([integrationId, externalId])
+  @@index([companyId, updatedAt])
+  @@map("integration_conversations")
+}
+
+model IntegrationMessage {
+  id             String                  @id @default(cuid()) @db.Text
+  conversationId String                  @map("conversation_id") @db.Text
+  externalId     String?                 @map("external_id") @db.Text
+  direction      String
+  content        Json
+  createdAt      DateTime                @default(now()) @map("created_at")
+  conversation   IntegrationConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, externalId])
+  @@index([conversationId, createdAt])
+  @@map("integration_messages")
+}
+
+model DeepLinkSession {
+  id             String                   @id @default(cuid()) @db.Text
+  companyId      String                   @map("company_id") @db.Text
+  integrationId  String                   @map("integration_id") @db.Text
+  conversationId String?                  @map("conversation_id") @db.Text
+  tokenHash      String                   @unique @map("token_hash") @db.Text
+  expiresAt      DateTime                 @map("expires_at")
+  consumedAt     DateTime?                @map("consumed_at")
+  createdAt      DateTime                 @default(now()) @map("created_at")
+  company        Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  integration    ThirdPartyIntegration    @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  conversation   IntegrationConversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, expiresAt])
+  @@map("deep_link_sessions")
+}
+
+model CallSession {
+  id           String            @id @default(cuid()) @db.Text
+  companyId    String            @map("company_id") @db.Text
+  roomId       String            @map("room_id") @db.Text
+  initiatedBy  String            @map("initiated_by") @db.Text
+  kind         CallKind
+  status       CallStatus        @default(ringing)
+  metadata     Json?
+  startedAt    DateTime?         @map("started_at")
+  endedAt      DateTime?         @map("ended_at")
+  createdAt    DateTime          @default(now()) @map("created_at")
+  updatedAt    DateTime          @updatedAt @map("updated_at")
+  company      Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  room         ChatRoom          @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  initiator    Account           @relation("CallInitiatedBy", fields: [initiatedBy], references: [id])
+  participants CallParticipant[]
+  events       CallSignalEvent[]
+
+  @@index([companyId, createdAt])
+  @@index([roomId, status])
+  @@map("call_sessions")
+}
+
+model CallParticipant {
+  callId    String      @map("call_id") @db.Text
+  accountId String      @map("account_id") @db.Text
+  joinedAt  DateTime?   @map("joined_at")
+  leftAt    DateTime?   @map("left_at")
+  call      CallSession @relation(fields: [callId], references: [id], onDelete: Cascade)
+  account   Account     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@id([callId, accountId])
+  @@map("call_participants")
+}
+
+model CallSignalEvent {
+  id        String      @id @default(cuid()) @db.Text
+  callId    String      @map("call_id") @db.Text
+  senderId  String      @map("sender_id") @db.Text
+  eventType String      @map("event_type")
+  payload   Json
+  call      CallSession @relation(fields: [callId], references: [id], onDelete: Cascade)
+  sender    Account     @relation("CallSignalSender", fields: [senderId], references: [id], onDelete: Cascade)
+  @@map("call_signal_events")
+}
+
+model EmbedToken {
+  id            String                 @id @default(cuid()) @db.Text
+  companyId     String                 @map("company_id") @db.Text
+  integrationId String?                @map("integration_id") @db.Text
+  tokenHash     String                 @unique @map("token_hash") @db.Text
+  scopes        String[]
+  expiresAt     DateTime               @map("expires_at")
+  consumedAt    DateTime?              @map("consumed_at")
+  createdAt     DateTime               @default(now()) @map("created_at")
+  company       Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  integration   ThirdPartyIntegration? @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, expiresAt])
+  @@map("embed_tokens")
+}
+
+model PlatformAdminProfile {
+  id             String            @id @default(cuid()) @db.Text
+  accountId      String            @unique @map("account_id") @db.Text
+  role           PlatformAdminRole @default(auditor)
+  mfaEnabled     Boolean           @default(false) @map("mfa_enabled")
+  totpSecret     String?           @map("totp_secret") @db.Text
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+  account        Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@map("platform_admin_profiles")
+}
+
+model PlatformAdminRefreshSession {
+  id           String   @id @default(cuid()) @db.Text
+  accountId    String   @map("account_id") @db.Text
+  tokenHash    String   @unique @map("token_hash") @db.Text
+  expiresAt    DateTime @map("expires_at")
+  revokedAt    DateTime? @map("revoked_at")
+  replacedById String?  @map("replaced_by_id") @db.Text
+  createdAt    DateTime @default(now()) @map("created_at")
+  account      Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  @@index([accountId, revokedAt])
+  @@index([expiresAt])
+  @@map("platform_admin_refresh_sessions")
+}
+
+model AuditLog {
+  id             String   @id @default(cuid()) @db.Text
+  companyId      String?  @map("company_id") @db.Text
+  actorAccountId String?  @map("actor_account_id") @db.Text
+  action         String
+  resourceType   String   @map("resource_type")
+  resourceId     String?  @map("resource_id")
+  metadata       Json?
+  createdAt      DateTime @default(now()) @map("created_at")
+  company        Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, createdAt])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+
+model User {
+  id       String  @id @default(cuid()) @db.Text
+  username String?
+  email    String? @unique
+  password String?
+  token    String?
+
+  @@map("users")
+}

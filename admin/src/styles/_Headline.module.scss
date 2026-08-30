@@ -1,0 +1,82 @@
+@import '_Common.module.scss';
+
+.headline {
+	// @apply font-medium;
+	@apply font-normal	;
+
+	// 字級
+	&-small {
+		@apply text-headline_small leading-[32px]; //14px
+	}
+
+	&-normal {
+		@apply text-headline_normal leading-[22px]; //16px
+	}
+
+	&-medium {
+		@apply text-headline_medium leading-[24px]; //18px
+	}
+
+	&-large {
+		@apply text-headline_large leading-[20px]; //24px
+	}
+
+	&-primary {
+		@apply text-primary;
+	}
+
+	&-secondary {
+		@apply text-secondary;
+	}
+
+	&-alert {
+		@apply text-alert;
+	}
+
+	&-white {
+		@apply text-black_white;
+	}
+
+	&-black-primary {
+		@apply text-black_primary;
+	}
+
+	&-black-secondary {
+		@apply text-black_secondary;
+	}
+
+	&-black-tertiary {
+		@apply text-black_tertiary;
+	}
+
+	&-black-quaternary {
+		@apply text-black_quaternary;
+	}
+
+	&-black-quinary {
+		@apply text-black_quaternary;
+	}
+}
+
+@media (min-width: 640px) {
+	.headline {
+		@apply font-medium;
+
+		// 字級
+		&-small {
+			@apply text-headline_small leading-[32px]; //14px
+		}
+
+		&-normal {
+			@apply text-headline_normal leading-[22px]; //16px
+		}
+
+		&-medium {
+			@apply text-headline_medium leading-[24px]; //18px
+		}
+
+		&-large {
+			@apply text-headline_large leading-[20px]; //24px
+		}
+	}
+}

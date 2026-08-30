@@ -1,0 +1,50 @@
+.icon {
+	&-mini {
+		@apply w-[10px] h-[10px];
+
+	}
+
+	&-small {
+		@apply w-[14px] h-[14px];
+
+	}
+
+	&-medium {
+		@apply w-[18px] h-[18px];
+	}
+
+	&-large {
+		@apply w-[20px] h-[20px];
+	}
+
+	&-login {
+		@apply w-[250px] h-[48px];
+	}
+
+	&-color{
+			&-secondary {
+		filter: invert(0%)  brightness(300%);
+
+		img{
+
+			filter: invert(0%)  brightness(300%);
+		}
+
+	}
+	}
+
+
+
+	.iconImg {
+		@apply w-full h-full object-contain;
+		// filter: invert(12%) sepia(63%) saturate(6234%) hue-rotate(246deg) brightness(87%) contrast(156%);
+		// filter: brightness(0) invert(1);
+
+	}
+}
+
+@media (min-width:640px) {
+	.icon-login {
+		@apply w-[320px] h-[62px];
+	}
+}

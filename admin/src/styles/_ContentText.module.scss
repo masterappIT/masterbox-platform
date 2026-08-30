@@ -1,0 +1,50 @@
+
+.contentText {
+	@apply font-normal; 
+	// @apply font-[350]; 
+
+	&-small {
+		@apply text-contentText_small leading-[16px];
+	}
+	&-normal {
+		@apply text-contentText_normal leading-[20px];
+	}
+	&-large {
+		@apply text-contentText_large leading-[24px];
+	}
+
+	&-primary {
+		@apply text-primary;
+	}
+	&-secondary {
+		@apply text-secondary;
+	}
+	&-alert {
+		@apply text-alert;
+	}
+	&-white {
+		@apply text-black_white;
+	}
+
+	&-black-primary {
+		@apply text-black_primary;
+	}
+	&-black-secondary {
+		@apply text-black_secondary;
+	}
+	&-black-tertiary {
+		@apply text-black_tertiary;
+	}
+	&-black-quaternary {
+		@apply text-black_quaternary;
+	}
+	&-black-quinary {
+		@apply text-black_quaternary;
+	}
+
+	// &-link{
+	// 	@apply decoration-dashed;
+	// }
+
+
+}

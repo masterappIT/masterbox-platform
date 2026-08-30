@@ -1,0 +1,155 @@
+@import '_Common.module.scss';
+
+.button {
+	@apply py-[8px] px-[16px] h-[34px] text-button_primary  space-x-2 cursor-pointer;
+
+	@include row;
+
+	&-icon {
+		@apply h-[8px] w-[8px] rounded-full;
+	}
+
+	&-text-primary {
+		@apply border-0 bg-transparent text-primary;
+		&:hover{
+			@apply  bg-primary_light;
+		}
+	}
+
+	&-text-secondary {
+		@apply border-0 bg-transparent text-secondary;
+		&:hover{
+			@apply  bg-secondary_light;
+		}
+	}
+	&-text-tertiary {
+		@apply border-0 bg-transparent text-tertiary;
+		&:hover{
+			@apply  bg-tertiary_light;
+		}
+	}
+	&-text-quaternary {
+		@apply border-0 bg-transparent text-quaternary;
+		&:hover{
+			@apply  bg-quaternary_light;
+		}
+	}
+	&-text-alert {
+		@apply border-0 bg-transparent text-alert;
+		&:hover{
+			@apply  bg-alert_light;
+		}
+	}
+	&-text-grayscale {
+		@apply border-0 bg-transparent text-grayscale;
+		&:hover{
+			@apply  bg-grayscale_light;
+		}
+	}
+
+	&-contained-primary {
+		@apply text-white bg-primary;
+		&:hover{
+			@apply  bg-primary_dark
+		}
+	}
+	&-contained-secondary {
+		@apply text-white bg-secondary;
+		&:hover{
+			@apply  bg-secondary_dark
+		}
+	}
+	&-contained-tertiary {
+		@apply text-white bg-tertiary;
+		&:hover{
+			@apply  bg-tertiary_dark
+		}
+	}
+	&-contained-quaternary {
+		@apply text-white bg-quaternary;
+		&:hover{
+			@apply  bg-quaternary_dark
+		}
+	}
+	&-contained-alert {
+		@apply text-white bg-alert;
+		&:hover{
+			@apply  bg-alert_dark
+		}
+	}
+	&-contained-grayscale {
+		@apply text-white bg-grayscale;
+		&:hover{
+			@apply  bg-grayscale_dark
+		}
+
+	}
+
+	&-outlined-primary {
+		@apply border text-primary border-primary;
+		&:hover{
+			@apply  bg-primary_light;
+		}
+	}
+	&-outlined-secondary {
+		@apply border text-secondary border-secondary;
+		&:hover{
+			@apply  bg-secondary_light;
+		}
+	}
+	&-outlined-tertiary {
+		@apply border text-tertiary border-tertiary;
+		&:hover{
+			@apply  bg-tertiary_light;
+		}
+	}
+	&-outlined-quaternary {
+		@apply border text-quaternary border-quaternary;
+		&:hover{
+			@apply  bg-quaternary_light;
+		}
+	}
+	&-outlined-alert {
+		@apply border text-alert border-alert;
+		&:hover{
+			@apply  bg-alert_light;
+		}
+	}
+	&-outlined-grayscale {
+		@apply border text-grayscale border-grayscale;
+		&:hover{
+			@apply  bg-grayscale_light;
+		}
+	}
+
+
+
+
+
+	// 	&-outlined-primary {
+	// 		@apply bg-primary_light;
+	// 	}
+	// 	&-outlined-secondary {
+	// 		@apply bg-secondary_light; ;
+	// 	}
+	// 	&-outlined-alert {
+	// 		@apply bg-alert_light;;
+	// 	}
+	// 	&-outlined-grayscale {
+	// 		@apply bg-grayscale_light;;
+	// 	}
+	// }
+
+	&-rounded-none {
+		@apply rounded-[0px];
+	}
+	&-rounded-small {
+		@apply rounded-[2px];
+	}
+	&-rounded-normal {
+		@apply rounded-[4px];
+	}
+	&-rounded-large {
+		@apply rounded-[8px];
+	}
+}

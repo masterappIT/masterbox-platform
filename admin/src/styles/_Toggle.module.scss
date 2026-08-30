@@ -1,0 +1,28 @@
+@import './Common.module.scss';
+
+.toggle {
+	@apply w-[45px] h-[24px] rounded-[12px] p-[2px] cursor-pointer;
+
+	&-status {
+		@apply w-[20px] h-[20px] rounded-[50%] bg-black_white drop-shadow-[0_3px_3px_rgba(0,0,0,0.15)] transition-all;
+	}
+
+	&-primary {
+		@apply bg-black_tertiary;
+		
+		&-status {
+			@apply translate-x-[0px];
+			
+		}
+	}
+	
+	&-secondary {
+		@apply bg-primary_light;
+
+		&-status {
+			@apply translate-x-[21px];
+
+		}
+	}
+
+}

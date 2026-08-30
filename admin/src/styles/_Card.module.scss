@@ -1,0 +1,53 @@
+.card {
+	@apply w-full flex flex-col bg-black_white border border-black_white;
+	// &-color-primary {
+	// 	@apply bg-black_white;
+	// }
+	// &-color-secondary {
+	// 	@apply bg-black_tertiary;
+	// }
+
+	&-rounded {
+		@apply rounded-[6px];
+		&-isHover {
+			@apply cursor-pointer;
+			&:hover {
+				@apply border border-primary;
+			}
+		}
+	}
+	&-isHover {
+		&:hover {
+			@apply border border-primary;
+		}
+	}
+
+
+	
+
+
+
+
+
+	&-shadow-primary {
+		@apply shadow-[0px_2px_8px_0px_rgba(0,0,0,0.15)];
+	}
+
+	&-shadow-secondary {
+		// @apply shadow-[0px_2px_2px_0_rgba(57, 57, 57, 0.18)];
+	}
+
+	&-shadow-tertiary {
+		// @apply shadow-[3px_0px_2px_0_rgba(49, 49, 49, 1)];
+	}
+
+	&-shadow-quaternary {
+		// @apply shadow-[0px_2px_2px_0_rgba(57, 57, 57, 0.18)];
+	}
+
+	&-shadow-none {
+		// @apply shadow-none;
+	}
+
+
+}

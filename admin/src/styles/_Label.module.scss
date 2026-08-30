@@ -1,0 +1,71 @@
+@import './Common.module.scss';
+
+.label {
+	@apply text-label_primary w-[100px] h-[24px]  space-x-[6px] rounded-[4px];
+
+	@include row;
+
+	&-decoration {
+		@apply h-[8px] w-[8px] rounded-full;
+
+		&-primary {
+			@apply bg-primary;
+		}
+
+		&-secondary {
+			@apply bg-secondary;
+		}
+
+		&-tertiary {
+			@apply bg-alert;
+		}
+		&-quaternary {
+			@apply bg-grayscale;
+		}
+	}
+
+	&-text-primary {
+		@apply border-0 bg-transparent text-primary_lightest;
+	}
+
+	&-text-secondary {
+		@apply border-0 bg-transparent text-secondary_lightest;
+	}
+
+	&-text-tertiary {
+		@apply border-0 bg-transparent text-alert_lightest;
+	}
+	&-text-quaternary {
+		@apply border-0 bg-transparent text-grayscale_lightest;
+	}
+
+	&-contained-primary {
+		@apply text-black_primary bg-primary_lightest;
+	}
+
+	&-contained-secondary {
+		@apply text-black_primary bg-secondary_lightest;
+	}
+
+	&-contained-tertiary {
+		@apply text-black_primary bg-alert_lightest;
+	}
+	&-contained-quaternary {
+		@apply text-black_primary bg-grayscale_lightest;
+	}
+
+	&-outlined-primary {
+		@apply border-2 border-primary_lightest;
+	}
+
+	&-outlined-secondary {
+		@apply border-2 border-secondary_lightest;
+	}
+
+	&-outlined-tertiary {
+		@apply border-2 border-alert_lightest;
+	}
+	&-outlined-quaternary {
+		@apply border-2 border-grayscale_lightest;
+	}
+}
