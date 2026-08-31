@@ -14,7 +14,7 @@ export const pathInfo=[
     },
     {
       icon: 'messenger',
-      title: 'chat_management',
+      title: 'chat_box',
       path: '/chat-management',
     },
     {

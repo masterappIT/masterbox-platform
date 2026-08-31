@@ -31,7 +31,7 @@ import PopupChannel from '../src/components/channels-management/PopupChannel';
 
 const apiUri = (process.env.NODE_ENV === 'production'
   ? process.env.API_CONNECTION_PRODUCTION
-  : process.env.API_CONNECTION_DEV) || 'https://api.masterbox.masterappinc.com/graphql'
+  : process.env.API_CONNECTION_DEV)
 
 const platformNames = {
   fb: 'Facebook',
@@ -104,11 +104,15 @@ function ChannelsManagementPage({ platforms, defaultValue }) {
 
     setConnectionError('');
     setIsConnecting(true);
-    const baseUri = apiUri.replace(/\/$/, '');
+    const baseUri = apiUri?.replace(/\/$/, '');
+    if (!baseUri) {
+      setConnectionError('未設定 Backend API 位址，無法進行串接。');
+      setIsConnecting(false);
+      return;
+    }
 
     try {
-      const didNavigate = await router.push(`${baseUri}/meta/login?id=${encodeURIComponent(companyId)}`);
-      if (!didNavigate) throw new Error('Navigation failed');
+      window.location.assign(`${baseUri}/meta/login?id=${encodeURIComponent(companyId)}`);
     } catch (error) {
       setConnectionError('串接頁面開啟失敗，請稍後再試。');
       setIsConnecting(false);

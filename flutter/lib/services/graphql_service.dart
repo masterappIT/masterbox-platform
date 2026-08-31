@@ -27,13 +27,20 @@ class AuthTokens {
 
 class GraphQLService {
   GraphQLService({
-    this.endpoint = 'http://localhost:4000/graphql',
+    String? endpoint,
     String? realtimeEndpoint,
     this.token,
     this.refreshToken,
     this.accountId,
     this.companyId,
-  }) : realtimeEndpoint = realtimeEndpoint ?? 'http://localhost:4000';
+  })  : endpoint = endpoint ?? const String.fromEnvironment(
+          'GRAPHQL_ENDPOINT',
+          defaultValue: 'http://localhost:4000/graphql',
+        ),
+        realtimeEndpoint = realtimeEndpoint ?? const String.fromEnvironment(
+          'REALTIME_ENDPOINT',
+          defaultValue: 'http://localhost:4000',
+        );
   final String endpoint;
   final String realtimeEndpoint;
   String? token;

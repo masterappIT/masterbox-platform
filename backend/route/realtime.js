@@ -90,26 +90,7 @@ router.post('/calls/:id/events', async (req, res, next) => {
     res.status(201).json(event);
   } catch (e) { next(e); }
 });
-router.post('/calls/:id/livekit-token', async (req, res, next) => {
-  try {
-    const call = await scopedCall(req, req.params.id);
-    if (!call) return res.status(404).json({ error: 'Call not found' });
-    const apiKey = process.env.LIVEKIT_API_KEY?.trim();
-    const apiSecret = process.env.LIVEKIT_API_SECRET?.trim();
-    const livekitUrl = process.env.LIVEKIT_URL?.trim();
-    if (!apiKey || !apiSecret || !livekitUrl) return res.status(503).json({ error: 'LiveKit is not configured' });
-    const ttl = Math.min(Math.max(Number(process.env.LIVEKIT_TOKEN_TTL_SECONDS || 300), 60), 3600);
-    const token = jwt.sign({
-      iss: apiKey,
-      sub: req.account.id,
-      name: req.account.id,
-      nbf: Math.floor(Date.now() / 1000),
-      exp: Math.floor(Date.now() / 1000) + ttl,
-      video: { roomJoin: true, room: call.id, canPublish: true, canSubscribe: true },
-    }, apiSecret, { algorithm: 'HS256' });
-    res.json({ token, url: livekitUrl, roomName: call.id, expiresIn: ttl });
-  } catch (e) { next(e); }
-});
+
 
 router.get('/calls/:id', async (req, res, next) => {
   try {

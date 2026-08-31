@@ -11,7 +11,7 @@
   "send_reset_password_to_mailbox": "寄送密碼至信箱",
   "back_to_login": "返回登入",
   "messenger": "即時訊息",
-  "group_notifications": "群發工具",
+  "chat_box": "Chat Box",  "group_notifications": "群發工具",
   "bot_messaging": "對話機器人",
   "messaging_template": "訊息範本",
   "customers_management": "客戶管理",

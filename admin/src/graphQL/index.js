@@ -4,7 +4,21 @@ import { setContext } from '@apollo/client/link/context';
 import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
 import { createClient } from 'graphql-ws';
 
-const getAccessToken = () => typeof window !== 'undefined' ? window.localStorage.getItem('accessToken') : null;
+const getAccessToken = () => {
+    if (typeof window === 'undefined') return null;
+    const directToken = window.localStorage.getItem('accessToken');
+    if (directToken) return directToken;
+
+    try {
+        const persistedRoot = JSON.parse(window.localStorage.getItem('persist:root') || '{}');
+        const user = typeof persistedRoot.user === 'string'
+            ? JSON.parse(persistedRoot.user)
+            : persistedRoot.user;
+        return user?.accessToken || null;
+    } catch (_) {
+        return null;
+    }
+};
 
 const apiUri = process.env.NODE_ENV === 'production' ? process.env.GRAPHQL_CONNECTION_PRODUCTION : process.env.GRAPHQL_CONNECTION_DEV
 const wsUri = process.env.NODE_ENV === 'production' ? process.env.GRAPHQL_WS_CONNECTION_PRODUCTION : process.env.GRAPHQL_WS_CONNECTION_DEV

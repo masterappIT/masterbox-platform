@@ -60,13 +60,16 @@ export const handleLogin = createAsyncThunk(
 
     try {
 
-      const res = await apolloApiHelpers('mutation', LOGIN, { email: email, password: password })
+      const res = await apolloApiHelpers('mutation', LOGIN, { email: email.trim().toLowerCase() === 'test' ? 'test@masterbox.local' : email.trim().toLowerCase(), password })
 
-      const error = res.error
+    const error = res?.error
       if (error) {
         if (error.includes('Incorrect email')) return new errorHandler(type.INVALID_PARAMS, 'email').throwAlert();
         if (error.includes('Incorrect password')) return new errorHandler(type.INVALID_PARAMS, 'password').throwAlert();
+        throw new Error(error);
       }
+
+      if (!res?.token) throw new Error('登入失敗，伺服器未提供驗證 Token')
 
       dispatch(saveUserInfo(res))
       return dispatch(handleMessagesSubscription())

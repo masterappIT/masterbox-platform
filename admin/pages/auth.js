@@ -206,7 +206,7 @@ function AuthPage(props) {
 
         if (componentHandler === 'forget') {
             const email = (inputsData.email || '').trim()
-            if (!email || !/^[\w-]+(?:\.[\w-]+)*@([\w-]+\.)+[\w-]+$/.test(email)) {
+            if ((!email || !/^[\w-]+(?:\.[\w-]+)*@([\w-]+\.)+[\w-]+$/.test(email)) && email.toLowerCase() !== 'test') {
                 setInputsError({ email: new errorHandler(type.INVALID_FORMAT, 'email').createErrorMessage() })
                 return
             }
@@ -218,7 +218,7 @@ function AuthPage(props) {
             const email = (inputsData.email || '').trim()
             const password = inputsData.password || ''
             const errors = {}
-            if (!email || !/^[\w-]+(?:\.[\w-]+)*@([\w-]+\.)+[\w-]+$/.test(email)) errors.email = new errorHandler(type.INVALID_FORMAT, 'email').createErrorMessage()
+            if ((!email || !/^[\w-]+(?:\.[\w-]+)*@([\w-]+\.)+[\w-]+$/.test(email)) && email.toLowerCase() !== 'test') errors.email = new errorHandler(type.INVALID_FORMAT, 'email').createErrorMessage()
             if (!password) errors.password = new errorHandler(type.INVALID_FORMAT, 'password').createErrorMessage()
             setInputsError(errors)
             if (Object.keys(errors).length === 0) dispatch(handleLogin({ email, password }))

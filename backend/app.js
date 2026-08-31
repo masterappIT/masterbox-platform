@@ -34,9 +34,14 @@ console.log(process.env.NODE_ENV)
 // Create an Express app and HTTP server; we will attach the WebSocket
 // server and the ApolloServer to this HTTP server.
 // CORS options
+const allowedCorsOrigins = (process.env.CORS_ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 const corsOptions = {
   origin: (origin, callback) => {
-    if (!origin || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) || origin === "https://www.facebook.com" || origin === "https://developers.facebook.com") {
+    if (!origin || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) || origin === "https://www.facebook.com" || origin === "https://developers.facebook.com" || allowedCorsOrigins.includes(origin)) {
       callback(null, true);
     } else {
       callback(new Error(`CORS origin not allowed: ${origin}`));

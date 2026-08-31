@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { prisma } from '../lib/db/prisma.js';
 import { getJwtSecret } from '../lib/auth/jwtSecret.js';
-import { decryptTotpSecret } from '../lib/auth/totpCrypto.js';
+import { requirePlatformAdmin, requirePlatformAdminRole, isPlatformAdminAccount } from '../middleware/platformAdminAuth.js';
 
 const router = express.Router();
 const loginAttempts = new Map();
