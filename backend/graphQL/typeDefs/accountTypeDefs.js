@@ -63,6 +63,12 @@ input LoginInput{
     password:String
 }
 
+input RefreshTokenInput {
+    refreshToken: String!
+    account_id: String!
+    company_id: String!
+}
+
 
 type Query {
     findAccountByEmail(email:String): Account ,
@@ -77,6 +83,7 @@ type Query {
      updateAccount(_id: String!, input: AccountUpdateInput!): Account!
      deleteAccount(_id: String!): Boolean!
      loginAccount(LoginInput:LoginInput):Account
+     refreshToken(refreshTokenInput: RefreshTokenInput!): Account!
      insertSubscribeChannelsToAccount(channels:[String]): Account
  }
 

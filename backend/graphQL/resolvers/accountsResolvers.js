@@ -6,15 +6,23 @@ import { pubsub } from '../../config/redis.js';
 import { getJwtSecret } from '../../lib/auth/jwtSecret.js';
 import { withAuth, requireAdmin } from '../../middleware/auth.js';
 
-const accountView = (account, token) => account && ({
+const ACCESS_TOKEN_TTL = '2h';
+const REFRESH_TOKEN_TTL = '30d';
+
+const issueTokens = (account) => ({
+    token: jwt.sign({ account_id: account.id }, getJwtSecret(), { expiresIn: ACCESS_TOKEN_TTL }),
+    refreshToken: jwt.sign({ account_id: account.id, company_id: account.companyId, token_type: 'refresh' }, getJwtSecret(), { expiresIn: REFRESH_TOKEN_TTL }),
+});
+
+const accountView = (account, tokens = {}) => account && ({
     _id: account.id,
     email: account.email,
     company_id: account.companyId,
     role: account.role,
     permissions: account.permissions,
     info: account.userInfo,
-    token,
-    refreshToken: token,
+    token: tokens.token,
+    refreshToken: tokens.refreshToken,
 });
 
 const parseJsonInput = (value, field) => {
@@ -57,8 +65,7 @@ export default {
                     ...(role ? { role } : {}),
                 },
             });
-            const token = jwt.sign({ user_id: newUser.id }, getJwtSecret(), { expiresIn: "2h" });
-            return accountView(newUser, token);
+            return accountView(newUser, issueTokens(newUser));
         },
 
         async createAccount(_, { input, company_id }, context) {
@@ -116,8 +123,18 @@ export default {
             if (!(await bcrypt.compare(password, existAccount.password))) {
                 throw new ApolloError('Incorrect password', 'INCORRECT_PASSWORD');
             }
-            const token = jwt.sign({ account_id: existAccount.id }, getJwtSecret(), { expiresIn: "2h" });
-            return accountView(existAccount, token);
+            return accountView(existAccount, issueTokens(existAccount));
+        },
+
+        async refreshToken(_, { refreshTokenInput: { refreshToken, account_id, company_id } }) {
+            let payload;
+            try { payload = jwt.verify(refreshToken, getJwtSecret()); } catch { throw new ApolloError('Invalid or expired refresh token', 'UNAUTHENTICATED'); }
+            if (payload.token_type !== 'refresh' || payload.account_id !== account_id || payload.company_id !== company_id) {
+                throw new ApolloError('Invalid refresh token scope', 'UNAUTHENTICATED');
+            }
+            const account = await prisma.account.findUnique({ where: { id: account_id } });
+            if (!account || account.companyId !== company_id) throw new ApolloError('Account not found', 'UNAUTHENTICATED');
+            return accountView(account, issueTokens(account));
         },
 
         async insertSubscribeChannelsToAccount(_, { channels }, context) {
