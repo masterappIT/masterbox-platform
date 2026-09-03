@@ -26,6 +26,8 @@ Copy the relevant `.env.example` files to untracked `.env` files. Never commit c
 
 - [Architecture](docs/architecture.md)
 - [Legacy inventory and integration policy](docs/legacy-inventory.md)
+- [Product prototype references](docs/product-prototypes.md)
+- [Historical development notes](docs/historical-changelog.md)
 - [Backend](backend/README.md)
 - [Admin](admin/README.md)
 - [Flutter](flutter/README.md)
