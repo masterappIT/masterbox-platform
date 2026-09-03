@@ -1,9 +1,0 @@
-{
-  "name": "@masterbox/chat-embed",
-  "version": "0.1.0",
-  "private": true,
-  "type": "module",
-  "description": "Dependency-free browser client for the MasterBox embeddable chat contract.",
-  "exports": "./src/index.js",
-  "files": ["src", "README.md"]
-}
