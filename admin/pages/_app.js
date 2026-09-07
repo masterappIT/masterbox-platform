@@ -58,7 +58,7 @@ function AppContent({ Component, pageProps }) {
   }, []);
 
   return <>
-    <Head><meta httpEquiv='Expires' content='0' /><meta httpEquiv='Cache-Control' content='no-cache' /><meta httpEquiv='Pragma' content='no-cache' /></Head>
+    <Head><link rel='icon' type='image/svg+xml' href='/favicon.svg' /><meta httpEquiv='Expires' content='0' /><meta httpEquiv='Cache-Control' content='no-cache' /><meta httpEquiv='Pragma' content='no-cache' /></Head>
     <ApolloProvider client={client}>
       <div className='flex flex-row w-screen h-screen overflow-hidden'>
         <div className={`z-[20] hidden sm:block transition-all duration-200 ${sidebarCollapsed ? 'w-[64px] min-w-[64px]' : 'w-[208px] min-w-[208px]'}`} style={showSidebarHeaderBar ? {} : { display: 'none' }}><Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(value => !value)} /></div>
