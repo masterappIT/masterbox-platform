@@ -12,7 +12,7 @@ class MasterBoxLandingApp extends StatelessWidget {
   const MasterBoxLandingApp({super.key});
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: 'MasterBox',
+    title: 'MasterBox｜跨平台訊息管理',
     debugShowCheckedModeBanner: false,
     theme: ThemeData(
       fontFamily: DesignTokens.fontFamily,
