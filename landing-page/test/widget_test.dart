@@ -35,6 +35,27 @@ void main() {
     expect(find.byKey(const ValueKey('desktop-2x-canvas-top')), findsNothing);
   });
 
+  testWidgets('desktop navigation links return and switch between routes', (
+    tester,
+  ) async {
+    tester.view
+      ..physicalSize = const Size(1920, 1080)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    for (final route in ['/features', '/pricing', '/contact']) {
+      await tester.pumpWidget(const MasterBoxLandingApp());
+      final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+      navigator.pushNamed(route);
+      await tester.pumpAndSettle();
+
+      await tester.tapAt(const Offset(378, 28));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('desktop-2x-canvas-top')), findsOneWidget);
+    }
+  });
+
   testWidgets('renders the contact route at desktop and mobile breakpoints', (
     tester,
   ) async {
@@ -77,7 +98,6 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(find.text('請先填寫必要資料'), findsOneWidget);
-
   });
 
   testWidgets('accepts contact input and topic selection', (tester) async {
@@ -366,6 +386,27 @@ void main() {
       tester.getSize(find.byKey(const ValueKey('features-mobile-sidebar'))),
       const Size(328, 854),
     );
+  });
+
+  testWidgets('homepage mobile sidebar opens the features route', (
+    tester,
+  ) async {
+    tester.view
+      ..physicalSize = const Size(375, 900)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(const MasterBoxLandingApp());
+    await tester.tap(find.byKey(const ValueKey('mobile-menu-target')));
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile-sidebar-features-target')),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('features-375-canvas')), findsOneWidget);
+    expect(find.byKey(const ValueKey('mobile-page')), findsNothing);
   });
 
   testWidgets('uses mobile layout through the 640px breakpoint', (

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'desktop_navigation.dart';
+
 class FeatureIntroductionPage extends StatefulWidget {
   const FeatureIntroductionPage({super.key});
 
@@ -96,6 +98,22 @@ class _FeatureIntroductionPageState extends State<FeatureIntroductionPage> {
                 ),
               ),
             ),
+            if (!isMobile)
+              Positioned(
+                top: 0,
+                left: 358 * scale,
+                width: 1204 * scale,
+                height: 120 * scale,
+                child: DesktopNavigationHitTargets(
+                  onHomeTap: () =>
+                      Navigator.of(context).pushReplacementNamed('/'),
+                  onFeaturesTap: () {},
+                  onPricingTap: () =>
+                      Navigator.of(context).pushReplacementNamed('/pricing'),
+                  onContactTap: () =>
+                      Navigator.of(context).pushReplacementNamed('/contact'),
+                ),
+              ),
             if (isMobile) ...[
               Positioned(
                 top: 0,
@@ -162,9 +180,10 @@ class _FeatureIntroductionPageState extends State<FeatureIntroductionPage> {
                                   right: 0,
                                   height: 57 * (width / 375),
                                   child: GestureDetector(
-                                    onTap: () =>
-                                        Navigator.of(context)
-                                            .pushReplacementNamed('/'),
+                                    onTap: () {
+                                      setState(() => _sidebarOpen = false);
+                                      Navigator.of(context).pushReplacementNamed('/');
+                                    },
                                   ),
                                 ),
                                 Positioned(
@@ -179,13 +198,26 @@ class _FeatureIntroductionPageState extends State<FeatureIntroductionPage> {
                                 ),
                                 Positioned(
                                   left: 0,
+                                  top: 178 * (width / 375),
+                                  right: 0,
+                                  height: 57 * (width / 375),
+                                  child: GestureDetector(
+                                    onTap: () {
+                                      setState(() => _sidebarOpen = false);
+                                      Navigator.of(context).pushReplacementNamed('/pricing');
+                                    },
+                                  ),
+                                ),
+                                Positioned(
+                                  left: 0,
                                   top: 235 * (width / 375),
                                   right: 0,
                                   height: 57 * (width / 375),
                                   child: GestureDetector(
-                                    onTap: () =>
-                                        Navigator.of(context)
-                                            .pushReplacementNamed('/contact'),
+                                    onTap: () {
+                                      setState(() => _sidebarOpen = false);
+                                      Navigator.of(context).pushReplacementNamed('/contact');
+                                    },
                                   ),
                                 ),
                               ],

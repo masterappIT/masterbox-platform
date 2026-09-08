@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'design_tokens.dart';
 import 'contact_page.dart';
+import 'desktop_navigation.dart';
 import 'feature_introduction_page.dart';
 import 'pricing_page.dart';
 
@@ -25,26 +26,38 @@ class MasterBoxLandingApp extends StatelessWidget {
     },
     onGenerateRoute: (settings) {
       if (settings.name == '/features') {
-        return MaterialPageRoute<void>(
+        return _instantRoute(
           builder: (_) => const FeatureIntroductionPage(),
           settings: settings,
         );
       }
       if (settings.name == '/pricing') {
-        return MaterialPageRoute<void>(
+        return _instantRoute(
           builder: (_) => const PricingPage(),
           settings: settings,
         );
       }
       if (settings.name == '/contact') {
-        return MaterialPageRoute<void>(
+        return _instantRoute(
           builder: (_) => const ContactPage(),
           settings: settings,
         );
       }
-      return MaterialPageRoute<void>(builder: (_) => const MasterBoxHomePage());
+      return _instantRoute(builder: (_) => const MasterBoxHomePage());
     },
     home: const MasterBoxHomePage(),
+  );
+
+  PageRoute<T> _instantRoute<T>({
+    required WidgetBuilder builder,
+    RouteSettings? settings,
+  }) => PageRouteBuilder<T>(
+    pageBuilder: (context, animation, secondaryAnimation) => builder(context),
+    settings: settings,
+    transitionDuration: Duration.zero,
+    reverseTransitionDuration: Duration.zero,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+        child,
   );
 }
 
@@ -121,11 +134,7 @@ class _MasterBoxHomePageState extends State<MasterBoxHomePage> {
       0.0,
       _scrollController.position.maxScrollExtent,
     );
-    _scrollController.animateTo(
-      target,
-      duration: const Duration(milliseconds: 500),
-      curve: Curves.easeInOut,
-    );
+    _scrollController.jumpTo(target);
   }
 
   @override
@@ -151,11 +160,11 @@ class _MasterBoxHomePageState extends State<MasterBoxHomePage> {
           },
           onFeaturesTap: () {
             setState(() => _mobileSidebarOpen = false);
-            _scrollTo(
-              mobileConfig.featuresOffset *
-                  constraints.maxWidth /
-                  mobileConfig.designWidth,
-            );
+            Navigator.of(context).pushReplacementNamed('/features');
+          },
+          onPricingTap: () {
+            setState(() => _mobileSidebarOpen = false);
+            Navigator.of(context).pushReplacementNamed('/pricing');
           },
           onContactTap: () {
             setState(() => _mobileSidebarOpen = false);
@@ -183,7 +192,10 @@ class _MasterBoxHomePageState extends State<MasterBoxHomePage> {
                 height: DesignTokens.canvasHeight,
                 child: _FigmaDesktopCanvas(
                   onHomeTap: () => _scrollTo(0),
-                  onFeaturesTap: () => _scrollTo(2907 * scale),
+                  onFeaturesTap: () =>
+                      Navigator.of(context).pushReplacementNamed('/features'),
+                  onPricingTap: () =>
+                      Navigator.of(context).pushReplacementNamed('/pricing'),
                   onContactTap: () =>
                       Navigator.of(context).pushReplacementNamed('/contact'),
                 ),
@@ -205,6 +217,7 @@ class _MobileLandingPage extends StatelessWidget {
     required this.onCloseTap,
     required this.onHomeTap,
     required this.onFeaturesTap,
+    required this.onPricingTap,
     required this.onContactTap,
   });
 
@@ -215,6 +228,7 @@ class _MobileLandingPage extends StatelessWidget {
   final VoidCallback onCloseTap;
   final VoidCallback onHomeTap;
   final VoidCallback onFeaturesTap;
+  final VoidCallback onPricingTap;
   final VoidCallback onContactTap;
 
   @override
@@ -313,6 +327,7 @@ class _MobileLandingPage extends StatelessWidget {
                                 onCloseTap: onCloseTap,
                                 onHomeTap: onHomeTap,
                                 onFeaturesTap: onFeaturesTap,
+                                onPricingTap: onPricingTap,
                                 onContactTap: onContactTap,
                               ),
                             ],
@@ -336,6 +351,7 @@ class _MobileSidebarHitTargets extends StatelessWidget {
     required this.onCloseTap,
     required this.onHomeTap,
     required this.onFeaturesTap,
+    required this.onPricingTap,
     required this.onContactTap,
   });
 
@@ -343,6 +359,7 @@ class _MobileSidebarHitTargets extends StatelessWidget {
   final VoidCallback onCloseTap;
   final VoidCallback onHomeTap;
   final VoidCallback onFeaturesTap;
+  final VoidCallback onPricingTap;
   final VoidCallback onContactTap;
 
   @override
@@ -353,28 +370,51 @@ class _MobileSidebarHitTargets extends StatelessWidget {
         top: 16 * scale,
         width: 24 * scale,
         height: 24 * scale,
-        child: GestureDetector(onTap: onCloseTap),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onCloseTap,
+        ),
       ),
       Positioned(
         left: 0,
         top: 64 * scale,
         right: 0,
         height: 57 * scale,
-        child: GestureDetector(onTap: onHomeTap),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onHomeTap,
+        ),
       ),
       Positioned(
         left: 0,
         top: 121 * scale,
         right: 0,
         height: 57 * scale,
-        child: GestureDetector(onTap: onFeaturesTap),
+        child: GestureDetector(
+          key: const ValueKey('mobile-sidebar-features-target'),
+          behavior: HitTestBehavior.opaque,
+          onTap: onFeaturesTap,
+        ),
+      ),
+      Positioned(
+        left: 0,
+        top: 178 * scale,
+        right: 0,
+        height: 57 * scale,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onPricingTap,
+        ),
       ),
       Positioned(
         left: 0,
         top: 235 * scale,
         right: 0,
         height: 57 * scale,
-        child: GestureDetector(onTap: onContactTap),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onContactTap,
+        ),
       ),
     ],
   );
@@ -384,11 +424,13 @@ class _FigmaDesktopCanvas extends StatelessWidget {
   const _FigmaDesktopCanvas({
     required this.onHomeTap,
     required this.onFeaturesTap,
+    required this.onPricingTap,
     required this.onContactTap,
   });
 
   final VoidCallback onHomeTap;
   final VoidCallback onFeaturesTap;
+  final VoidCallback onPricingTap;
   final VoidCallback onContactTap;
 
   @override
@@ -426,57 +468,14 @@ class _FigmaDesktopCanvas extends StatelessWidget {
         top: 0,
         left: 358,
         width: 1204,
-        height: 56,
-        child: _NavigationHitTargets(
+        height: 120,
+        child: DesktopNavigationHitTargets(
           onHomeTap: onHomeTap,
           onFeaturesTap: onFeaturesTap,
+          onPricingTap: onPricingTap,
           onContactTap: onContactTap,
         ),
       ),
     ],
-  );
-}
-
-class _NavigationHitTargets extends StatelessWidget {
-  const _NavigationHitTargets({
-    required this.onHomeTap,
-    required this.onFeaturesTap,
-    required this.onContactTap,
-  });
-
-  final VoidCallback onHomeTap;
-  final VoidCallback onFeaturesTap;
-  final VoidCallback onContactTap;
-
-  @override
-  Widget build(BuildContext context) => Stack(
-    children: [
-      Positioned(
-        left: 20,
-        top: 8,
-        width: 145,
-        height: 40,
-        child: _hit(onHomeTap),
-      ),
-      Positioned(
-        left: 520,
-        top: 8,
-        width: 72,
-        height: 40,
-        child: _hit(onFeaturesTap),
-      ),
-      Positioned(
-        left: 712,
-        top: 8,
-        width: 72,
-        height: 40,
-        child: _hit(onContactTap),
-      ),
-    ],
-  );
-
-  Widget _hit(VoidCallback onTap) => MouseRegion(
-    cursor: SystemMouseCursors.click,
-    child: GestureDetector(behavior: HitTestBehavior.opaque, onTap: onTap),
   );
 }

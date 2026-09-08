@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'desktop_navigation.dart';
+
 class PricingPage extends StatefulWidget {
   const PricingPage({super.key});
 
@@ -148,7 +150,7 @@ class _PricingPageState extends State<PricingPage> {
                           ),
                           controller: _pricingCardsScrollController,
                           scrollDirection: Axis.horizontal,
-                          physics: const ClampingScrollPhysics(),
+                          physics: const _NoBallisticScrollPhysics(),
                           child: SizedBox(
                             width:
                                 (canvas.designWidth +
@@ -237,7 +239,7 @@ class _PricingPageState extends State<PricingPage> {
                           ),
                           controller: _pricingDetailsScrollController,
                           scrollDirection: Axis.horizontal,
-                          physics: const ClampingScrollPhysics(),
+                          physics: const _NoBallisticScrollPhysics(),
                           child: SizedBox(
                             width:
                                 (canvas.id == '375'
@@ -285,6 +287,22 @@ class _PricingPageState extends State<PricingPage> {
                 ),
               ),
             ),
+            if (!isMobile)
+              Positioned(
+                top: 0,
+                left: 358 * scale,
+                width: 1204 * scale,
+                height: 120 * scale,
+                child: DesktopNavigationHitTargets(
+                  onHomeTap: () =>
+                      Navigator.of(context).pushReplacementNamed('/'),
+                  onFeaturesTap: () =>
+                      Navigator.of(context).pushReplacementNamed('/features'),
+                  onPricingTap: () {},
+                  onContactTap: () =>
+                      Navigator.of(context).pushReplacementNamed('/contact'),
+                ),
+              ),
             if (isMobile) ...[
               Positioned(
                 top: 0,
@@ -309,16 +327,7 @@ class _PricingPageState extends State<PricingPage> {
                 ),
               ),
             ] else
-              Positioned(
-                top: 0,
-                left: 358 * scale,
-                width: 165 * scale,
-                height: 56 * scale,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => Navigator.of(context).pushReplacementNamed('/'),
-                ),
-              ),
+              ...[],
             if (_sidebarOpen && isMobile)
               Positioned.fill(
                 child: GestureDetector(
@@ -361,14 +370,27 @@ class _PricingPageState extends State<PricingPage> {
                                   right: 0,
                                   height: 57 * (width / 375),
                                   child: GestureDetector(
-                                    onTap: () =>
-                                        Navigator.of(context)
-                                            .pushReplacementNamed('/'),
+                                    onTap: () {
+                                      setState(() => _sidebarOpen = false);
+                                      Navigator.of(context).pushReplacementNamed('/');
+                                    },
                                   ),
                                 ),
                                 Positioned(
                                   left: 0,
                                   top: 121 * (width / 375),
+                                  right: 0,
+                                  height: 57 * (width / 375),
+                                  child: GestureDetector(
+                                    onTap: () {
+                                      setState(() => _sidebarOpen = false);
+                                      Navigator.of(context).pushReplacementNamed('/features');
+                                    },
+                                  ),
+                                ),
+                                Positioned(
+                                  left: 0,
+                                  top: 178 * (width / 375),
                                   right: 0,
                                   height: 57 * (width / 375),
                                   child: GestureDetector(
@@ -382,8 +404,10 @@ class _PricingPageState extends State<PricingPage> {
                                   right: 0,
                                   height: 57 * (width / 375),
                                   child: GestureDetector(
-                                    onTap: () => Navigator.of(context)
-                                        .pushReplacementNamed('/contact'),
+                                    onTap: () {
+                                      setState(() => _sidebarOpen = false);
+                                      Navigator.of(context).pushReplacementNamed('/contact');
+                                    },
                                   ),
                                 ),
                               ],
@@ -400,6 +424,16 @@ class _PricingPageState extends State<PricingPage> {
       );
     },
   );
+}
+
+class _NoBallisticScrollPhysics extends ClampingScrollPhysics {
+  const _NoBallisticScrollPhysics();
+
+  @override
+  Simulation? createBallisticSimulation(
+    ScrollMetrics position,
+    double velocity,
+  ) => null;
 }
 
 class _PricingCanvas {

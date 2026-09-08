@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'desktop_navigation.dart';
 import 'design_tokens.dart';
 
 class ContactPage extends StatefulWidget {
@@ -114,21 +115,19 @@ class _ContactPageState extends State<ContactPage> {
 
   _ContactCanvas _canvasFor(double width) {
     if (width > 640) return _desktop;
-    if (width >= 640) return _mobile640;
+    if (width == 640) return _mobile640;
     if (width >= 480) return _mobile480;
     return _mobile375;
   }
 
   void _submit() {
     if (!(_formKey.currentState?.validate() ?? false)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('請先填寫必要資料')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('請先填寫必要資料')));
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已收到您的聯繫資料，專人將盡快與您聯繫')),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('已收到您的聯繫資料，專人將盡快與您聯繫')));
   }
 
   @override
@@ -155,9 +154,7 @@ class _ContactPageState extends State<ContactPage> {
                 child: Stack(
                   children: [
                     Image(
-                      image: AssetImage(
-                        'assets/contact-page-${canvas.id}.png',
-                      ),
+                      image: AssetImage('assets/contact-page-${canvas.id}.png'),
                       width: renderedWidth,
                       height: renderedHeight,
                       fit: BoxFit.fill,
@@ -167,23 +164,27 @@ class _ContactPageState extends State<ContactPage> {
                       key: _formKey,
                       child: Stack(
                         children: [
-                          for (var index = 0;
-                              index < canvas.inputPositions.length;
-                              index++)
+                          for (
+                            var index = 0;
+                            index < canvas.inputPositions.length;
+                            index++
+                          )
                             _positionedInput(
                               canvas.inputPositions[index],
                               scale,
                               _controllersFor(canvas)[index],
                               _labelsFor(canvas)[index],
                               focusNode: _focusNodes[index],
-                              requiredField: _labelsFor(canvas)[index] !=
-                                      '部門職稱(此項目可不填)' &&
+                              requiredField:
+                                  _labelsFor(canvas)[index] != '部門職稱(此項目可不填)' &&
                                   _labelsFor(canvas)[index] !=
                                       '如何得知MasterBox平台',
                             ),
-                          for (var index = 0;
-                              index < canvas.topicPositions.length;
-                              index++)
+                          for (
+                            var index = 0;
+                            index < canvas.topicPositions.length;
+                            index++
+                          )
                             _positionedTopic(
                               canvas.topicPositions[index],
                               scale,
@@ -208,6 +209,22 @@ class _ContactPageState extends State<ContactPage> {
                 ),
               ),
             ),
+            if (!isMobile)
+              Positioned(
+                top: 0,
+                left: 358 * scale,
+                width: 1204 * scale,
+                height: 120 * scale,
+                child: DesktopNavigationHitTargets(
+                  onHomeTap: () =>
+                      Navigator.of(context).pushReplacementNamed('/'),
+                  onFeaturesTap: () =>
+                      Navigator.of(context).pushReplacementNamed('/features'),
+                  onPricingTap: () =>
+                      Navigator.of(context).pushReplacementNamed('/pricing'),
+                  onContactTap: () {},
+                ),
+              ),
             if (isMobile) ...[
               Positioned(
                 top: 0,
@@ -232,14 +249,6 @@ class _ContactPageState extends State<ContactPage> {
                 ),
               ),
             ],
-            if (!isMobile)
-              Positioned(
-                top: 0,
-                left: (width - renderedWidth) / 2 + 358 * scale,
-                width: 1204 * scale,
-                height: 56 * scale,
-                child: _ContactDesktopNavigation(scale: scale),
-              ),
             if (_sidebarOpen && isMobile) _sidebar(context),
           ],
         ),
@@ -339,40 +348,38 @@ class _ContactPageState extends State<ContactPage> {
   Widget _positionedTopic(Offset position, double scale, int index) {
     final selected = _selectedTopics.contains(index);
     return Positioned(
-        left: position.dx * scale,
-        top: position.dy * scale,
-        width: 136 * scale,
-        height: 24 * scale,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => setState(() {
-            if (selected) {
-              _selectedTopics.remove(index);
-            } else {
-              _selectedTopics.add(index);
-            }
-          }),
-          child: selected
-              ? Align(
-                  alignment: Alignment.centerLeft,
-                  child: Container(
-                    width: 24 * scale,
-                    height: 24 * scale,
-                    decoration: BoxDecoration(
-                      color: const Color(0xff454555),
-                      borderRadius: BorderRadius.circular(3 * scale),
-                    ),
-                    child: CustomPaint(
-                      painter: _CheckMarkPainter(scale),
-                    ),
+      left: position.dx * scale,
+      top: position.dy * scale,
+      width: 136 * scale,
+      height: 24 * scale,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => setState(() {
+          if (selected) {
+            _selectedTopics.remove(index);
+          } else {
+            _selectedTopics.add(index);
+          }
+        }),
+        child: selected
+            ? Align(
+                alignment: Alignment.centerLeft,
+                child: Container(
+                  width: 24 * scale,
+                  height: 24 * scale,
+                  decoration: BoxDecoration(
+                    color: const Color(0xff454555),
+                    borderRadius: BorderRadius.circular(3 * scale),
                   ),
-                )
-              : const SizedBox.expand(),
-        ),
-      );
+                  child: CustomPaint(painter: _CheckMarkPainter(scale)),
+                ),
+              )
+            : const SizedBox.expand(),
+      ),
+    );
   }
 
- Widget _sidebar(BuildContext context) => Positioned.fill(
+  Widget _sidebar(BuildContext context) => Positioned.fill(
     child: GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => setState(() => _sidebarOpen = false),
@@ -402,7 +409,10 @@ class _ContactPageState extends State<ContactPage> {
                       right: 0,
                       height: 57 * (MediaQuery.sizeOf(context).width / 375),
                       child: GestureDetector(
-                        onTap: () => Navigator.of(context).pushReplacementNamed('/'),
+                        onTap: () {
+                          setState(() => _sidebarOpen = false);
+                          Navigator.of(context).pushReplacementNamed('/');
+                        },
                       ),
                     ),
                     Positioned(
@@ -411,8 +421,22 @@ class _ContactPageState extends State<ContactPage> {
                       right: 0,
                       height: 57 * (MediaQuery.sizeOf(context).width / 375),
                       child: GestureDetector(
-                        onTap: () =>
-                            Navigator.of(context).pushReplacementNamed('/features'),
+                        onTap: () {
+                          setState(() => _sidebarOpen = false);
+                          Navigator.of(context).pushReplacementNamed('/features');
+                        },
+                      ),
+                    ),
+                    Positioned(
+                      left: 0,
+                      top: 178 * (MediaQuery.sizeOf(context).width / 375),
+                      right: 0,
+                      height: 57 * (MediaQuery.sizeOf(context).width / 375),
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() => _sidebarOpen = false);
+                          Navigator.of(context).pushReplacementNamed('/pricing');
+                        },
                       ),
                     ),
                     Positioned(
@@ -439,49 +463,6 @@ class _ContactPageState extends State<ContactPage> {
     rect.top * scale,
     rect.width * scale,
     rect.height * scale,
-  );
-}
-
-class _ContactDesktopNavigation extends StatelessWidget {
-  const _ContactDesktopNavigation({required this.scale});
-
-  final double scale;
-
-  @override
-  Widget build(BuildContext context) => Stack(
-    children: [
-      Positioned(
-        left: 20 * scale,
-        top: 8 * scale,
-        width: 145 * scale,
-        height: 40 * scale,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => Navigator.of(context).pushReplacementNamed('/'),
-        ),
-      ),
-      Positioned(
-        left: 520 * scale,
-        top: 8 * scale,
-        width: 72 * scale,
-        height: 40 * scale,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () =>
-              Navigator.of(context).pushReplacementNamed('/features'),
-        ),
-      ),
-      Positioned(
-        left: 616 * scale,
-        top: 8 * scale,
-        width: 72 * scale,
-        height: 40 * scale,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => Navigator.of(context).pushReplacementNamed('/pricing'),
-        ),
-      ),
-    ],
   );
 }
 
