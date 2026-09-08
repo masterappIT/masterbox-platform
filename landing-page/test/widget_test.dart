@@ -52,7 +52,10 @@ void main() {
 
       await tester.tapAt(const Offset(378, 28));
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('desktop-2x-canvas-top')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('desktop-2x-canvas-top')),
+        findsOneWidget,
+      );
     }
   });
 
@@ -123,7 +126,10 @@ void main() {
       if (testCase.size.width == 1920) {
         await tester.tapAt(const Offset(575, 910));
         await tester.pump();
-        expect(find.byType(CustomPaint), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('contact-topic-checkmark')),
+          findsOneWidget,
+        );
       }
     }
   });

@@ -301,59 +301,55 @@ class _ContactPageState extends State<ContactPage> {
       top: position.top * scale,
       width: position.width * scale,
       height: position.height * scale,
-      child: FormField<String>(
+      child: TextFormField(
+        controller: controller,
+        focusNode: focusNode,
+        keyboardType: label == '聯絡電話'
+            ? TextInputType.phone
+            : isEmail
+            ? TextInputType.emailAddress
+            : TextInputType.text,
+        textAlign: TextAlign.left,
+        maxLines: 1,
+        style: TextStyle(
+          fontFamily: DesignTokens.fontFamily,
+          fontSize: 14 * scale,
+          color: DesignTokens.black,
+        ),
+        decoration: InputDecoration(
+          hintText: label,
+          hintStyle: TextStyle(
+            fontFamily: DesignTokens.fontFamily,
+            fontSize: 14 * scale,
+            color: const Color(0xffb9b9b9),
+          ),
+          filled: true,
+          fillColor: Colors.white,
+          contentPadding: EdgeInsets.symmetric(horizontal: 14 * scale),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(4 * scale),
+            borderSide: const BorderSide(color: Color(0xffb9b9b9)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(4 * scale),
+            borderSide: const BorderSide(color: Color(0xffb9b9b9)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(4 * scale),
+            borderSide: const BorderSide(color: Color(0xff454555), width: 1.5),
+          ),
+          errorStyle: const TextStyle(height: 0, fontSize: 0),
+        ),
         validator: (value) {
-          final text = controller.text.trim();
-          if (requiredField && text.isEmpty) {
-            return '';
-          }
+          final text = value?.trim() ?? '';
+          if (requiredField && text.isEmpty) return '';
           if (isEmail &&
               text.isNotEmpty &&
-              !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(text)) {
+              !RegExp(r'^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$').hasMatch(text)) {
             return '';
           }
           return null;
         },
-        builder: (state) => Stack(
-          children: [
-            Positioned(
-              left: 2 * scale,
-              right: 2 * scale,
-              top: isEmail ? 14 * scale : 2 * scale,
-              bottom: 2 * scale,
-              child: ColoredBox(
-                color: controller.text.isNotEmpty
-                    ? Colors.white
-                    : Colors.transparent,
-              ),
-            ),
-            Positioned.fill(
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: 8 * scale),
-                child: SizedBox.expand(
-                  child: EditableText(
-                    controller: controller,
-                    focusNode: focusNode,
-                    keyboardType: label == 'E-mail'
-                        ? TextInputType.emailAddress
-                        : TextInputType.text,
-                    style: TextStyle(
-                      fontFamily: DesignTokens.fontFamily,
-                      fontSize: 14 * scale,
-                      color: controller.text.isEmpty
-                          ? Colors.transparent
-                          : DesignTokens.black,
-                    ),
-                    cursorColor: DesignTokens.black,
-                    backgroundCursorColor: DesignTokens.black,
-                    maxLines: 1,
-                    onChanged: state.didChange,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -384,7 +380,10 @@ class _ContactPageState extends State<ContactPage> {
                     color: const Color(0xff454555),
                     borderRadius: BorderRadius.circular(3 * scale),
                   ),
-                  child: CustomPaint(painter: _CheckMarkPainter(scale)),
+                  child: CustomPaint(
+                    key: const ValueKey('contact-topic-checkmark'),
+                    painter: _CheckMarkPainter(scale),
+                  ),
                 ),
               )
             : const SizedBox.expand(),
