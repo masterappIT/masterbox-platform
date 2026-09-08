@@ -45,10 +45,9 @@ class _FeatureIntroductionPageState extends State<FeatureIntroductionPage> {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
-      final layoutWidth = constraints.maxWidth;
-      final width = MediaQuery.sizeOf(context).width;
-      final isMobile = layoutWidth <= 640;
-      final canvas = isMobile ? _canvasFor(layoutWidth) : _desktop;
+      final width = constraints.maxWidth;
+      final isMobile = width <= 640;
+      final canvas = isMobile ? _canvasFor(width) : _desktop;
       final scale = isMobile
           ? width / canvas.designWidth
           : (width / canvas.designWidth).clamp(0.0, 1.0);
