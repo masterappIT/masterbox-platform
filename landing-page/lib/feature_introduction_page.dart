@@ -185,7 +185,7 @@ class _FeatureIntroductionPageState extends State<FeatureIntroductionPage> {
                                   child: GestureDetector(
                                     onTap: () =>
                                         Navigator.of(context)
-                                            .pushReplacementNamed('/'),
+                                            .pushReplacementNamed('/contact'),
                                   ),
                                 ),
                               ],

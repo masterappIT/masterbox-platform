@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'design_tokens.dart';
+import 'contact_page.dart';
 import 'feature_introduction_page.dart';
 import 'pricing_page.dart';
 
@@ -19,6 +20,7 @@ class MasterBoxLandingApp extends StatelessWidget {
     initialRoute: switch (Uri.base.path) {
       '/features' => '/features',
       '/pricing' => '/pricing',
+      '/contact' => '/contact',
       _ => '/',
     },
     onGenerateRoute: (settings) {
@@ -31,6 +33,12 @@ class MasterBoxLandingApp extends StatelessWidget {
       if (settings.name == '/pricing') {
         return MaterialPageRoute<void>(
           builder: (_) => const PricingPage(),
+          settings: settings,
+        );
+      }
+      if (settings.name == '/contact') {
+        return MaterialPageRoute<void>(
+          builder: (_) => const ContactPage(),
           settings: settings,
         );
       }
@@ -151,11 +159,7 @@ class _MasterBoxHomePageState extends State<MasterBoxHomePage> {
           },
           onContactTap: () {
             setState(() => _mobileSidebarOpen = false);
-            _scrollTo(
-              mobileConfig.contactOffset *
-                  constraints.maxWidth /
-                  mobileConfig.designWidth,
-            );
+            Navigator.of(context).pushReplacementNamed('/contact');
           },
         );
       }
@@ -180,7 +184,8 @@ class _MasterBoxHomePageState extends State<MasterBoxHomePage> {
                 child: _FigmaDesktopCanvas(
                   onHomeTap: () => _scrollTo(0),
                   onFeaturesTap: () => _scrollTo(2907 * scale),
-                  onContactTap: () => _scrollTo(5749 * scale),
+                  onContactTap: () =>
+                      Navigator.of(context).pushReplacementNamed('/contact'),
                 ),
               ),
             ),

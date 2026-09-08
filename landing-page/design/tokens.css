@@ -1,0 +1,16 @@
+:root {
+  --color-dark: #242424;
+  --color-dark-900: #5A5A5A;
+  --color-primary: #FFAB37;
+  --color-white: #FFFFFF;
+  --color-black: #000000;
+  --font-family: "Noto Sans TC";
+  --font-body-size: 16px;
+  --font-body-line-height: 24px;
+  --font-title-size: 64px;
+  --font-title-line-height: 1.4;
+  --font-section-size: 36px;
+  --font-section-line-height: 1.4;
+  --radius-button: 4px;
+  --radius-card: 20px;
+}

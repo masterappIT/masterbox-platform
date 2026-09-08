@@ -35,6 +35,79 @@ void main() {
     expect(find.byKey(const ValueKey('desktop-2x-canvas-top')), findsNothing);
   });
 
+  testWidgets('renders the contact route at desktop and mobile breakpoints', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    for (final testCase in [
+      (size: const Size(1920, 1080), id: '1920', height: 1518.0),
+      (size: const Size(640, 900), id: '640', height: 1392.0),
+      (size: const Size(480, 900), id: '480', height: 1352.0),
+      (size: const Size(375, 900), id: '375', height: 1256.0),
+    ]) {
+      tester.view.physicalSize = testCase.size;
+      await tester.pumpWidget(const MasterBoxLandingApp());
+      final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+      navigator.pushNamed('/contact');
+      await tester.pumpAndSettle();
+
+      final canvas = find.byKey(ValueKey('contact-${testCase.id}-canvas'));
+      expect(canvas, findsOneWidget);
+      expect(tester.getSize(canvas).height, closeTo(testCase.height, 0.01));
+      expect(find.byKey(const ValueKey('contact-submit')), findsOneWidget);
+    }
+  });
+
+  testWidgets('validates the contact form', (tester) async {
+    tester.view
+      ..physicalSize = const Size(375, 900)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(const MasterBoxLandingApp());
+    final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+    navigator.pushNamed('/contact');
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('contact-submit')));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('請先填寫必要資料'), findsOneWidget);
+
+  });
+
+  testWidgets('accepts contact input and topic selection', (tester) async {
+    for (final testCase in [
+      (size: const Size(1920, 1080), inputPoint: const Offset(580, 645)),
+      (size: const Size(375, 900), inputPoint: const Offset(20, 390)),
+    ]) {
+      tester.view
+        ..physicalSize = testCase.size
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(const MasterBoxLandingApp());
+      final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+      navigator.pushNamed('/contact');
+      await tester.pumpAndSettle();
+
+      await tester.tapAt(testCase.inputPoint);
+      await tester.enterText(find.byType(EditableText).first, 'Alice');
+      expect(find.text('Alice'), findsOneWidget);
+
+      if (testCase.size.width == 1920) {
+        await tester.tapAt(const Offset(575, 910));
+        await tester.pump();
+        expect(find.byType(CustomPaint), findsOneWidget);
+      }
+    }
+  });
+
   testWidgets('renders the pricing route at every Figma breakpoint', (
     tester,
   ) async {

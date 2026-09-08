@@ -376,6 +376,16 @@ class _PricingPageState extends State<PricingPage> {
                                         setState(() => _sidebarOpen = false),
                                   ),
                                 ),
+                                Positioned(
+                                  left: 0,
+                                  top: 235 * (width / 375),
+                                  right: 0,
+                                  height: 57 * (width / 375),
+                                  child: GestureDetector(
+                                    onTap: () => Navigator.of(context)
+                                        .pushReplacementNamed('/contact'),
+                                  ),
+                                ),
                               ],
                             ),
                           ),
