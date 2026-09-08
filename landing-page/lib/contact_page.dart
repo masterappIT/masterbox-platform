@@ -216,6 +216,7 @@ class _ContactPageState extends State<ContactPage> {
                 width: 1204 * scale,
                 height: 120 * scale,
                 child: DesktopNavigationHitTargets(
+                  scale: scale,
                   onHomeTap: () =>
                       Navigator.of(context).pushReplacementNamed('/'),
                   onFeaturesTap: () =>
@@ -225,30 +226,15 @@ class _ContactPageState extends State<ContactPage> {
                   onContactTap: () {},
                 ),
               ),
-            if (isMobile) ...[
-              Positioned(
-                top: 0,
-                left: 0,
-                width: 180 * scale,
-                height: 56 * scale,
-                child: GestureDetector(
-                  key: const ValueKey('contact-mobile-logo-target'),
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => Navigator.of(context).pushReplacementNamed('/'),
-                ),
+            if (isMobile)
+              MobileHeaderHitTargets(
+                scale: scale,
+                homeKey: const ValueKey('contact-mobile-logo-target'),
+                menuKey: const ValueKey('contact-mobile-menu-target'),
+                onHomeTap: () =>
+                    Navigator.of(context).pushReplacementNamed('/'),
+                onMenuTap: () => setState(() => _sidebarOpen = true),
               ),
-              Positioned(
-                top: 0,
-                right: 0,
-                width: 56 * scale,
-                height: 56 * scale,
-                child: GestureDetector(
-                  key: const ValueKey('contact-mobile-menu-target'),
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => setState(() => _sidebarOpen = true),
-                ),
-              ),
-            ],
             if (_sidebarOpen && isMobile) _sidebar(context),
           ],
         ),

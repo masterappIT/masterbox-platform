@@ -105,6 +105,7 @@ class _FeatureIntroductionPageState extends State<FeatureIntroductionPage> {
                 width: 1204 * scale,
                 height: 120 * scale,
                 child: DesktopNavigationHitTargets(
+                  scale: scale,
                   onHomeTap: () =>
                       Navigator.of(context).pushReplacementNamed('/'),
                   onFeaturesTap: () {},
@@ -114,30 +115,15 @@ class _FeatureIntroductionPageState extends State<FeatureIntroductionPage> {
                       Navigator.of(context).pushReplacementNamed('/contact'),
                 ),
               ),
-            if (isMobile) ...[
-              Positioned(
-                top: 0,
-                left: 0,
-                width: 180 * scale,
-                height: 56 * scale,
-                child: GestureDetector(
-                  key: const ValueKey('features-mobile-logo-target'),
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => Navigator.of(context).pushReplacementNamed('/'),
-                ),
+            if (isMobile)
+              MobileHeaderHitTargets(
+                scale: scale,
+                homeKey: const ValueKey('features-mobile-logo-target'),
+                menuKey: const ValueKey('features-mobile-menu-target'),
+                onHomeTap: () =>
+                    Navigator.of(context).pushReplacementNamed('/'),
+                onMenuTap: () => setState(() => _sidebarOpen = true),
               ),
-              Positioned(
-                top: 0,
-                right: 0,
-                width: 56 * scale,
-                height: 56 * scale,
-                child: GestureDetector(
-                  key: const ValueKey('features-mobile-menu-target'),
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => setState(() => _sidebarOpen = true),
-                ),
-              ),
-            ],
             if (_sidebarOpen && isMobile)
               Positioned.fill(
                 child: GestureDetector(

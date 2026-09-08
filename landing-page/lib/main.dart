@@ -274,27 +274,12 @@ class _MobileLandingPage extends StatelessWidget {
               ),
             ),
           ),
-          Positioned(
-            top: 0,
-            left: 0,
-            width: 180 * scale,
-            height: 56 * scale,
-            child: GestureDetector(
-              key: const ValueKey('mobile-logo-target'),
-              behavior: HitTestBehavior.opaque,
-              onTap: onHomeTap,
-            ),
-          ),
-          Positioned(
-            top: 0,
-            right: 0,
-            width: 56 * scale,
-            height: 56 * scale,
-            child: GestureDetector(
-              key: const ValueKey('mobile-menu-target'),
-              behavior: HitTestBehavior.opaque,
-              onTap: onMenuTap,
-            ),
+          MobileHeaderHitTargets(
+            scale: scale,
+            homeKey: const ValueKey('mobile-logo-target'),
+            menuKey: const ValueKey('mobile-menu-target'),
+            onHomeTap: onHomeTap,
+            onMenuTap: onMenuTap,
           ),
           if (sidebarOpen)
             Positioned.fill(
@@ -470,6 +455,7 @@ class _FigmaDesktopCanvas extends StatelessWidget {
         width: 1204,
         height: 120,
         child: DesktopNavigationHitTargets(
+          scale: 1,
           onHomeTap: onHomeTap,
           onFeaturesTap: onFeaturesTap,
           onPricingTap: onPricingTap,
