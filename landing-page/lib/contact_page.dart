@@ -244,7 +244,25 @@ class _ContactPageState extends State<ContactPage> {
                   onMenuTap: () => setState(() => _sidebarOpen = true),
                 ),
               ),
-            if (_sidebarOpen && isMobile) _sidebar(context),
+            if (_sidebarOpen && isMobile)
+              MobileSidebar(
+                scale: width / 375,
+                sidebarKey: const ValueKey('contact-mobile-sidebar'),
+                onCloseTap: () => setState(() => _sidebarOpen = false),
+                onHomeTap: () {
+                  setState(() => _sidebarOpen = false);
+                  Navigator.of(context).pushReplacementNamed('/');
+                },
+                onFeaturesTap: () {
+                  setState(() => _sidebarOpen = false);
+                  Navigator.of(context).pushReplacementNamed('/features');
+                },
+                onPricingTap: () {
+                  setState(() => _sidebarOpen = false);
+                  Navigator.of(context).pushReplacementNamed('/pricing');
+                },
+                onContactTap: () => setState(() => _sidebarOpen = false),
+              ),
           ],
         ),
       );
@@ -373,87 +391,6 @@ class _ContactPageState extends State<ContactPage> {
       ),
     );
   }
-
-  Widget _sidebar(BuildContext context) => Positioned.fill(
-    child: GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => setState(() => _sidebarOpen = false),
-      child: ColoredBox(
-        color: Colors.black.withValues(alpha: 0.18),
-        child: Align(
-          alignment: Alignment.topLeft,
-          child: SizedBox(
-            width: 328 * (MediaQuery.sizeOf(context).width / 375),
-            height: double.infinity,
-            child: SingleChildScrollView(
-              child: SizedBox(
-                key: const ValueKey('contact-mobile-sidebar'),
-                width: 328 * (MediaQuery.sizeOf(context).width / 375),
-                height: 854 * (MediaQuery.sizeOf(context).width / 375),
-                child: Stack(
-                  children: [
-                    Image.asset(
-                      'assets/mobile-sidebar-figma-4x.png',
-                      width: 328 * (MediaQuery.sizeOf(context).width / 375),
-                      height: 854 * (MediaQuery.sizeOf(context).width / 375),
-                      fit: BoxFit.fill,
-                    ),
-                    Positioned(
-                      left: 0,
-                      top: 64 * (MediaQuery.sizeOf(context).width / 375),
-                      right: 0,
-                      height: 57 * (MediaQuery.sizeOf(context).width / 375),
-                      child: GestureDetector(
-                        onTap: () {
-                          setState(() => _sidebarOpen = false);
-                          Navigator.of(context).pushReplacementNamed('/');
-                        },
-                      ),
-                    ),
-                    Positioned(
-                      left: 0,
-                      top: 121 * (MediaQuery.sizeOf(context).width / 375),
-                      right: 0,
-                      height: 57 * (MediaQuery.sizeOf(context).width / 375),
-                      child: GestureDetector(
-                        onTap: () {
-                          setState(() => _sidebarOpen = false);
-                          Navigator.of(context)
-                              .pushReplacementNamed('/features');
-                        },
-                      ),
-                    ),
-                    Positioned(
-                      left: 0,
-                      top: 178 * (MediaQuery.sizeOf(context).width / 375),
-                      right: 0,
-                      height: 57 * (MediaQuery.sizeOf(context).width / 375),
-                      child: GestureDetector(
-                        onTap: () {
-                          setState(() => _sidebarOpen = false);
-                          Navigator.of(context)
-                              .pushReplacementNamed('/pricing');
-                        },
-                      ),
-                    ),
-                    Positioned(
-                      left: 0,
-                      top: 235 * (MediaQuery.sizeOf(context).width / 375),
-                      right: 0,
-                      height: 57 * (MediaQuery.sizeOf(context).width / 375),
-                      child: GestureDetector(
-                        onTap: () => setState(() => _sidebarOpen = false),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
 
   Rect _scaleRect(Rect rect, double scale) => Rect.fromLTWH(
     rect.left * scale,
