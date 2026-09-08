@@ -101,11 +101,12 @@ class _FeatureIntroductionPageState extends State<FeatureIntroductionPage> {
             if (!isMobile)
               Positioned(
                 top: 0,
-                left: 358 * scale,
-                width: 1204 * scale,
-                height: 120 * scale,
-                child: DesktopNavigationHitTargets(
+                left: 0,
+                right: 0,
+                child: DesktopTopBar(
                   scale: scale,
+                  assetPath: 'assets/features-page-1920-2x-0.png',
+                  sourceHeight: 2000,
                   onHomeTap: () =>
                       Navigator.of(context).pushReplacementNamed('/'),
                   onFeaturesTap: () {},
@@ -116,104 +117,43 @@ class _FeatureIntroductionPageState extends State<FeatureIntroductionPage> {
                 ),
               ),
             if (isMobile)
-              MobileHeaderHitTargets(
-                scale: scale,
-                homeKey: const ValueKey('features-mobile-logo-target'),
-                menuKey: const ValueKey('features-mobile-menu-target'),
-                onHomeTap: () =>
-                    Navigator.of(context).pushReplacementNamed('/'),
-                onMenuTap: () => setState(() => _sidebarOpen = true),
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: MobileTopBar(
+                  scale: scale,
+                  assetPath: 'assets/features-page-${canvas.id}-4x-0.png',
+                  sourceWidth: canvas.designWidth,
+                  sourceHeight: canvas.segmentHeights.first,
+                  homeKey: const ValueKey('features-mobile-logo-target'),
+                  menuKey: const ValueKey('features-mobile-menu-target'),
+                  onHomeTap: () =>
+                      Navigator.of(context).pushReplacementNamed('/'),
+                  onMenuTap: () => setState(() => _sidebarOpen = true),
+                ),
               ),
             if (_sidebarOpen && isMobile)
-              Positioned.fill(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => setState(() => _sidebarOpen = false),
-                  child: ColoredBox(
-                    color: Colors.black.withValues(alpha: 0.18),
-                    child: Align(
-                      alignment: Alignment.topLeft,
-                      child: SizedBox(
-                        width: 328 * (width / 375),
-                        height: double.infinity,
-                        child: SingleChildScrollView(
-                          child: SizedBox(
-                            key: const ValueKey('features-mobile-sidebar'),
-                            width: 328 * (width / 375),
-                            height: 854 * (width / 375),
-                            child: Stack(
-                              children: [
-                                Image.asset(
-                                  'assets/mobile-sidebar-figma-4x.png',
-                                  width: 328 * (width / 375),
-                                  height: 854 * (width / 375),
-                                  fit: BoxFit.fill,
-                                  filterQuality: FilterQuality.high,
-                                ),
-                                Positioned(
-                                  left: 16 * (width / 375),
-                                  top: 16 * (width / 375),
-                                  width: 24 * (width / 375),
-                                  height: 24 * (width / 375),
-                                  child: GestureDetector(
-                                    onTap: () =>
-                                        setState(() => _sidebarOpen = false),
-                                  ),
-                                ),
-                                Positioned(
-                                  left: 0,
-                                  top: 64 * (width / 375),
-                                  right: 0,
-                                  height: 57 * (width / 375),
-                                  child: GestureDetector(
-                                    onTap: () {
-                                      setState(() => _sidebarOpen = false);
-                                      Navigator.of(context).pushReplacementNamed('/');
-                                    },
-                                  ),
-                                ),
-                                Positioned(
-                                  left: 0,
-                                  top: 121 * (width / 375),
-                                  right: 0,
-                                  height: 57 * (width / 375),
-                                  child: GestureDetector(
-                                    onTap: () =>
-                                        setState(() => _sidebarOpen = false),
-                                  ),
-                                ),
-                                Positioned(
-                                  left: 0,
-                                  top: 178 * (width / 375),
-                                  right: 0,
-                                  height: 57 * (width / 375),
-                                  child: GestureDetector(
-                                    onTap: () {
-                                      setState(() => _sidebarOpen = false);
-                                      Navigator.of(context).pushReplacementNamed('/pricing');
-                                    },
-                                  ),
-                                ),
-                                Positioned(
-                                  left: 0,
-                                  top: 235 * (width / 375),
-                                  right: 0,
-                                  height: 57 * (width / 375),
-                                  child: GestureDetector(
-                                    onTap: () {
-                                      setState(() => _sidebarOpen = false);
-                                      Navigator.of(context).pushReplacementNamed('/contact');
-                                    },
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+              MobileSidebar(
+                scale: width / 375,
+                sidebarKey: const ValueKey('features-mobile-sidebar'),
+                onCloseTap: () => setState(() => _sidebarOpen = false),
+                onHomeTap: () {
+                  setState(() => _sidebarOpen = false);
+                  Navigator.of(context).pushReplacementNamed('/');
+                },
+                onFeaturesTap: () {
+                  setState(() => _sidebarOpen = false);
+                  Navigator.of(context).pushReplacementNamed('/features');
+                },
+                onPricingTap: () {
+                  setState(() => _sidebarOpen = false);
+                  Navigator.of(context).pushReplacementNamed('/pricing');
+                },
+                onContactTap: () {
+                  setState(() => _sidebarOpen = false);
+                  Navigator.of(context).pushReplacementNamed('/contact');
+                },
               ),
           ],
         ),

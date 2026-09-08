@@ -177,31 +177,44 @@ class _MasterBoxHomePageState extends State<MasterBoxHomePage> {
         1.0,
       );
       return Scaffold(
-        body: SingleChildScrollView(
-          controller: _scrollController,
-          child: SizedBox(
-            key: const ValueKey('desktop-scaled-canvas'),
-            width: DesignTokens.canvasWidth * scale,
-            height: DesignTokens.canvasHeight * scale,
-            child: FittedBox(
-              alignment: Alignment.topLeft,
-              fit: BoxFit.fill,
+        body: Stack(
+          children: [
+            SingleChildScrollView(
+              controller: _scrollController,
               child: SizedBox(
-                key: const ValueKey('desktop-source-canvas'),
-                width: DesignTokens.canvasWidth,
-                height: DesignTokens.canvasHeight,
-                child: _FigmaDesktopCanvas(
-                  onHomeTap: () => _scrollTo(0),
-                  onFeaturesTap: () =>
-                      Navigator.of(context).pushReplacementNamed('/features'),
-                  onPricingTap: () =>
-                      Navigator.of(context).pushReplacementNamed('/pricing'),
-                  onContactTap: () =>
-                      Navigator.of(context).pushReplacementNamed('/contact'),
+                key: const ValueKey('desktop-scaled-canvas'),
+                width: DesignTokens.canvasWidth * scale,
+                height: DesignTokens.canvasHeight * scale,
+                child: FittedBox(
+                  alignment: Alignment.topLeft,
+                  fit: BoxFit.fill,
+                  child: SizedBox(
+                    key: const ValueKey('desktop-source-canvas'),
+                    width: DesignTokens.canvasWidth,
+                    height: DesignTokens.canvasHeight,
+                    child: const _FigmaDesktopCanvas(),
+                  ),
                 ),
               ),
             ),
-          ),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: DesktopTopBar(
+                scale: scale,
+                assetPath: 'assets/desktop-page-figma-2x-top.png',
+                sourceHeight: 4000,
+                onHomeTap: () => _scrollTo(0),
+                onFeaturesTap: () =>
+                    Navigator.of(context).pushReplacementNamed('/features'),
+                onPricingTap: () =>
+                    Navigator.of(context).pushReplacementNamed('/pricing'),
+                onContactTap: () =>
+                    Navigator.of(context).pushReplacementNamed('/contact'),
+              ),
+            ),
+          ],
         ),
       );
     },
@@ -274,55 +287,30 @@ class _MobileLandingPage extends StatelessWidget {
               ),
             ),
           ),
-          MobileHeaderHitTargets(
-            scale: scale,
-            homeKey: const ValueKey('mobile-logo-target'),
-            menuKey: const ValueKey('mobile-menu-target'),
-            onHomeTap: onHomeTap,
-            onMenuTap: onMenuTap,
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: MobileTopBar(
+              scale: scale,
+              assetPath: config.segmentAssets.first,
+              sourceWidth: config.designWidth,
+              sourceHeight: config.segmentHeights.first,
+              homeKey: const ValueKey('mobile-logo-target'),
+              menuKey: const ValueKey('mobile-menu-target'),
+              onHomeTap: onHomeTap,
+              onMenuTap: onMenuTap,
+            ),
           ),
           if (sidebarOpen)
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: onCloseTap,
-                child: ColoredBox(
-                  color: Colors.black.withValues(alpha: 0.18),
-                  child: Align(
-                    alignment: Alignment.topLeft,
-                    child: SizedBox(
-                      width: 328 * sidebarScale,
-                      height: double.infinity,
-                      child: SingleChildScrollView(
-                        child: SizedBox(
-                          key: const ValueKey('mobile-sidebar'),
-                          width: 328 * sidebarScale,
-                          height: 854 * sidebarScale,
-                          child: Stack(
-                            children: [
-                              Image.asset(
-                                'assets/mobile-sidebar-figma-4x.png',
-                                width: 328 * sidebarScale,
-                                height: 854 * sidebarScale,
-                                fit: BoxFit.fill,
-                                filterQuality: FilterQuality.high,
-                              ),
-                              _MobileSidebarHitTargets(
-                                scale: sidebarScale,
-                                onCloseTap: onCloseTap,
-                                onHomeTap: onHomeTap,
-                                onFeaturesTap: onFeaturesTap,
-                                onPricingTap: onPricingTap,
-                                onContactTap: onContactTap,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+            MobileSidebar(
+              scale: sidebarScale,
+              sidebarKey: const ValueKey('mobile-sidebar'),
+              onCloseTap: onCloseTap,
+              onHomeTap: onHomeTap,
+              onFeaturesTap: onFeaturesTap,
+              onPricingTap: onPricingTap,
+              onContactTap: onContactTap,
             ),
         ],
       ),
@@ -330,93 +318,8 @@ class _MobileLandingPage extends StatelessWidget {
   }
 }
 
-class _MobileSidebarHitTargets extends StatelessWidget {
-  const _MobileSidebarHitTargets({
-    required this.scale,
-    required this.onCloseTap,
-    required this.onHomeTap,
-    required this.onFeaturesTap,
-    required this.onPricingTap,
-    required this.onContactTap,
-  });
-
-  final double scale;
-  final VoidCallback onCloseTap;
-  final VoidCallback onHomeTap;
-  final VoidCallback onFeaturesTap;
-  final VoidCallback onPricingTap;
-  final VoidCallback onContactTap;
-
-  @override
-  Widget build(BuildContext context) => Stack(
-    children: [
-      Positioned(
-        left: 16 * scale,
-        top: 16 * scale,
-        width: 24 * scale,
-        height: 24 * scale,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onCloseTap,
-        ),
-      ),
-      Positioned(
-        left: 0,
-        top: 64 * scale,
-        right: 0,
-        height: 57 * scale,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onHomeTap,
-        ),
-      ),
-      Positioned(
-        left: 0,
-        top: 121 * scale,
-        right: 0,
-        height: 57 * scale,
-        child: GestureDetector(
-          key: const ValueKey('mobile-sidebar-features-target'),
-          behavior: HitTestBehavior.opaque,
-          onTap: onFeaturesTap,
-        ),
-      ),
-      Positioned(
-        left: 0,
-        top: 178 * scale,
-        right: 0,
-        height: 57 * scale,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onPricingTap,
-        ),
-      ),
-      Positioned(
-        left: 0,
-        top: 235 * scale,
-        right: 0,
-        height: 57 * scale,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onContactTap,
-        ),
-      ),
-    ],
-  );
-}
-
 class _FigmaDesktopCanvas extends StatelessWidget {
-  const _FigmaDesktopCanvas({
-    required this.onHomeTap,
-    required this.onFeaturesTap,
-    required this.onPricingTap,
-    required this.onContactTap,
-  });
-
-  final VoidCallback onHomeTap;
-  final VoidCallback onFeaturesTap;
-  final VoidCallback onPricingTap;
-  final VoidCallback onContactTap;
+  const _FigmaDesktopCanvas();
 
   @override
   Widget build(BuildContext context) => Stack(
@@ -447,19 +350,6 @@ class _FigmaDesktopCanvas extends StatelessWidget {
           height: 3909,
           fit: BoxFit.fill,
           filterQuality: FilterQuality.high,
-        ),
-      ),
-      Positioned(
-        top: 0,
-        left: 358,
-        width: 1204,
-        height: 120,
-        child: DesktopNavigationHitTargets(
-          scale: 1,
-          onHomeTap: onHomeTap,
-          onFeaturesTap: onFeaturesTap,
-          onPricingTap: onPricingTap,
-          onContactTap: onContactTap,
         ),
       ),
     ],

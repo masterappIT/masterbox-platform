@@ -212,11 +212,12 @@ class _ContactPageState extends State<ContactPage> {
             if (!isMobile)
               Positioned(
                 top: 0,
-                left: 358 * scale,
-                width: 1204 * scale,
-                height: 120 * scale,
-                child: DesktopNavigationHitTargets(
+                left: 0,
+                right: 0,
+                child: DesktopTopBar(
                   scale: scale,
+                  assetPath: 'assets/contact-page-1920.png',
+                  sourceHeight: 1518,
                   onHomeTap: () =>
                       Navigator.of(context).pushReplacementNamed('/'),
                   onFeaturesTap: () =>
@@ -227,13 +228,21 @@ class _ContactPageState extends State<ContactPage> {
                 ),
               ),
             if (isMobile)
-              MobileHeaderHitTargets(
-                scale: scale,
-                homeKey: const ValueKey('contact-mobile-logo-target'),
-                menuKey: const ValueKey('contact-mobile-menu-target'),
-                onHomeTap: () =>
-                    Navigator.of(context).pushReplacementNamed('/'),
-                onMenuTap: () => setState(() => _sidebarOpen = true),
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: MobileTopBar(
+                  scale: scale,
+                  assetPath: 'assets/contact-page-${canvas.id}.png',
+                  sourceWidth: canvas.designWidth,
+                  sourceHeight: canvas.designHeight,
+                  homeKey: const ValueKey('contact-mobile-logo-target'),
+                  menuKey: const ValueKey('contact-mobile-menu-target'),
+                  onHomeTap: () =>
+                      Navigator.of(context).pushReplacementNamed('/'),
+                  onMenuTap: () => setState(() => _sidebarOpen = true),
+                ),
               ),
             if (_sidebarOpen && isMobile) _sidebar(context),
           ],
@@ -409,7 +418,8 @@ class _ContactPageState extends State<ContactPage> {
                       child: GestureDetector(
                         onTap: () {
                           setState(() => _sidebarOpen = false);
-                          Navigator.of(context).pushReplacementNamed('/features');
+                          Navigator.of(context)
+                              .pushReplacementNamed('/features');
                         },
                       ),
                     ),
@@ -421,7 +431,8 @@ class _ContactPageState extends State<ContactPage> {
                       child: GestureDetector(
                         onTap: () {
                           setState(() => _sidebarOpen = false);
-                          Navigator.of(context).pushReplacementNamed('/pricing');
+                          Navigator.of(context)
+                              .pushReplacementNamed('/pricing');
                         },
                       ),
                     ),
