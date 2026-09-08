@@ -294,7 +294,7 @@ class _PricingPageState extends State<PricingPage> {
                 right: 0,
                 child: DesktopTopBar(
                   scale: scale,
-                  assetPath: 'assets/pricing-page-1920-2x-0.png',
+                  assetPath: 'assets/topbars/desktop-pricing.png',
                   sourceHeight: 2000,
                   onHomeTap: () =>
                       Navigator.of(context).pushReplacementNamed('/'),
@@ -312,7 +312,7 @@ class _PricingPageState extends State<PricingPage> {
                 right: 0,
                 child: MobileTopBar(
                   scale: scale,
-                  assetPath: 'assets/pricing-page-${canvas.id}-4x-0.png',
+                  assetPath: 'assets/topbars/mobile-pricing-${canvas.id}.png',
                   sourceWidth: canvas.designWidth,
                   sourceHeight: canvas.segmentHeights.first,
                   homeKey: const ValueKey('pricing-mobile-logo-target'),

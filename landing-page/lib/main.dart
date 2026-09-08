@@ -203,7 +203,7 @@ class _MasterBoxHomePageState extends State<MasterBoxHomePage> {
               right: 0,
               child: DesktopTopBar(
                 scale: scale,
-                assetPath: 'assets/desktop-page-figma-2x-top.png',
+                assetPath: 'assets/topbars/desktop-home.png',
                 sourceHeight: 4000,
                 onHomeTap: () => _scrollTo(0),
                 onFeaturesTap: () =>
@@ -293,7 +293,7 @@ class _MobileLandingPage extends StatelessWidget {
             right: 0,
             child: MobileTopBar(
               scale: scale,
-              assetPath: config.segmentAssets.first,
+              assetPath: 'assets/topbars/mobile-home-${config.id}.png',
               sourceWidth: config.designWidth,
               sourceHeight: config.segmentHeights.first,
               homeKey: const ValueKey('mobile-logo-target'),

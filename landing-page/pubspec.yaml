@@ -54,6 +54,7 @@ flutter:
   uses-material-design: false
   assets:
     - assets/
+    - assets/topbars/
   fonts:
     - family: Noto Sans TC
       fonts:

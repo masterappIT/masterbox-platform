@@ -105,7 +105,7 @@ class _FeatureIntroductionPageState extends State<FeatureIntroductionPage> {
                 right: 0,
                 child: DesktopTopBar(
                   scale: scale,
-                  assetPath: 'assets/features-page-1920-2x-0.png',
+                  assetPath: 'assets/topbars/desktop-features.png',
                   sourceHeight: 2000,
                   onHomeTap: () =>
                       Navigator.of(context).pushReplacementNamed('/'),
@@ -123,7 +123,7 @@ class _FeatureIntroductionPageState extends State<FeatureIntroductionPage> {
                 right: 0,
                 child: MobileTopBar(
                   scale: scale,
-                  assetPath: 'assets/features-page-${canvas.id}-4x-0.png',
+                  assetPath: 'assets/topbars/mobile-features-${canvas.id}.png',
                   sourceWidth: canvas.designWidth,
                   sourceHeight: canvas.segmentHeights.first,
                   homeKey: const ValueKey('features-mobile-logo-target'),

@@ -216,7 +216,7 @@ class _ContactPageState extends State<ContactPage> {
                 right: 0,
                 child: DesktopTopBar(
                   scale: scale,
-                  assetPath: 'assets/contact-page-1920.png',
+                  assetPath: 'assets/topbars/desktop-contact.png',
                   sourceHeight: 1518,
                   onHomeTap: () =>
                       Navigator.of(context).pushReplacementNamed('/'),
@@ -234,7 +234,7 @@ class _ContactPageState extends State<ContactPage> {
                 right: 0,
                 child: MobileTopBar(
                   scale: scale,
-                  assetPath: 'assets/contact-page-${canvas.id}.png',
+                  assetPath: 'assets/topbars/mobile-contact-${canvas.id}.png',
                   sourceWidth: canvas.designWidth,
                   sourceHeight: canvas.designHeight,
                   homeKey: const ValueKey('contact-mobile-logo-target'),
