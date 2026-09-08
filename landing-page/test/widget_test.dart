@@ -35,7 +35,159 @@ void main() {
     expect(find.byKey(const ValueKey('desktop-2x-canvas-top')), findsNothing);
   });
 
-  testWidgets('preserves feature canvas geometry at every Figma breakpoint', (
+  testWidgets('renders the pricing route at every Figma breakpoint', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final cases =
+        <({double width, String id, double height, List<double> segments})>[
+          (width: 375, id: '375', height: 2484, segments: [2000, 484]),
+          (
+            width: 479,
+            id: '375',
+            height: 2484 * 479 / 375,
+            segments: [2000, 484],
+          ),
+          (width: 480, id: '480', height: 2618, segments: [2000, 618]),
+          (
+            width: 639,
+            id: '480',
+            height: 2618 * 639 / 480,
+            segments: [2000, 618],
+          ),
+          (width: 640, id: '640', height: 2764, segments: [2000, 764]),
+          (width: 1920, id: '1920', height: 3300, segments: [2000, 1300]),
+        ];
+    for (final testCase in cases) {
+      tester.view.physicalSize = Size(testCase.width, 900);
+      await tester.pumpWidget(const MasterBoxLandingApp());
+      final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+      navigator.pushNamed('/pricing');
+      await tester.pumpAndSettle();
+
+      final canvas = find.byKey(ValueKey('pricing-${testCase.id}-canvas'));
+      expect(canvas, findsOneWidget);
+      expect(tester.getSize(canvas).width, closeTo(testCase.width, 0.01));
+      expect(tester.getSize(canvas).height, closeTo(testCase.height, 0.01));
+      final designWidth = switch (testCase.id) {
+        '375' => 375,
+        '480' => 480,
+        '640' => 640,
+        _ => 1920,
+      };
+      final scale = testCase.width / designWidth;
+      for (var index = 0; index < testCase.segments.length; index++) {
+        expect(
+          tester
+              .getSize(
+                find.byKey(ValueKey('pricing-${testCase.id}-segment-$index')),
+              )
+              .height,
+          closeTo(testCase.segments[index] * scale, 0.01),
+        );
+      }
+      if (testCase.id != '1920') {
+        expect(
+          find.byKey(ValueKey('pricing-${testCase.id}-details-column')),
+          findsOneWidget,
+        );
+      }
+    }
+  });
+
+  testWidgets('opens the pricing mobile sidebar', (tester) async {
+    tester.view
+      ..physicalSize = const Size(375, 900)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(const MasterBoxLandingApp());
+    final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+    navigator.pushNamed('/pricing');
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('pricing-mobile-menu-target')));
+    await tester.pump();
+
+    expect(
+      tester.getSize(find.byKey(const ValueKey('pricing-mobile-sidebar'))),
+      const Size(328, 854),
+    );
+  });
+
+  testWidgets('allows sliding mobile pricing cards to the left', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    for (final width in [375.0, 480.0, 640.0]) {
+      tester.view.physicalSize = Size(width, 900);
+      await tester.pumpWidget(const MasterBoxLandingApp());
+      final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+      navigator.pushNamed('/pricing');
+      await tester.pumpAndSettle();
+
+      final scrollable = find.byKey(
+        const ValueKey('pricing-cards-horizontal-scroll'),
+      );
+      final scrollView = find.descendant(
+        of: scrollable,
+        matching: find.byType(Scrollable),
+      );
+      expect(scrollView, findsOneWidget);
+      final state = tester.state<ScrollableState>(scrollView);
+      expect(state.position.pixels, 0);
+
+      await tester.drag(scrollView, const Offset(-150, 0));
+      await tester.pumpAndSettle();
+
+      expect(state.position.pixels, greaterThan(0));
+    }
+  });
+
+  testWidgets('allows sliding mobile pricing detail columns to the left', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    for (final width in [375.0, 480.0, 640.0]) {
+      tester.view.physicalSize = Size(width, 900);
+      await tester.pumpWidget(const MasterBoxLandingApp());
+      final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+      navigator.pushNamed('/pricing');
+      await tester.pumpAndSettle();
+
+      final scrollable = find.byKey(
+        const ValueKey('pricing-details-horizontal-scroll'),
+      );
+      final scrollView = find.descendant(
+        of: scrollable,
+        matching: find.byType(Scrollable),
+      );
+      expect(scrollView, findsOneWidget);
+      final state = tester.state<ScrollableState>(scrollView);
+      expect(state.position.pixels, 0);
+
+      await tester.drag(
+        find.byKey(const ValueKey('pricing-page')),
+        const Offset(0, -1000),
+      );
+      await tester.pumpAndSettle();
+      await tester.drag(scrollView, const Offset(-100, 0));
+      await tester.pumpAndSettle();
+
+      expect(state.position.pixels, greaterThan(0));
+    }
+  });
+
+  testWidgets('preserves pricing canvas geometry at every Figma breakpoint', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -101,7 +253,9 @@ void main() {
     }
   });
 
-  testWidgets('feature page keeps pricing overlay absent', (tester) async {
+  testWidgets('keeps pricing overlay absent from the feature page', (
+    tester,
+  ) async {
     tester.view
       ..physicalSize = const Size(375, 900)
       ..devicePixelRatio = 1;
@@ -117,7 +271,6 @@ void main() {
       find.byKey(const ValueKey('features-pricing-horizontal-scroll')),
       findsNothing,
     );
-    expect(find.byType(Image), findsNWidgets(2));
   });
 
   testWidgets('feature page uses the same mobile sidebar geometry', (

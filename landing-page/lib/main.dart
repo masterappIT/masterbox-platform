@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'design_tokens.dart';
 import 'feature_introduction_page.dart';
+import 'pricing_page.dart';
 
 void main() => runApp(const MasterBoxLandingApp());
 
@@ -15,11 +16,21 @@ class MasterBoxLandingApp extends StatelessWidget {
       fontFamily: DesignTokens.fontFamily,
       scaffoldBackgroundColor: DesignTokens.white,
     ),
-    initialRoute: Uri.base.path == '/features' ? '/features' : '/',
+    initialRoute: switch (Uri.base.path) {
+      '/features' => '/features',
+      '/pricing' => '/pricing',
+      _ => '/',
+    },
     onGenerateRoute: (settings) {
       if (settings.name == '/features') {
         return MaterialPageRoute<void>(
           builder: (_) => const FeatureIntroductionPage(),
+          settings: settings,
+        );
+      }
+      if (settings.name == '/pricing') {
+        return MaterialPageRoute<void>(
+          builder: (_) => const PricingPage(),
           settings: settings,
         );
       }
