@@ -214,17 +214,29 @@ class _ContactPageState extends State<ContactPage> {
                 top: 0,
                 left: 0,
                 right: 0,
-                child: DesktopTopBar(
-                  scale: scale,
-                  assetPath: 'assets/topbars/desktop-contact.png',
-                  sourceHeight: 1518,
-                  onHomeTap: () =>
-                      Navigator.of(context).pushReplacementNamed('/'),
-                  onFeaturesTap: () =>
-                      Navigator.of(context).pushReplacementNamed('/features'),
-                  onPricingTap: () =>
-                      Navigator.of(context).pushReplacementNamed('/pricing'),
-                  onContactTap: () {},
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    DesktopTopBar(
+                      scale: scale,
+                      assetPath: 'assets/topbars/desktop-contact.png',
+                      sourceHeight: 1518,
+                      onHomeTap: () =>
+                          Navigator.of(context).pushReplacementNamed('/'),
+                      onFeaturesTap: () => Navigator.of(
+                        context,
+                      ).pushReplacementNamed('/features'),
+                      onPricingTap: () => Navigator.of(
+                        context,
+                      ).pushReplacementNamed('/pricing'),
+                      onContactTap: () {},
+                    ),
+                    const ColoredBox(
+                      key: ValueKey('contact-desktop-topbar-seam-cover'),
+                      color: Colors.white,
+                      child: SizedBox(height: 1, width: double.infinity),
+                    ),
+                  ],
                 ),
               ),
             if (isMobile)
