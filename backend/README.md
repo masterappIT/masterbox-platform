@@ -11,7 +11,7 @@ npm run prisma:generate
 npm run dev
 ```
 
-Copy `.env.example` to an untracked `.env` and provide database, JWT, Redis, Meta and LiveKit settings. Never commit real credentials.
+Copy `.env.example` to an untracked `.env` and provide database, JWT, Redis, Meta and LiveKit settings. Set `CORS_ALLOWED_ORIGINS` to a comma-separated list of deployed browser origins, including `https://mastertravel.masterappinc.com` when it calls this API. Never commit real credentials.
 
 ## Database
 
