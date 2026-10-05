@@ -41,6 +41,8 @@ jobs:
       - run: npm ci --prefix admin
       - run: npm ci --prefix super-admin
       - run: npm run prisma:validate --prefix backend
+        env:
+          DATABASE_URL: postgresql://masterbox:validation-only@localhost:5432/masterbox
       - run: npm run build --prefix admin
       - run: npm run build --prefix super-admin
 
