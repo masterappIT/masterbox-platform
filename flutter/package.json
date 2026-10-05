@@ -3,7 +3,6 @@
     "@prisma/client": "^7.10.0"
   },
   "devDependencies": {
-    "figma-developer-mcp": "^0.13.2",
     "prisma": "^8.0.0-rc.12"
   }
 }
