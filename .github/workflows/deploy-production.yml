@@ -70,19 +70,29 @@ jobs:
         run: |
           set -euo pipefail
           tag="${REGISTRY}/masterbox-${GITHUB_SHA}"
-          docker buildx build --platform linux/amd64 --file backend/Dockerfile --tag "${tag}-api" --push --provenance=false backend
-          docker buildx build --platform linux/amd64 \
+          retry_build() {
+            local attempts=0
+            until docker buildx build "$@"; do
+              attempts=$((attempts + 1))
+              if [ "$attempts" -ge 3 ]; then
+                return 1
+              fi
+              sleep $((attempts * 15))
+            done
+          }
+          retry_build --platform linux/amd64 --file backend/Dockerfile --tag "${tag}-api" --push --provenance=false backend
+          retry_build --platform linux/amd64 \
             --file admin/Dockerfile \
             --build-arg GRAPHQL_CONNECTION_PRODUCTION=https://api.masterbox.masterappinc.com/graphql \
             --build-arg GRAPHQL_WS_CONNECTION_PRODUCTION=wss://api.masterbox.masterappinc.com/graphql \
             --build-arg API_CONNECTION_PRODUCTION=https://api.masterbox.masterappinc.com \
             --tag "${tag}-admin" --push --provenance=false admin
-          docker buildx build --platform linux/amd64 \
+          retry_build --platform linux/amd64 \
             --file super-admin/Dockerfile \
             --build-arg NEXT_PUBLIC_PLATFORM_API_URL=https://api.masterbox.masterappinc.com \
             --tag "${tag}-super-admin" --push --provenance=false super-admin
-          docker buildx build --platform linux/amd64 --file flutter/Dockerfile --tag "${tag}-customer" --push --provenance=false flutter
-          docker buildx build --platform linux/amd64 --file landing-page/Dockerfile --tag "${tag}-landing" --push --provenance=false landing-page
+          retry_build --platform linux/amd64 --file flutter/Dockerfile --tag "${tag}-customer" --push --provenance=false flutter
+          retry_build --platform linux/amd64 --file landing-page/Dockerfile --tag "${tag}-landing" --push --provenance=false landing-page
           printf 'API_IMAGE=%s-api\n' "$tag" >> "$GITHUB_ENV"
           printf 'ADMIN_IMAGE=%s-admin\n' "$tag" >> "$GITHUB_ENV"
           printf 'SUPER_ADMIN_IMAGE=%s-super-admin\n' "$tag" >> "$GITHUB_ENV"
