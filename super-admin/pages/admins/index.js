@@ -1,0 +1,13 @@
+import { useState } from 'react'
+import Layout, { PagePanel, Status } from '../../components/Layout'
+import { platformFetch, usePlatformData, DataNotice } from '../../lib/platformApi'
+
+export default function Admins() {
+  const result = usePlatformData('/admins', [])
+  const admins = Array.isArray(result.data) ? result.data : []
+  const [form, setForm] = useState({ id: '', displayName: '', mobile: '', password: '', role: 'auditor' })
+  const [message, setMessage] = useState('')
+  const [saving, setSaving] = useState(false)
+  const create = async (event) => { event.preventDefault(); setSaving(true); setMessage(''); try { await platformFetch('/admins', { method: 'POST', body: JSON.stringify(form) }); setForm({ id: '', displayName: '', mobile: '', password: '', role: 'auditor' }); setMessage('管理員已建立，請重新整理資料。') } catch (error) { setMessage(error.message || '建立失敗') } finally { setSaving(false) } }
+  return <Layout title='管理員帳戶' subtitle='管理平台管理員、角色、狀態與安全設定'><DataNotice loading={result.loading} error={result.error}/><PagePanel><div className='panel-title'><div><h2>建立管理員</h2><p>使用管理員 ID 登入，不使用 Email。</p></div></div><form className='admin-form' onSubmit={create}><input placeholder='管理員 ID' required pattern='[A-Za-z0-9._-]{3,64}' value={form.id} onChange={e => setForm({ ...form, id: e.target.value })}/><input placeholder='顯示名稱' required value={form.displayName} onChange={e => setForm({ ...form, displayName: e.target.value })}/><input placeholder='手機號碼（選填）' value={form.mobile} onChange={e => setForm({ ...form, mobile: e.target.value })}/><input placeholder='初始密碼（至少 8 碼）' required minLength='8' type='password' value={form.password} onChange={e => setForm({ ...form, password: e.target.value })}/><select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}><option value='owner'>Owner</option><option value='operator'>Operator</option><option value='auditor'>Auditor</option></select><button className='primary-action' disabled={saving}>{saving ? '建立中…' : '建立管理員'}</button></form>{message && <div className='data-notice' role='status'>{message}</div>}</PagePanel><PagePanel><div className='panel-title'><div><h2>管理員清單</h2><p>共 {admins.length} 位管理員</p></div></div><table><thead><tr><th>ID</th><th>顯示名稱</th><th>角色</th><th>狀態</th><th>MFA</th><th>最後登入</th></tr></thead><tbody>{admins.map(admin => <tr key={admin.id}><td><b>{admin.id}</b></td><td>{admin.displayName}<small className='cell-sub'>{admin.mobile || '未設定手機'}</small></td><td>{admin.role}</td><td><Status value={admin.isActive ? '運作中' : '已停用'}/></td><td>{admin.mfaEnabled ? '已啟用' : '未啟用'}</td><td>{admin.lastLoginAt ? new Date(admin.lastLoginAt).toLocaleString() : '尚未登入'}</td></tr>)}</tbody></table></PagePanel></Layout>
+}

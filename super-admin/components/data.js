@@ -3,6 +3,7 @@ export const sections = [
   ['tenants', '租戶管理', '⌂', '/tenants'],
   ['subscriptions', '訂閱與方案', '◈', '/subscriptions'],
   ['health', '系統健康', '◉', '/health'],
+  ['admins', '管理員帳戶', '♙', '/admins'],
   ['audit', '審計紀錄', '☷', '/audit'],
 ]
 

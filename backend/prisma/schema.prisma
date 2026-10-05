@@ -343,12 +343,18 @@ model PlatformAdminProfile {
   id             String            @id @default(cuid()) @db.Text
   accountId      String            @unique @map("account_id") @db.Text
   role           PlatformAdminRole @default(auditor)
+  displayName    String            @map("display_name")
+  mobile         String?
+  isActive       Boolean           @default(true) @map("is_active")
   mfaEnabled     Boolean           @default(false) @map("mfa_enabled")
-  totpSecret     String?           @map("totp_secret") @db.Text
+  totpSecret     String?            @map("totp_secret") @db.Text
+  lastLoginAt    DateTime?         @map("last_login_at")
   createdAt      DateTime          @default(now()) @map("created_at")
   updatedAt      DateTime          @updatedAt @map("updated_at")
   account        Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
+  @@index([role])
+  @@index([isActive])
   @@map("platform_admin_profiles")
 }
 
