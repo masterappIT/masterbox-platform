@@ -22,7 +22,14 @@ Run the admin console with `cd admin && npm install && npm run dev`. Run Flutter
 
 Copy the relevant `.env.example` files to untracked `.env` files. Never commit credentials, API keys, JWT secrets, signing keys or generated build directories.
 
-## Documentation
+## Production deployment
+
+Production deployment is managed by [`.github/workflows/deploy-production.yml`](.github/workflows/deploy-production.yml). Every push to `main` runs the quality gates, builds immutable images, creates a Cloud SQL backup, deploys the existing Cloud Run services, and verifies the fixed production domains. The workflow also supports `workflow_dispatch` for an explicit redeployment.
+
+The workflow targets the existing `masterbox-507211` GCP project in `asia-east2` and preserves the existing load balancer, Cloud SQL instance, Artifact Registry repository, secrets, and domains. GitHub Actions authenticates with Workload Identity Federation; production environment variables `GCP_WORKLOAD_IDENTITY_PROVIDER` and `GCP_DEPLOY_SERVICE_ACCOUNT` must remain configured in the repository environment.
+
+The development compose file is not a production deployment mechanism. Do not run `docker compose -f backend/docker-compose.yml up` against production.
+
 
 - [Architecture](docs/architecture.md)
 - [Legacy inventory and integration policy](docs/legacy-inventory.md)
