@@ -24,18 +24,18 @@ Copy the relevant `.env.example` files to untracked `.env` files. Never commit c
 
 ## 正式環境部署說明
 
-正式環境部署由 [`.github/workflows/deploy-production.yml`](.github/workflows/deploy-production.yml) 管理，並固定部署至既有的 `masterbox-507211` GCP 專案與 `asia-east2` 區域。任何推送至 `main` 的變更都會自動觸發部署；也可透過 GitHub Actions 的 `workflow_dispatch` 手動重新部署。
+推送至 `main` 就會自動部署，由 [`.github/workflows/deploy-hostkvm.yml`](.github/workflows/deploy-hostkvm.yml) 負責。也可以在 GitHub Actions 手動執行 **Deploy HostKVM**。
 
 ### 部署流程
 
-1. 安裝 backend、admin 與 super-admin 依賴。
-2. 執行 Prisma schema validation 與前端 production build。
-3. 建立以 commit SHA 命名的 immutable container images，並推送至 Artifact Registry。
-4. 建立 Cloud SQL `masterbox-db` 部署前備份。
-5. 更新既有的 `masterbox-api`、`masterbox-admin`、`masterbox-super-admin`、`masterbox-customer` 與 `masterbox-landing` Cloud Run services。
-6. 透過固定正式網域執行 smoke tests。
+1. 安裝 backend、admin 與 super-admin 依賴，執行 Prisma schema validation 與前端 production build。
+2. 建立以 commit SHA 命名的 container images，推送至 `ghcr.io/masterappit/masterbox`。
+3. 以 SSH 通知正式伺服器部署。伺服器會先備份資料庫，再更新容器；健康檢查失敗會自動退回上一版。
+4. 透過正式網域執行 smoke tests。
 
-Prisma validation 使用僅供 schema 檢查的本機格式 placeholder `DATABASE_URL`，不會連線資料庫，也不會暴露正式資料庫密碼。正式 API 使用 Secret Manager 中的 `DATABASE_URL`、JWT、token、Redis 與 CORS secrets。
+正式環境的密碼只存在伺服器上，不在 GitHub。部署只需要 `production` environment 的 secret `HOSTKVM_DEPLOY_SSH_KEY`。
+
+舊的 `deploy-production.yml`（GCP Cloud Run）已停用，相關 GCP 資源已刪除，請勿重新啟用。
 
 ### 固定正式網域
 
@@ -45,15 +45,7 @@ Prisma validation 使用僅供 schema 檢查的本機格式 placeholder `DATABAS
 - `https://superadmin.masterappinc.com/`：Super Admin
 - `https://masterboxapp.masterappinc.com/`：Customer app
 
-### GitHub Actions 權限
-
-GitHub Actions 透過 Workload Identity Federation 登入 GCP，不使用 JSON service-account key。Production environment 必須保留以下 variables：
-
-- `GCP_WORKLOAD_IDENTITY_PROVIDER`
-- `GCP_DEPLOY_SERVICE_ACCOUNT`
-
-請勿將 production credentials、database URL 或 Secret Manager 的內容提交至 Git。`backend/docker-compose.yml` 僅供本機開發，不能用於正式環境。
-
+請勿將 production credentials 或 database URL 提交至 Git。`backend/docker-compose.yml` 僅供本機開發，不能用於正式環境。
 
 - [Architecture](docs/architecture.md)
 - [Legacy inventory and integration policy](docs/legacy-inventory.md)
