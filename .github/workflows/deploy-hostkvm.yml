@@ -1,0 +1,124 @@
+name: Deploy HostKVM
+
+# 部署到 HostKVM 伺服器（45.134.82.239）。取代已停用的 deploy-production.yml（Cloud Run）。
+# 映像推到 ghcr.io/masterappit/masterbox，再經 SSH 通知伺服器；deploy-masterbox 帳號只能執行
+# 部署腳本，只接受提交 SHA 和映像 digest。伺服器端設定在 masterappIT/MasterApp-infra 的 apps/masterbox/。
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: masterbox-production
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/masterappit/masterbox
+  DEPLOY_HOST: 45.134.82.239
+  DEPLOY_USER: deploy-masterbox
+  DEPLOY_HOST_KEY: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIfLOO+u+1eL4NfB87NjjvQm6GWt7b4ZKianVO7bGRGD
+
+jobs:
+  quality-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            admin/package-lock.json
+            super-admin/package-lock.json
+      - run: npm ci --prefix backend
+      - run: npm ci --prefix admin
+      - run: npm ci --prefix super-admin
+      - run: npm run prisma:validate --prefix backend
+        env:
+          DATABASE_URL: postgresql://masterbox:validation-only@localhost:5432/masterbox
+      - run: npm run build --prefix admin
+      - run: npm run build --prefix super-admin
+
+  deploy:
+    needs: quality-gates
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push immutable images
+        run: |
+          set -euo pipefail
+          digests=()
+          build() {
+            local name="$1"; shift
+            local attempts=0
+            until docker buildx build --platform linux/amd64 --push --provenance=false \
+              --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+              --metadata-file "${RUNNER_TEMP}/${name}.json" \
+              --tag "${IMAGE}:${GITHUB_SHA}-${name}" "$@"; do
+              attempts=$((attempts + 1))
+              if [ "$attempts" -ge 3 ]; then
+                return 1
+              fi
+              sleep $((attempts * 15))
+            done
+            digests+=("$(jq -r '."containerimage.digest"' "${RUNNER_TEMP}/${name}.json")")
+          }
+          build api --file backend/Dockerfile backend
+          build admin \
+            --file admin/Dockerfile \
+            --build-arg GRAPHQL_CONNECTION_PRODUCTION=https://api.masterbox.masterappinc.com/graphql \
+            --build-arg GRAPHQL_WS_CONNECTION_PRODUCTION=wss://api.masterbox.masterappinc.com/graphql \
+            --build-arg API_CONNECTION_PRODUCTION=https://api.masterbox.masterappinc.com \
+            admin
+          build super-admin \
+            --file super-admin/Dockerfile \
+            --build-arg NEXT_PUBLIC_PLATFORM_API_URL=https://api.masterbox.masterappinc.com \
+            super-admin
+          build customer --file flutter/Dockerfile flutter
+          build landing --file landing-page/Dockerfile landing-page
+          printf 'DIGESTS=%s\n' "${digests[*]}" >> "$GITHUB_ENV"
+
+      - name: Deploy to HostKVM
+        env:
+          SSH_KEY: ${{ secrets.HOSTKVM_DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s %s\n' "$DEPLOY_HOST" "$DEPLOY_HOST_KEY" > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o BatchMode=yes \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" "${GITHUB_SHA} ${DIGESTS}"
+
+      - name: Verify production endpoints
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 30 \
+            -H 'Content-Type: application/json' \
+            --data '{"query":"{ __typename }"}' \
+            https://api.masterbox.masterappinc.com/graphql >/dev/null
+          # 網頁暫時有密碼保護，應該回應 401；公開後改為檢查 200
+          for url in \
+            https://masterbox.masterappinc.com/ \
+            https://admin.masterbox.masterappinc.com/ \
+            https://superadmin.masterappinc.com/ \
+            https://masterboxapp.masterappinc.com/; do
+            code="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 30 "$url")"
+            [ "$code" = 401 ] || { printf '%s returned %s\n' "$url" "$code"; exit 1; }
+          done
