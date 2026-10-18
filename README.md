@@ -37,6 +37,13 @@ Copy the relevant `.env.example` files to untracked `.env` files. Never commit c
 
 舊的 `deploy-production.yml`（GCP Cloud Run）已停用，相關 GCP 資源已刪除，請勿重新啟用。
 
+### 運作須知
+
+- **Migration**：API 容器的啟動命令是 `npx prisma migrate deploy && node app.js`，所以 migration 在新版 API 啟動時執行。migration 失敗時容器無法啟動，伺服器會自動退回上一版映像，但**已套用的 migration 不會撤銷**。每個 migration 都必須能與上一版程式共存（先加入相容結構，之後的版本才移除舊結構）。
+- **部署會短暫中斷**：伺服器以新映像重建容器，每次部署網站會中斷幾秒到十幾秒。避免在繁忙時段推送。
+- **映像是公開的**：本 repo 公開，`ghcr.io/masterappit/masterbox` 的映像任何人都能下載。映像和前端 bundle 內不能包含任何密碼、金鑰或內部網址。
+- **伺服器端設定與回滾**：容器設定、部署腳本、回滾和日常操作記錄在私人 repo `masterappIT/MasterApp-infra` 的 `docs/masterbox-deploy.md`。
+
 ### 固定正式網域
 
 - `https://masterbox.masterappinc.com/`：Landing page
