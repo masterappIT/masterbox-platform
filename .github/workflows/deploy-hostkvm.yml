@@ -113,12 +113,10 @@ jobs:
             -H 'Content-Type: application/json' \
             --data '{"query":"{ __typename }"}' \
             https://api.masterbox.masterappinc.com/graphql >/dev/null
-          # 網頁暫時有密碼保護，應該回應 401；公開後改為檢查 200
           for url in \
             https://masterbox.masterappinc.com/ \
             https://admin.masterbox.masterappinc.com/ \
             https://superadmin.masterappinc.com/ \
             https://masterboxapp.masterappinc.com/; do
-            code="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 30 "$url")"
-            [ "$code" = 401 ] || { printf '%s returned %s\n' "$url" "$code"; exit 1; }
+            curl --fail --silent --show-error --location --max-time 30 "$url" >/dev/null
           done
