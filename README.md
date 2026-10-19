@@ -37,7 +37,7 @@ Copy the relevant `.env.example` files to untracked `.env` files. Never commit c
 
 正式環境的密碼只存在伺服器上，不在 GitHub。部署只需要 `production` environment 的 secret `HOSTKVM_DEPLOY_SSH_KEY`。
 
-舊的 `deploy-production.yml`（GCP Cloud Run）已停用，相關 GCP 資源已刪除，請勿重新啟用。
+舊的 `deploy-production.yml`（GCP Cloud Run）已於 2026-10-19 刪除，只留在 Git 歷史中，相關 GCP 資源也已刪除。正式部署只有 `deploy-hostkvm.yml` 一條流程，請勿恢復舊 workflow。
 
 ### 運作須知
 

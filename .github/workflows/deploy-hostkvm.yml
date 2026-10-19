@@ -1,6 +1,6 @@
 name: Deploy HostKVM
 
-# 部署到 HostKVM 伺服器（45.134.82.239）。取代已停用的 deploy-production.yml（Cloud Run）。
+# 部署到 HostKVM 伺服器（45.134.82.239）。取代已刪除的 deploy-production.yml（Cloud Run，見 Git 歷史）。
 # 映像推到 ghcr.io/masterappit/masterbox，再經 SSH 通知伺服器；deploy-masterbox 帳號只能執行
 # 部署腳本，只接受提交 SHA 和映像 digest。伺服器端設定在 masterappIT/MasterApp-infra 的 apps/masterbox/。
 
