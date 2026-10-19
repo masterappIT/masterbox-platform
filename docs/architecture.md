@@ -23,6 +23,7 @@ Admin / Super Admin / Flutter / Chat Embed
 docker compose -f backend/docker-compose.yml up -d
 cd backend && npm install && npm run prisma:generate && npm run dev
 cd admin && npm install && npm run dev
+cd super-admin && npm install && npm run dev
 cd flutter && flutter pub get && flutter run -d chrome
 ```
 
@@ -41,3 +42,4 @@ flutter run -d chrome \
 3. Treat legacy projects as read-only references; migrate behavior intentionally rather than copying directories.
 4. Keep secrets and generated artifacts outside Git.
 5. Add an API/integration test before declaring a cross-component feature complete.
+6. Self-host browser assets such as fonts. Do not depend on Google-hosted CDNs, which users in mainland China often cannot reach.

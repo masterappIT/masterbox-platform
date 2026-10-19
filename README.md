@@ -18,7 +18,9 @@ docker compose -f backend/docker-compose.yml up -d
 cd backend && npm install && npm run prisma:generate && npm run dev
 ```
 
-Run the admin console with `cd admin && npm install && npm run dev`. Run Flutter H5 with `cd flutter && flutter pub get && flutter run -d chrome`.
+Run the admin console with `cd admin && npm install && npm run dev`, and the super-admin console with `cd super-admin && npm install && npm run dev` (port 3100). Run Flutter H5 with `cd flutter && flutter pub get && flutter run -d chrome`.
+
+Web fonts are self-hosted through `@fontsource` packages and bundled with each Next.js build. Do not load fonts or other assets from `fonts.googleapis.com` or other Google CDNs: users in mainland China often cannot reach them.
 
 Copy the relevant `.env.example` files to untracked `.env` files. Never commit credentials, API keys, JWT secrets, signing keys or generated build directories.
 
@@ -60,5 +62,6 @@ Copy the relevant `.env.example` files to untracked `.env` files. Never commit c
 - [Historical development notes](docs/historical-changelog.md)
 - [Backend](backend/README.md)
 - [Admin](admin/README.md)
+- [Super Admin](super-admin/README.md)
 - [Flutter](flutter/README.md)
 - [Chat embed](chat-embed/README.md)
