@@ -9,6 +9,12 @@ npm install
 npm run dev
 ```
 
+`.npmrc` sets `package-lock=false`, so `npm install` does not update `package-lock.json`. CI installs with `npm ci`, which fails when the lockfile is out of date. After adding or changing a dependency, update the lockfile explicitly:
+
+```bash
+npm install --package-lock-only --package-lock=true
+```
+
 Configure backend URLs with `GRAPHQL_CONNECTION_*`, `GRAPHQL_WS_CONNECTION_*` and `API_CONNECTION_*`. Set production values explicitly; deployed builds must not depend on localhost defaults.
 
 ## Fonts
