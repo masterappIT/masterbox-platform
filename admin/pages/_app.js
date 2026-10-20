@@ -36,7 +36,7 @@ function AppContent({ Component, pageProps }) {
 
   useEffect(() => {
     const canPreviewBot = isCustomBotPage && process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_ENABLE_DEV_BYPASS === 'true';
-    if (!token && !canPreviewBot && !canPreviewPlatformAdmin) {
+    if (!token && pathname !== '/auth' && !canPreviewBot && !canPreviewPlatformAdmin) {
       router.replace('/auth');
       return;
     }
