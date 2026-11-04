@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -235,11 +236,13 @@ class _AppRootState extends State<AppRoot> {
           )
         : LoginPage(
             onLogin: (email, password, developmentMode) async {
-              if (developmentMode) {
+              if (kDebugMode && developmentMode) {
                 try {
                   await handleLogin(
-                    email.trim().isEmpty ? 'demo@masterbox.local' : email.trim(),
-                    password.isEmpty ? 'MasterBox123!' : password,
+                    email.trim().isEmpty
+                        ? 'demo@masterbox.local'
+                        : email.trim(),
+                    password,
                   );
                 } catch (_) {
                   if (!mounted) return;
@@ -270,7 +273,7 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage>
     with SingleTickerProviderStateMixin {
-  bool developmentMode = true;
+  bool developmentMode = kDebugMode;
   bool showLoginForm = true;
   bool forgotPassword = false;
   bool loading = false;
@@ -389,15 +392,16 @@ class _LoginPageState extends State<LoginPage>
                                       ),
                                     ),
                                     const SizedBox(height: 12),
-                                    SwitchListTile(
-                                      contentPadding: EdgeInsets.zero,
-                                      title: const Text('開發免登入'),
-                                      subtitle: const Text('本機開發時略過帳號驗證'),
-                                      value: developmentMode,
-                                      onChanged: (value) => setState(
-                                        () => developmentMode = value,
+                                    if (kDebugMode)
+                                      SwitchListTile(
+                                        contentPadding: EdgeInsets.zero,
+                                        title: const Text('開發免登入'),
+                                        subtitle: const Text('本機開發時略過帳號驗證'),
+                                        value: developmentMode,
+                                        onChanged: (value) => setState(
+                                          () => developmentMode = value,
+                                        ),
                                       ),
-                                    ),
                                   ],
                                   const SizedBox(height: 12),
                                   if (errorMessage != null) ...[
