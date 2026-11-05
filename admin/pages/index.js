@@ -1,25 +1,6 @@
 /* eslint-disable no-unused-expressions */
 import React, { useState, useEffect, useMemo } from "react";
 
-const DEMO_CHANNELS = [
-  { platform: 'facebook', account: 'demo-facebook', name: 'MasterBox 粉絲專頁' },
-  { platform: 'instagram', account: 'demo-instagram', name: 'MasterBox Instagram' },
-]
-const DEMO_CUSTOMER = { id: 'demo-customer-001', first_name: '王', last_name: '小明', avatar: '' }
-const DEMO_CHATROOMS = [
-  { platform: 'facebook', channel_id: 'demo-facebook', chat_room_id: 'demo-room-001', users: [{ id: 'demo-facebook' }, DEMO_CUSTOMER] },
-  { platform: 'instagram', channel_id: 'demo-instagram', chat_room_id: 'demo-room-002', users: [{ id: 'demo-instagram' }, { ...DEMO_CUSTOMER, id: 'demo-customer-002', first_name: '陳', last_name: '小美' }] },
-]
-const DEMO_MESSAGES = {
-  'facebook-demo-facebook-demo-room-001': [
-    { channel_id: 'demo-facebook', sender: 'demo-customer-001', contents: { mid: 'demo-1', text: '您好，我想詢問商品的配送時間。' }, createdAt: '2026-08-29T06:30:00.000Z', platform: 'facebook' },
-    { channel_id: 'demo-facebook', sender: 'demo-facebook', contents: { mid: 'demo-2', text: '您好！一般會在 2–3 個工作天內送達，請問還有其他需要協助的嗎？' }, createdAt: '2026-08-29T06:31:00.000Z', platform: 'facebook' },
-  ],
-  'instagram-demo-instagram-demo-room-002': [
-    { channel_id: 'demo-instagram', sender: 'demo-customer-002', contents: { mid: 'demo-3', text: '請問現在有活動優惠嗎？' }, createdAt: '2026-08-29T06:35:00.000Z', platform: 'instagram' },
-  ],
-}
-
 import ChatRoom from "../src/components/Messenger/ChatRoom";
 import Conversations from "../src/components/Conversations/Conversations";
 import CustomerSideInfo from "../src/components/Messenger/CustomerSideInfo";
@@ -30,7 +11,8 @@ import MobileHeader from "../src/components/Messenger/MobileHeader";
 import MobileSetting from "../src/components/Messenger/MobileSetting";
 import MobileSettingDetail from "../src/components/Messenger/MobileSettingDetail";
 import { useSelector, shallowEqual } from "react-redux";
-import { getUserSubscribedChannels, selectChannels, findChatsRooms, selectChatRooms, getChatRoomsMessages, selectMessages } from '../src/redux/slices/messagesSlices';
+import StatusMessage from "../src/components/Messenger/StatusMessage";
+import { getUserSubscribedChannels, selectChannels, selectChannelsStatus, findChatsRooms, selectChatRooms, selectChatRoomsStatus, getChatRoomsMessages, selectMessages } from '../src/redux/slices/messagesSlices';
 import { hashMapDataExtractor } from '../src/utils/utils';
 import Button from '../src/stories/components/Button';
 import { useMutation } from "@apollo/client";
@@ -42,8 +24,11 @@ import { useDispatch } from 'react-redux';
 import { updateCompanyInfo, fetchCompanyInfo } from '../src/redux/slices/companySlices';
 import { MessageFactory } from '../src/utils/MessageFactory';
 import { handleSendMessage } from '../src/redux/slices/messagesSlices';
+import { useRouter } from 'next/router';
+import { useTranslation } from 'react-i18next';
 
 
+const NO_CHATROOMS = [];
 
 export default function Messenger() {
   const [isCustomerSideInfo, setIsCustomerSideInfo] = useState(false);
@@ -55,6 +40,8 @@ export default function Messenger() {
     current: 'client',
   });
   const dispatch = useDispatch();
+  const router = useRouter();
+  const { t } = useTranslation();
 
 
   function setCurrentComponent(current) {
@@ -80,13 +67,18 @@ export default function Messenger() {
 
 
   const channels = useSelector(selectChannels);//這是陣列
-  const chatrooms = useSelector(selectChatRooms);//這是陣列
+  const storedChatrooms = useSelector(selectChatRooms);//這是陣列
+  const chatrooms = Array.isArray(storedChatrooms) ? storedChatrooms : NO_CHATROOMS;
   const messages = useSelector(selectMessages, shallowEqual);
-  const demoMode = !channels?.length || !chatrooms?.length;
-  const displayChannels = demoMode ? DEMO_CHANNELS : channels;
-  const displayChatrooms = demoMode ? DEMO_CHATROOMS : chatrooms;
-  const [demoMessages, setDemoMessages] = useState(DEMO_MESSAGES);
-  const displayMessages = demoMode ? demoMessages : messages;
+  const channelsStatus = useSelector(selectChannelsStatus);
+  const chatRoomsStatus = useSelector(selectChatRoomsStatus);
+  const userInfo = useSelector(selectUserInfo);
+  const isAdmin = String(userInfo?.role || '').toLowerCase() === 'admin';
+  const hasChannels = channels.length > 0;
+
+  // Persisted statuses describe an earlier visit, so only trust them once this visit has asked.
+  const [channelsRequested, setChannelsRequested] = useState(false);
+  const [chatRoomsRequested, setChatRoomsRequested] = useState(false);
 
 
   const [paginationInput, setPaginationInput] = useState({
@@ -97,36 +89,43 @@ export default function Messenger() {
 
 
   // 剛進來找channels
-  useEffect(() => {
+  const fetchChannels = () => {
+    setChannelsRequested(true)
     dispatch(getUserSubscribedChannels(paginationInput))
+  }
+
+  useEffect(() => {
+    fetchChannels()
   }, []);
 
   const [selectedChannel, setSelectedChannel] = useState(0);
-  const [selectedChatroomID, setSelectedChatroomID] = useState('demo-room-001');
+  const [selectedChatroomID, setSelectedChatroomID] = useState(null);
 
+  // A refreshed channel list may be shorter than the one the selection came from.
   useEffect(() => {
-    if (!demoMode && selectedChatroomID === 'demo-room-001') setSelectedChatroomID(null)
-  }, [demoMode, selectedChatroomID])
+    if (selectedChannel >= channels.length && selectedChannel !== 0) setSelectedChannel(0)
+  }, [channels.length, selectedChannel])
 
 
 
 
   // 點擊channels找chatrooms
+  const fetchChatrooms = () => {
+    setChatRoomsRequested(true)
+    dispatch(findChatsRooms({
+      findChatsRoomInput: {
+        channel_id: channels[selectedChannel]?.account,
+        platform: channels[selectedChannel]?.platform,
+      },
+      paginationInput: paginationInput,
+    }))
+  }
+
   useEffect(() => {
     // console.log('index_chatrooms', '點擊channels找chatrooms')
 
-    if (displayChannels.length) {
-
-      dispatch(findChatsRooms({
-        findChatsRoomInput: {
-          channel_id: displayChannels[selectedChannel]?.account,
-          platform: displayChannels[selectedChannel]?.platform,
-        },
-        paginationInput: paginationInput,
-      }))
-
-    }
-  }, [selectedChannel])
+    if (hasChannels) fetchChatrooms()
+  }, [hasChannels, selectedChannel])
 
 
 
@@ -134,9 +133,9 @@ export default function Messenger() {
   const currentChannel = useMemo(() => {
     // console.log('index_chatrooms', '當下選的channel內容')
 
-    return displayChannels[selectedChannel]
+    return channels[selectedChannel]
 
-  }, [selectedChannel, displayChannels])
+  }, [selectedChannel, channels])
 
 
 
@@ -144,21 +143,38 @@ export default function Messenger() {
   // 當下選的chatroom內容
   const currentChatroom = useMemo(() => {
 
-    if (displayChatrooms) {
+    return chatrooms.find(chatRoom => chatRoom.chat_room_id === selectedChatroomID) || null
 
-      const currentChannelsChatrooms = displayChatrooms.find(chatRoom => chatRoom.chat_room_id === selectedChatroomID)
-      return currentChannelsChatrooms
+  }, [selectedChatroomID, chatrooms])
+
+
+
+  // Cached data is shown while refreshing or after a failed refresh; without it, say what is going on.
+  const homeStatus = useMemo(() => {
+    if (!hasChannels) {
+      if (!channelsRequested || channelsStatus === 'loading' || channelsStatus === 'idle') return 'loading'
+      return channelsStatus === 'failed' ? 'failed' : 'no_channels'
     }
-    return null
+    if (chatrooms.some(chatRoom => chatRoom.channel_id === currentChannel?.account)) return 'ready'
+    if (!chatRoomsRequested || chatRoomsStatus === 'loading' || chatRoomsStatus === 'idle') return 'loading'
+    return chatRoomsStatus === 'failed' ? 'failed' : 'no_chatrooms'
+  }, [hasChannels, channelsRequested, channelsStatus, chatrooms, currentChannel, chatRoomsRequested, chatRoomsStatus])
 
-  }, [selectedChatroomID, displayChatrooms])
+  const homeStatusMessage = {
+    loading: { title: t('home_loading') },
+    failed: { title: t('home_load_failed'), description: t('home_load_failed_hint'), action: { title: t('retry'), onClick: hasChannels ? fetchChatrooms : fetchChannels } },
+    no_channels: isAdmin
+      ? { title: t('no_channel_connected'), description: t('connect_channel_hint'), action: { title: t('go_to_channels_management'), onClick: () => router.push('/channels-management') } }
+      : { title: t('no_channel_connected'), description: t('connect_channel_ask_admin') },
+    no_chatrooms: { title: t('no_conversations_yet'), description: t('no_conversations_hint') },
+  }[homeStatus]
 
 
 
 
 
   const selectChatroom = (id) => {
-    const room = displayChatrooms.find(chatRoom => chatRoom.chat_room_id === id)
+    const room = chatrooms.find(chatRoom => chatRoom.chat_room_id === id)
     if (!room) return
     const { platform, channel_id, chat_room_id } = room
 
@@ -173,10 +189,6 @@ export default function Messenger() {
     }
     // console.log('index_getChatRoomsMessagesData', getChatRoomsMessagesData)
 
-    if (demoMode) {
-      setSelectedChatroomID(id)
-      return
-    }
     dispatch(getChatRoomsMessages(getChatRoomsMessagesData))
 
     setSelectedChatroomID(id)
@@ -187,10 +199,10 @@ export default function Messenger() {
 
   const currentConversation = useMemo(() => {
 
-    const conversationsInfo = displayMessages[`${currentChannel?.platform}-${currentChannel?.account}-${selectedChatroomID}`]
+    const conversationsInfo = messages[`${currentChannel?.platform}-${currentChannel?.account}-${selectedChatroomID}`]
     return conversationsInfo || []
 
-  }, [selectedChatroomID, displayMessages, currentChannel])
+  }, [selectedChatroomID, messages, currentChannel])
 
 
 
@@ -268,15 +280,6 @@ export default function Messenger() {
 
     const { account, platform } = currentChannel
 
-    if (demoMode) {
-      const key = `${platform}-${account}-${to_chat_room_id}`
-      setDemoMessages((current) => ({
-        ...current,
-        [key]: [...(current[key] || []), { channel_id: account, sender: account, contents: { mid: `demo-${Date.now()}`, text: message.text }, createdAt: new Date().toISOString(), platform }],
-      }))
-      return
-    }
-
     console.log('push message', message, recipient)
     // let sendMessages;
     // if (platform === 'whatsapp') {
@@ -325,8 +328,10 @@ export default function Messenger() {
           componentHandler={componentHandler}
           setCurrentComponent={setCurrentComponent}
           isMobile={isMobile}
-          channels={displayChannels}
-          chatrooms={displayChatrooms}
+          channels={channels}
+          chatrooms={chatrooms}
+          channelPlaceholder={homeStatus === 'loading' || homeStatus === 'failed' ? homeStatusMessage.title : null}
+          emptyContent={homeStatusMessage ? <StatusMessage {...homeStatusMessage} compact={!isMobile} /> : null}
         /> : ''}
         <Conversations
           key={selectedChatroomID}
@@ -342,6 +347,7 @@ export default function Messenger() {
           currentChatroom={currentChatroom}
           channels={channels}
           handlePushMessage={handlePushMessage}
+          emptyContent={homeStatusMessage ? <StatusMessage {...homeStatusMessage} /> : null}
         />
         <CustomerSideInfo
           isCustomerSideInfo={isCustomerSideInfo}

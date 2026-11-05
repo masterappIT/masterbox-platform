@@ -10,7 +10,7 @@ import Checkbox from '../../stories/components/Checkbox';
 import { useTranslation } from "react-i18next";
 
 
-function ChatroomList({ isMobile, chatRoomsList, componentHandler, setCurrentComponent, selectChatroom, setSelectedConversations, unClick }) {
+function ChatroomList({ isMobile, chatRoomsList, componentHandler, setCurrentComponent, selectChatroom, setSelectedConversations, unClick, emptyContent }) {
   const currentComponent = componentHandler.current;
 
   const { t } = useTranslation();
@@ -60,7 +60,7 @@ function ChatroomList({ isMobile, chatRoomsList, componentHandler, setCurrentCom
           )
         }) :
           <div className='w-full flex items-center justify-center mt-[70px]'>
-            <ContentText size='large' title={t('no_user_found')} />
+            {emptyContent || <ContentText size='large' title={t('no_user_found')} />}
           </div>
         }
 

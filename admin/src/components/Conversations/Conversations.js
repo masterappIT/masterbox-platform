@@ -25,7 +25,7 @@ function ActionIcon({ icon }) {
   return <Icon name={icon} customStyles='messenger-room-send-inputArea-iconArea-icon' />;
 }
 
-export default function Conversations({ isCustomerSideInfo, setIsCustomerSideInfo, currentComponent, isMobile, messages, currentChatroom, currentChannel, selectedChannel, channels, chatrooms, handlePushMessage }) {
+export default function Conversations({ isCustomerSideInfo, setIsCustomerSideInfo, currentComponent, isMobile, messages, currentChatroom, currentChannel, selectedChannel, channels, chatrooms, handlePushMessage, emptyContent }) {
   const bottomRef = useRef(null);
 
   const { t } = useTranslation();
@@ -84,7 +84,7 @@ export default function Conversations({ isCustomerSideInfo, setIsCustomerSideInf
         ) : (
           <div className="messenger-room-messages-null">
             <Icon name='chatBox' customStyles={{ width: '50px', height: '36px' }} />
-            <ContentText title={t('start_a_conversation')} size='large' color='primary' customStyles='mt-[12px]' />
+            {emptyContent ? <div className='mt-[12px]'>{emptyContent}</div> : <ContentText title={t('start_a_conversation')} size='large' color='primary' customStyles='mt-[12px]' />}
           </div>
         )
         }

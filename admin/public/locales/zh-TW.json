@@ -27,7 +27,8 @@
   "reset_password": "重設密碼",
   "back_to_login": "返回登入",
   "messenger": "即時訊息",
-  "chat_box": "Chat Box",  "group_notifications": "群發工具",
+  "chat_box": "Chat Box",
+  "group_notifications": "群發工具",
   "bot_messaging": "對話機器人",
   "messaging_template": "訊息範本",
   "customers_management": "客戶管理",
@@ -64,5 +65,15 @@
   "subscription": "訂閱方案",
   "plan": "目前方案",
   "period": "方案結束日期",
-  "home": "首頁"
+  "home": "首頁",
+  "home_loading": "正在讀取對話…",
+  "home_load_failed": "目前無法讀取對話",
+  "home_load_failed_hint": "可能是網路或伺服器暫時有問題，請稍後再試。",
+  "retry": "重新讀取",
+  "no_channel_connected": "還沒有可用的社群平台",
+  "connect_channel_hint": "連接 Facebook、Instagram 等社群平台後，客戶傳來的訊息就會出現在這裡。",
+  "connect_channel_ask_admin": "請聯絡公司管理員連接社群平台，並開放給你的帳號使用。",
+  "go_to_channels_management": "前往社群平台管理",
+  "no_conversations_yet": "目前還沒有對話",
+  "no_conversations_hint": "客戶傳訊息到這個社群平台後，對話就會出現在這裡。"
 }

@@ -21,7 +21,7 @@ import { useTranslation } from 'react-i18next';
 
 
 
-function ChatRoom({ currentChannel, channels, chatrooms, clientList, componentHandler, setCurrentComponent, isMobile, selectedChannel, setSelectedChannel, selectChatroom,setSelectedChatroomID,setSelectedConversations }) {
+function ChatRoom({ currentChannel, channels, chatrooms, clientList, componentHandler, setCurrentComponent, isMobile, selectedChannel, setSelectedChannel, selectChatroom,setSelectedChatroomID,setSelectedConversations, channelPlaceholder, emptyContent }) {
   const [channelListVisitable, setChannelListVisitable] = useState(false);
   const currentComponent = componentHandler.current;
   const {t}=useTranslation()
@@ -51,9 +51,9 @@ function ChatRoom({ currentChannel, channels, chatrooms, clientList, componentHa
                   isMobile={isMobile}
                   color={isMobile ? 'secondary' : 'primary'}
                   name={channels[selectedChannel] ? channels[selectedChannel].name : ''}
-                  title={channels[selectedChannel] ? channels[selectedChannel].name : t('no_channel')}
-                  content={channels[selectedChannel] ? (channels[selectedChannel].account) : t('un_connected')}
-                  contentIcon={channels[selectedChannel] ? <Icon name={channels[selectedChannel].platform} size='small' customStyles='mr-[6px] mt-[1px]' /> : ''}
+                  title={channels[selectedChannel] ? channels[selectedChannel].name : (channelPlaceholder || t('no_channel'))}
+                  content={channels[selectedChannel] ? (channels[selectedChannel].account) : (channelPlaceholder ? '' : t('un_connected'))}
+                  contentIcon={channels[selectedChannel] ? <Icon name={channels[selectedChannel].platform} size='small' customStyles='mr-[6px] mt-[1px]' /> : null}
                   endElement={<Icon name='switch' size='large' color={isMobile ? 'secondary' : 'primary'} />}
                   customStyles={`messenger-list-channel-item ${isMobile && 'messenger-list-channel-item-mobile'}`}
                 />
@@ -64,11 +64,11 @@ function ChatRoom({ currentChannel, channels, chatrooms, clientList, componentHa
 
           {/* mobile only 點擊會到個人簡介 */}
           {(isMobile && currentComponent === 'client') ?
-            <ChatroomList isMobile={isMobile} componentHandler={componentHandler} setCurrentComponent={setCurrentComponent} chatRoomsList={chatRoomsList} selectChatroom={selectChatroom} setSelectedConversations={setSelectedConversations} unClick={true} /> : ''}
+            <ChatroomList isMobile={isMobile} componentHandler={componentHandler} setCurrentComponent={setCurrentComponent} chatRoomsList={chatRoomsList} selectChatroom={selectChatroom} setSelectedConversations={setSelectedConversations} unClick={true} emptyContent={emptyContent} /> : ''}
 
           {/* chat rooms list  */}
           {isMobile !== true || (isMobile && currentComponent === 'messenger') ?
-            <ChatroomList isMobile={isMobile} componentHandler={componentHandler} setCurrentComponent={setCurrentComponent} chatRoomsList={chatRoomsList} selectChatroom={selectChatroom} setSelectedConversations={setSelectedConversations} /> : ''}
+            <ChatroomList isMobile={isMobile} componentHandler={componentHandler} setCurrentComponent={setCurrentComponent} chatRoomsList={chatRoomsList} selectChatroom={selectChatroom} setSelectedConversations={setSelectedConversations} emptyContent={emptyContent} /> : ''}
 
         </div>) : ''}
     </>

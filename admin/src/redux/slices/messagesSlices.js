@@ -151,6 +151,10 @@ const initialState = {
 
   ],
 
+  // 'idle' | 'loading' | 'succeeded' | 'failed' — lets the home page tell loading apart from a failed read.
+  channelsStatus: 'idle',
+  chatRoomsStatus: 'idle',
+
 }
 
 
@@ -253,15 +257,15 @@ export const messagesSlice = createSlice({
      */
   },
 
-  // extraReducers: {
-  //   'messages/subscribe/fulfilled': (state, { payload }) => {
-
-  //     const { dispatch } = payload;
-
-  //     return dispatch(handleMessagesSubscription())
-
-  //   }
-  // }
+  extraReducers: (builder) => {
+    builder
+      .addCase(getUserSubscribedChannels.pending, (state) => { state.channelsStatus = 'loading' })
+      .addCase(getUserSubscribedChannels.fulfilled, (state) => { state.channelsStatus = 'succeeded' })
+      .addCase(getUserSubscribedChannels.rejected, (state) => { state.channelsStatus = 'failed' })
+      .addCase(findChatsRooms.pending, (state) => { state.chatRoomsStatus = 'loading' })
+      .addCase(findChatsRooms.fulfilled, (state) => { state.chatRoomsStatus = 'succeeded' })
+      .addCase(findChatsRooms.rejected, (state) => { state.chatRoomsStatus = 'failed' })
+  }
 
 })
 
@@ -275,6 +279,10 @@ const NO_CHANNELS = [];
 export const selectChannels = (state) => Array.isArray(state.messages?.channels) ? state.messages.channels : NO_CHANNELS;
 
 export const selectChatRooms = (state) => state.messages?.chatRooms;
+
+export const selectChannelsStatus = (state) => state.messages?.channelsStatus || 'idle';
+
+export const selectChatRoomsStatus = (state) => state.messages?.chatRoomsStatus || 'idle';
 
 export const selectPlatformsChatRooms = (platform) => store => {
 
