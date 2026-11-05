@@ -8,9 +8,7 @@ import Icon from '../../stories/components/Icon';
 import Headline from '../../stories/components/Headline';
 import MobileHeader from './MobileHeader';
 
-import store from '/src/redux/store';
-import { removeAccessToken } from '/src/redux/slices/userSlices';
-import { useRouter } from 'next/router';
+import { logout } from '/src/redux/store';
 
 
 
@@ -18,22 +16,12 @@ import { useRouter } from 'next/router';
 
 
 function MobileSetting({ set }) {
-  const router = useRouter()
-
-  const handleLogout = (event) => {
-
-    store.dispatch(removeAccessToken())
-
-    router.reload()
-
-  }
-
   return (
     <List customStyles='pt-[45px]'>
       {set.map((s, i) => {
         return (
           <ListItem key={i}
-            startElement={<Headline title={s.title} customStyles='flex-1' onClick={()=>handleLogout()}/>}
+            startElement={<Headline title={s.title} customStyles='flex-1' onClick={s.title==='登出' ? ()=>logout() : undefined}/>}
             endElement={s.title!=='登出'? <><ContentText title={s.list[0]} color='black-tertiary' /><Icon name='next' customStyles={{ width: '5.4px', height: '9px' }} /></>:''}
             customStyles={{ padding: '16px 12px',cursor: 'pointer' }}>
           </ListItem>

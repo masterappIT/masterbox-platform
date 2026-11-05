@@ -7,8 +7,7 @@ import Headline from "./Headline";
 import Icon from "./Icon";
 import List from "./List";
 import ListItem from "./ListItem";
-import store from '/src/redux/store';
-import { removeAccessToken } from '/src/redux/slices/userSlices';
+import { logout } from '/src/redux/store';
 import { useRouter } from 'next/router';
 import { useSelector } from "react-redux";
 import { selectUserInfo } from "../../redux/slices/userSlices";
@@ -40,20 +39,13 @@ function HeaderBar({ customStyles, showSidebarHeaderBar }) {
 
 
   // console.log('userInfo',email)
-  const handleLogout = (event) => {
-
-    store.dispatch(removeAccessToken())
-
-    router.reload()
-
-  }
 
 
   const headerTitle = findHeaderBarTitle(router.pathname)
 
 
 
-  const list = [{ title: t('your_information'), onClick: () => { setIsPopup(true) } }, { title: t('subscription_fee'), onClick: () => { } }, { title: t('logout'), onClick: () => handleLogout() }]
+  const list = [{ title: t('your_information'), onClick: () => { setIsPopup(true) } }, { title: t('subscription_fee'), onClick: () => { } }, { title: t('logout'), onClick: () => logout() }]
   return (
     <>
       <div className={`${showSidebarHeaderBar ? 'hidden sm:block' : 'hidden'}   overflow-visible shadow-[0px_2px_2px_0_rgba(57,57,57,0.18)] ${customStyles}`}>

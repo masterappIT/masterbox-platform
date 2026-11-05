@@ -120,9 +120,8 @@ export default {
         async loginAccount(_, { LoginInput: { email, password } }) {
             const normalizedEmail = email.trim().toLowerCase() === 'test' ? 'test@masterbox.local' : email.trim().toLowerCase();
             const existAccount = await prisma.account.findUnique({ where: { email: normalizedEmail } });
-            if (!existAccount) throw new ApolloError('Incorrect email', 'INCORRECT_EMAIL');
-            if (!(await bcrypt.compare(password, existAccount.password))) {
-                throw new ApolloError('Incorrect password', 'INCORRECT_PASSWORD');
+            if (!existAccount || !(await bcrypt.compare(password, existAccount.password))) {
+                throw new ApolloError('Incorrect email or password', 'INVALID_CREDENTIALS');
             }
             return accountView(existAccount, issueTokens(existAccount));
         },

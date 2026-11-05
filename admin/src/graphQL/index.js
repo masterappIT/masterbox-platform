@@ -1,6 +1,7 @@
-import { ApolloClient, createHttpLink, InMemoryCache, split } from '@apollo/client';
+import { ApolloClient, createHttpLink, fromPromise, InMemoryCache, split } from '@apollo/client';
 import { getMainDefinition } from '@apollo/client/utilities';
 import { setContext } from '@apollo/client/link/context';
+import { onError } from '@apollo/client/link/error';
 import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
 import { createClient } from 'graphql-ws';
 
@@ -55,10 +56,41 @@ const wsLink =
 
 
 
-const authLink = setContext((_, { headers }) => {
-    const token = getAccessToken();
+// The backend rejects the whole request when it carries an expired token, so these must go without one.
+const PUBLIC_OPERATIONS = ['LoginAccount', 'RefreshToken'];
+
+const authLink = setContext(({ operationName }, { headers }) => {
+    const token = PUBLIC_OPERATIONS.includes(operationName) ? null : getAccessToken();
     return { headers: { ...headers, ...(token ? { authorization: "Bearer " + token } : {}) } };
 });
+
+let pendingRefresh = null;
+
+const refreshSession = () => {
+    pendingRefresh ||= (async () => {
+        const { default: store, persistor } = await import('../redux/store');
+        const { handleTokenExpired } = await import('../redux/slices/userSlices');
+        const { payload: token } = await store.dispatch(handleTokenExpired());
+        await persistor.flush();
+        if (!token && !store.getState().user.accessToken) client.clearStore();
+        if (!token) throw new Error('Session expired');
+        return token;
+    })().finally(() => { pendingRefresh = null; });
+    return pendingRefresh;
+};
+
+const errorLink = onError(({ graphQLErrors, networkError, operation, forward }) => {
+    const errors = [...(graphQLErrors || []), ...(networkError?.result?.errors || [])];
+    const isUnauthenticated = errors.some(error => error.extensions?.code === 'UNAUTHENTICATED');
+    if (!isUnauthenticated || PUBLIC_OPERATIONS.includes(operation.operationName) || !getAccessToken()) return;
+
+    return fromPromise(refreshSession()).flatMap((token) => {
+        operation.setContext(({ headers }) => ({ headers: { ...headers, authorization: "Bearer " + token } }));
+        return forward(operation);
+    });
+});
+
+const httpChain = authLink.concat(errorLink).concat(httpLink);
 
 
 const splitLink = typeof window !== "undefined" && wsLink != null
@@ -71,9 +103,9 @@ const splitLink = typeof window !== "undefined" && wsLink != null
             );
         },
         wsLink,
-        authLink.concat(httpLink)
+        httpChain
     )
-    : authLink.concat(httpLink)
+    : httpChain
     ;
 
 export const client = new ApolloClient({

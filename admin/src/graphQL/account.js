@@ -54,7 +54,7 @@ export const DELETE_ACCOUNT = gql`
 
 
 export const LOGIN = gql`
-mutation Mutation( $email: String $password: String) {
+mutation LoginAccount( $email: String $password: String) {
   loginAccount(LoginInput: {email: $email, password: $password}) {
     token
     refreshToken
@@ -72,7 +72,7 @@ mutation Mutation( $email: String $password: String) {
 `
 
 export const REFRESH_TOKEN = gql`
-mutation LoginAccount($refreshToken:String! $account_id:String! $company_id: String!) {
+mutation RefreshToken($refreshToken:String! $account_id:String! $company_id: String!) {
   refreshToken(refreshTokenInput: {refreshToken:$refreshToken, company_id:$company_id, account_id:$account_id}) {
     refreshToken
     token

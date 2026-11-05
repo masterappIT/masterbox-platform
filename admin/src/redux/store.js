@@ -48,4 +48,10 @@ const store = configureStore({
 });
 export const persistor = persistStore(store)
 
+export const logout = async () => {
+  store.dispatch({ type: 'user/removeAccessToken' })
+  await persistor.flush()
+  window.location.replace('/auth')
+}
+
 export default store;

@@ -8,7 +8,30 @@
 		
 	}
 	&-list {
-		@apply w-[40%] max-w-[616px] min-w-[295px] mt-[42px] flex flex-col items-stretch justify-center space-y-0;
+		@apply relative w-[40%] max-w-[616px] min-w-[295px] mt-[42px] flex flex-col items-stretch justify-center space-y-0;
+	}
+
+	// Sits in the gap above the fields so showing it doesn't push them down.
+	&-message {
+		@apply absolute left-0 right-0 bottom-full mb-[8px] text-center;
+	}
+
+	// The product-wide focus ring reads as a stray circle on the underlined fields.
+	input:focus {
+		box-shadow: none !important;
+	}
+
+	// The CJK UI font draws full-width password dots.
+	input[type='password'] {
+		font-family: Verdana, system-ui, sans-serif;
+	}
+
+	.errorTxt * {
+		color: #fff !important;
+	}
+
+	.errorTxt .iconImg {
+		filter: brightness(0) invert(1);
 	}
 
 	// .form-control {

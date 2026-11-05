@@ -28,8 +28,10 @@ import ListItem from '../src/stories/components/ListItem';
 import LanguageSelector from '../src/components/Auth/LanguageSelector';
 
 
-const AuthList = ({ data, inputsData, inputsError, formMessage, setComponentHandler, onInputChange, onPhoneChange, handleBtnClick, setInputsData, setInputsError, props }) => {
-    const { title, list, button, link, password } = data;
+const LOGIN_EMAIL_RULE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+const AuthList = ({ data, inputsData, inputsError, formMessage, setFormMessage, setComponentHandler, onInputChange, onPhoneChange, handleBtnClick, setInputsData, setInputsError, props }) => {
+    const { title, description, list, button, link, password } = data;
     const userToken = useSelector(selectUserToken)
     const [phoneSelectorInputValue, setPhoneSelectorInputValue] = useState('')
     const [isShowPassword, setIsShowPassword] = useState(false)
@@ -37,6 +39,10 @@ const AuthList = ({ data, inputsData, inputsError, formMessage, setComponentHand
     const onPhoneSelectorChange = (value) => {
         setPhoneSelectorInputValue(value || '')
         onPhoneChange(value)
+    }
+
+    const handleEnterKey = (e) => {
+        if (e.key === 'Enter') handleBtnClick()
     }
 
     const handleSetComponentHandler = (to) => {
@@ -54,19 +60,20 @@ const AuthList = ({ data, inputsData, inputsError, formMessage, setComponentHand
         <div key='1' className='mt-[141px] flex flex-col items-center justify-start'>
             <Headline title={title} size='medium' color='white' customStyles='max-w-[300px] text-center'/>
             <div className='auth-list '>
-                {formMessage && <ContentText title={formMessage} size='small' color='white' customStyles='mb-[8px] text-center' />}
+                {formMessage && <ContentText title={formMessage} size='small' color='white' customStyles='auth-message' />}
+                {description && <ContentText title={description} size='small' color='white' customStyles='text-center' />}
                 {list.map(({ name, placeholder, type, option, password }, i) => {
                     return (
                         <React.Fragment key={name + i}>
-                            {(type === 'input') ? <Input variant='border_b' name={name} placeholder={placeholder} value={inputsData[name] || ''} onChange={onInputChange} errorText={inputsError[name] ? inputsError[name] : ''} minHeight='small' />
-                                : (type === 'password') ? <Input type={isShowPassword ? 'text' : 'password'} variant='border_b' name={name} placeholder={placeholder} value={inputsData[name] || ''} onChange={onInputChange} errorText='' minHeight='small' endElement={<Icon name={isShowPassword ? 'eye-close' : 'eye'} customStyles='' size='small' onClick={() => setIsShowPassword(!isShowPassword)} errorText={inputsError[name] ? inputsError[name] : ''} />} />
+                            {(type === 'input') ? <Input variant='border_b' name={name} placeholder={placeholder} value={inputsData[name] || ''} onChange={onInputChange} onKeyPress={handleEnterKey} errorText={inputsError[name] ? inputsError[name] : ''} minHeight='small' />
+                                : (type === 'password') ? <Input type={isShowPassword ? 'text' : 'password'} variant='border_b' name={name} placeholder={placeholder} value={inputsData[name] || ''} onChange={onInputChange} onKeyPress={handleEnterKey} errorText={inputsError[name] ? inputsError[name] : ''} minHeight='small' endElement={<Icon name={isShowPassword ? 'eye-close' : 'eye'} customStyles='' size='small' onClick={() => setIsShowPassword(!isShowPassword)} />} />
                                 : (type === 'selector') ? <Selector title='' name={name} placeholder={placeholder} variant='border_b' option={option} onChange={onInputChange} errorText={inputsError[name] ? inputsError[name] : ''} minHeight='small' />
                                 : (type === 'selectorInput') ? <PhoneRegister name={name} inputValue={phoneSelectorInputValue} minHeight='small' onChange={onPhoneSelectorChange} placeholder={placeholder} inputProps={{ name: 'mobile', required: true, }} errorText={inputsError[name] ? inputsError[name] : ''} />
                                 : null}
                         </React.Fragment>
                     )
                 })}
-                <Button id={title} title={button.title} onClick={() => handleBtnClick()} color='quaternary' size='large' customStyles={{ marginTop: '20px' }} />
+                {button && <Button id={title} title={button.title} onClick={() => handleBtnClick()} color='quaternary' size='large' customStyles={{ marginTop: '20px' }} />}
                 {/* <Button id={title} title={button.title} onClick={() => handleBtnClick()} color='primary' size='large' customStyles={{ marginTop: '20px' }} /> */}
                 
             </div>
@@ -100,6 +107,7 @@ function AuthPage(props) {
     const [inputsData, setInputsData] = useState({})
     const [inputsError, setInputsError] = useState({})
     const [formMessage, setFormMessage] = useState('')
+    const [isSubmitting, setIsSubmitting] = useState(false)
 
 
     const data =
@@ -113,14 +121,14 @@ function AuthPage(props) {
                     // { name: 'remember', placeholder: '記住我的密碼', type: 'checkbox' },
                 ],
             button: {
-                title: t('login'),
+                title: isSubmitting ? t('logging_in') : t('login'),
             },
             link: [
-                { title: t('forget_password') + ' !', to: 'forget' },
+                { title: t('forget_password'), to: 'forget' },
             ],
         },
         register: {
-            title: t('register') +' !',
+            title: t('register'),
             list:
                 [
                     { name: 'chinese_name', placeholder: t('chinese_name'), type: 'input' },
@@ -160,15 +168,9 @@ function AuthPage(props) {
         },
         forget: {
             title: t('reset_password'),
-            list:
-                [
-                    { name: 'email', placeholder: 'Email', type: 'input' },
-                ],
-            button: {
-                title: t('send_reset_password_to_mailbox'),
-            },
+            description: t('forgot_password_unavailable'),
+            list: [],
             link: [
-                { title:  t('free_trial_registration'), to: 'register' },
                 { title:  t('back_to_login'), to: 'login' },
             ],
         }
@@ -200,28 +202,25 @@ function AuthPage(props) {
         router.push('/')
     }
 
-    const handleBtnClick = () => {
+    const handleBtnClick = async () => {
+        if (isSubmitting) return
         setInputsError({})
         setFormMessage('')
-
-        if (componentHandler === 'forget') {
-            const email = (inputsData.email || '').trim()
-            if ((!email || !/^[\w-]+(?:\.[\w-]+)*@([\w-]+\.)+[\w-]+$/.test(email)) && email.toLowerCase() !== 'test') {
-                setInputsError({ email: new errorHandler(type.INVALID_FORMAT, 'email').createErrorMessage() })
-                return
-            }
-            setFormMessage('忘記密碼功能尚未由後端提供，請聯絡管理員重設密碼。')
-            return
-        }
 
         if (componentHandler === 'login') {
             const email = (inputsData.email || '').trim()
             const password = inputsData.password || ''
             const errors = {}
-            if ((!email || !/^[\w-]+(?:\.[\w-]+)*@([\w-]+\.)+[\w-]+$/.test(email)) && email.toLowerCase() !== 'test') errors.email = new errorHandler(type.INVALID_FORMAT, 'email').createErrorMessage()
-            if (!password) errors.password = new errorHandler(type.INVALID_FORMAT, 'password').createErrorMessage()
+            if (!email) errors.email = t('login_email_required')
+            else if (!LOGIN_EMAIL_RULE.test(email) && email.toLowerCase() !== 'test') errors.email = t('login_invalid_email')
+            if (!password) errors.password = t('login_password_required')
             setInputsError(errors)
-            if (Object.keys(errors).length === 0) dispatch(handleLogin({ email, password }))
+            if (Object.keys(errors).length > 0) return
+
+            setIsSubmitting(true)
+            const { payload } = await dispatch(handleLogin({ email, password }))
+            setIsSubmitting(false)
+            if (payload?.error) setFormMessage(t(payload.error))
             return
         }
 
@@ -248,9 +247,17 @@ function AuthPage(props) {
         if (userToken) router.push('/')
     }, [userToken, router])
 
+    useEffect(() => {
+        if (!window.sessionStorage.getItem('sessionExpired')) return
+        window.sessionStorage.removeItem('sessionExpired')
+        setFormMessage(t('session_expired'))
+    }, [])
+
 
     const changeLanguage = (lng,title) => {
         i18n.changeLanguage(lng);
+        setInputsError({})
+        setFormMessage('')
         setLanguages(t(title))
     };
 
@@ -279,6 +286,7 @@ function AuthPage(props) {
                 setInputsError={setInputsError}
                 inputsError={inputsError}
                 formMessage={formMessage}
+                setFormMessage={setFormMessage}
                 setComponentHandler={setComponentHandler}
                 onInputChange={onInputChange}
                 onPhoneChange={onPhoneChange}
