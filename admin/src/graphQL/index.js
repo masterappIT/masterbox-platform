@@ -47,8 +47,6 @@ const wsLink =
                     return token ? { authorization: "Bearer " + token } : {};
                 },
 
-                reconnect: true,
-
             })
         )
         : wsUri;
@@ -66,7 +64,7 @@ const authLink = setContext(({ operationName }, { headers }) => {
 
 let pendingRefresh = null;
 
-const refreshSession = () => {
+export const refreshSession = () => {
     pendingRefresh ||= (async () => {
         const { default: store, persistor } = await import('../redux/store');
         const { handleTokenExpired } = await import('../redux/slices/userSlices');

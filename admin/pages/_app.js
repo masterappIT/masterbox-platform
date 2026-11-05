@@ -8,7 +8,7 @@ import { Provider, useSelector } from 'react-redux';
 import { ApolloProvider } from '@apollo/client';
 import client from '/src/graphQL/index';
 import { useRouter } from 'next/router';
-import { handleMessagesSubscription } from '../src/redux/slices/messagesSlices';
+import { handleMessagesSubscription, stopMessagesSubscription } from '../src/redux/slices/messagesSlices';
 import { selectUserToken, selectUserInfo } from '../src/redux/slices/userSlices';
 import { pathInfo } from '../src/utils/pathInfo';
 import Head from 'next/head';
@@ -33,6 +33,10 @@ function AppContent({ Component, pageProps }) {
     setLayoutSet(pathname !== '/auth');
     setShowSidebarHeaderBar(pathname !== '/auth');
   }, [pathname]);
+
+  useEffect(() => {
+    if (!token) stopMessagesSubscription();
+  }, [token]);
 
   useEffect(() => {
     const canPreviewBot = isCustomBotPage && process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_ENABLE_DEV_BYPASS === 'true';

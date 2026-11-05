@@ -1,10 +1,9 @@
 import { ApolloError } from 'apollo-server-errors';
 import { prisma } from '../../lib/db/prisma.js';
 import { pubsub } from '../../config/redis.js';
-import { handleSendMessage, SEND_MESSAGE } from '../../utils/utils.js';
+import { handleSendMessage, messageView, publishMessage, SEND_MESSAGE } from '../../utils/utils.js';
 import { withAuth } from '../../middleware/auth.js';
 
-const textOf = value => typeof value === 'string' ? value : value == null ? '' : JSON.stringify(value);
 const validateEncryption = (mode, contents, errorCode = 'SEND_FAILED') => {
   if (!['server', 'e2ee'].includes(mode)) throw new ApolloError('encryption_mode must be server or e2ee', errorCode);
   if (mode !== 'e2ee') return;
@@ -22,25 +21,11 @@ const validateDisappearing = (seconds, errorCode = 'SEND_FAILED') => {
   }
 };
 
-const recipientRooms = message => (message.recipients || []).flatMap(r => r.chatRoomIds || []);
 const visibleMessageWhere = (companyId, target) => ({
   companyId,
   OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
   ...(target ? { recipients: { some: { chatRoomIds: { has: target } } } } : {}),
 });
-const messageView = (message, requestedRoom) => {
-  const text = textOf(message.contents);
-  const rooms = recipientRooms(message);
-  return {
-    id: message.id || message._id?.toString(), _id: message.id || message._id?.toString(),
-    platform: message.platform, contents: text, text, recipients: rooms,
-    to_chat_room_id: requestedRoom || rooms[0] || null,
-    channel_id: message.recipients?.[0]?.channelId || message.channel_id || null,
-    encryption_mode: message.encryptionMode || message.encryption_mode || 'server', disappearing_after_seconds: message.disappearingAfterSeconds || null, expiresAt: message.expiresAt || null, readAt: message.readAt || null, sentAt: message.createdAt || message.created_at || null,
-    isMine: undefined,
-  };
-};
-
 export default {
   Mutation: {
     async appSendMessage(_, { MessageInput: input }, { account, isAuth }) {
@@ -66,9 +51,8 @@ export default {
               contents: input.contents, encryptionMode, disappearingAfterSeconds, expiresAt: null, recipients: { create: [{ channelId: room.channelId, chatRoomIds: [room.chatRoomId || room.id] }] } },
             include: { recipients: true },
           });
-          const view = messageView(message, room.chatRoomId || room.id);
-          await pubsub.publish(`${SEND_MESSAGE}-${accountId}`, { sendMessage: view });
-          return view;
+          await publishMessage(message);
+          return messageView(message, room.chatRoomId || room.id);
         }
         const message = await handleSendMessage(account.account_id, roomId, input.contents, input.platform, input.info_Content, input.channel_id);
         return messageView(message, roomId);
@@ -84,17 +68,8 @@ export default {
       if (!message) throw new ApolloError('Message not found', 'READ_FAILED');
       const readAt = new Date();
       const updated = await prisma.message.update({ where: { id: message.id }, data: { readAt: message.readAt || readAt, expiresAt: message.readAt || !message.disappearingAfterSeconds ? message.expiresAt : new Date(readAt.getTime() + message.disappearingAfterSeconds * 1000) }, include: { recipients: true } });
-      const view = messageView(updated);
-      await pubsub.publish(`${SEND_MESSAGE}-${account.account_id}`, { sendMessage: view });
-      return view;
-    },
-    async receivedMessageFromWebhook(_, { MessageInput: input }) {
-      if (!input?.contents) throw new ApolloError('receive failed', 'RECEIVE_FAILED');
-      const encryptionMode = input.encryption_mode || 'server';
-      validateEncryption(encryptionMode, input.contents);
-      validateDisappearing(input.disappearing_after_seconds, 'RECEIVE_FAILED');
-      const message = await handleSendMessage(null, input.to_chat_room_id, input.contents, input.platform, input.info_Content, input.channel_id);
-      return messageView(message, input.to_chat_room_id);
+      await publishMessage(updated);
+      return messageView(updated);
     },
   },
   Query: {
@@ -123,5 +98,12 @@ export default {
       return messages.map(message => messageView(message, target));
     },
   },
-  Subscription: { sendMessage: { subscribe: (_, { accountId }) => pubsub.asyncIterator(`${SEND_MESSAGE}-${accountId}`) } },
+  Subscription: {
+    sendMessage: {
+      subscribe: (_, __, { account, isAuth }) => {
+        withAuth(Boolean(isAuth || account));
+        return pubsub.asyncIterator(`${SEND_MESSAGE}-${account.account_id}`);
+      },
+    },
+  },
 };

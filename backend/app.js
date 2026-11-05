@@ -58,7 +58,8 @@ app.use(cors(corsOptions));
 app.use(urlencoded({ extended: true }));
 
 // Parse application/json
-app.use(json());
+// Meta's webhook signature covers the exact bytes it sent.
+app.use(json({ verify: (req, _res, body) => { req.rawBody = body; } }));
 //route for facebook webhook
 app.use('/meta', meta);
 // Authenticated server-to-server integration API. Credentials are app-scoped and tenant-isolated.
@@ -72,7 +73,11 @@ const wsServer = new WebSocketServer({
   server: httpServer,
   path: "/graphql",
 });
-const serverCleanup = useServer({ schema }, wsServer);
+// Subscribers are identified by their token, so a bad one must reach the resolver as signed out.
+const serverCleanup = useServer({
+  schema,
+  context: ({ connectionParams }) => auth({ req: { headers: { authorization: connectionParams?.authorization } } }).catch(() => ({ isAuth: false })),
+}, wsServer);
 
 // Set up GraphQL server.
 const server = new ApolloServer({

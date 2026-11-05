@@ -158,8 +158,9 @@ model ChatRoom {
 model Message {
   id                       String             @id @default(cuid()) @db.Text
   companyId                String             @map("company_id") @db.Text
-  createdBy                String             @map("created_by") @db.Text
+  createdBy                String?            @map("created_by") @db.Text
   updatedBy                String?            @map("updated_by") @db.Text
+  externalId               String?            @unique @map("external_id")
   platform                 ChannelPlatform
   contents                 Json?
   encryptionMode           EncryptionMode     @default(server) @map("encryption_mode")
@@ -169,7 +170,7 @@ model Message {
   createdAt                DateTime           @default(now()) @map("created_at")
   updatedAt                DateTime           @updatedAt @map("updated_at")
   company                  Company            @relation(fields: [companyId], references: [id])
-  creator                  Account            @relation("MessageCreatedBy", fields: [createdBy], references: [id])
+  creator                  Account?           @relation("MessageCreatedBy", fields: [createdBy], references: [id])
   updater                  Account?           @relation("MessageUpdatedBy", fields: [updatedBy], references: [id])
   recipients               MessageRecipient[]
 

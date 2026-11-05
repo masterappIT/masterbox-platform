@@ -9,18 +9,15 @@ import { gql, } from '@apollo/client';
 
 const SUBSCRIBE_MESSAGE = gql`
 
-subscription Subscription($accountId: String) {
-  sendMessage(accountId: $accountId) {
-   company_id
+subscription MessageEvents {
+  sendMessage {
     _id
     contents
     platform
     to_chat_room_id
     channel_id
-    sender
-    recipient
-    createdAt
-      updatedAt
+    sentAt
+    inbound
   }
 }
 

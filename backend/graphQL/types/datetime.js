@@ -13,6 +13,7 @@ export const dateTimeScalar = new GraphQLScalarType({
         return new Date(value);
     },
     serialize: (value) => {
-        return value.toISOString();
+        // Subscription payloads pass through Redis as JSON, which turns dates into strings.
+        return new Date(value).toISOString();
     },
 });

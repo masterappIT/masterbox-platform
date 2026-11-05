@@ -1,6 +1,6 @@
 import metaClient from '../api/metaClient.js';
-import {masterBox_meta_Route, masterBox_Api_graphql} from '../api/masterBoxClient.js';
-import { sortChannelSchema, findChannelToken } from '../utils/utils.js';
+import { createHmac, timingSafeEqual } from 'node:crypto';
+import { sortChannelSchema, findChannelToken, saveInboundMessage } from '../utils/utils.js';
 
 // facebook
 import { getUserAccessToken, getDebugToken,
@@ -157,14 +157,14 @@ const chat_room_id = async(page_id, object, message_id, access_token) => {
     // console.log(page_id, object, message_id, access_token)
 
     return new Promise((resolve, reject) => {
-        masterBox_meta_Route({
-            endPoints: 'getConversations',
+        metaClient({
+            endPoints: `${page_id}/conversations`,
             method: 'GET',
             queryStrings: {
-                "page_id": page_id,
-                "platform": (object == 'page')? "messenger": 'instagram'
-            },
-            headers: { "authorization": `Bearer ${access_token}` }
+                "platform": (object == 'page')? "messenger": 'instagram',
+                "fields": "messages{id}",
+                "access_token": access_token
+            }
         }).then((r) => {
             // console.log('return from route', JSON.parse(r))
             let result = JSON.parse(r)
@@ -177,6 +177,7 @@ const chat_room_id = async(page_id, object, message_id, access_token) => {
                         }
                     })
                 })                
+                resolve(undefined)
             }else{
                 // console.log('return from route', result.error)
                 reject(result)
@@ -192,45 +193,42 @@ const chat_room_id = async(page_id, object, message_id, access_token) => {
 }
 
 /**
+ * 確認 webhook 請求確實來自 Meta
+ * @param req 請求物件，rawBody 是收到的原始內容
+ * @returns {boolean} true or false
+ */
+const isSignedByMeta = (req) => {
+    const secret = process.env.FB_APP_SECRET
+    const signature = req.get('x-hub-signature-256')
+    if(!secret || !signature || !req.rawBody){
+        return false
+    }
+    const expected = Buffer.from(`sha256=${createHmac('sha256', secret).update(req.rawBody).digest('hex')}`)
+    const received = Buffer.from(signature)
+    return expected.length === received.length && timingSafeEqual(expected, received)
+}
+
+/**
  * 推入新的聊天室訊息到資料庫
  * @param {string} to_chat_room_id - 聊天室ID
  * @param {string} platform - 平台名稱
  * @param {object} contents - 訊息內容
- * @param {object} info_Content - 寄件人詳情 
+ * @param {object} customer - 傳訊息的客戶
  * @param {string} channel_id - 頻道/粉絲頁 ID
+ * @param {string} message_id - 平台上的訊息 ID
  */
-const appendMessage = (to_chat_room_id, platform, contents, info_Content, channel_id) => {
-    let query = `mutation ($MessageInput: MessageInput) {
-        receivedMessageFromWebhook(MessageInput: $MessageInput) {
-            to_chat_room_id, contents, platform, info_Content, channel_id
-            }
-    }`
-
-    masterBox_Api_graphql({
-        endPoints: '',
-        method: 'POST',
-        body: JSON.stringify({
-            query, variables: {
-                MessageInput: {
-                    to_chat_room_id: to_chat_room_id,
-                    contents: JSON.stringify(contents), 
-                    platform: (platform == 'page')? 'fb': platform, 
-                    info_Content: JSON.stringify(info_Content),
-                    channel_id: channel_id
-                }
-            }
-        })
-    }).then((r) => {
-        console.log('Pushed to graphql:', r)
-
-        if(platform.includes('whatsapp')){
-            // delete object in wa_message
-            let message = manage_wa_message(contents.id, 'get')
-            if(message !== undefined){
-                manage_wa_message(contents.id, 'delete')
-            }
-        }
+const appendMessage = async (to_chat_room_id, platform, contents, customer, channel_id, message_id) => {
+    const message = await saveInboundMessage({
+        externalChannelId: channel_id,
+        platform: platform,
+        chatRoomId: to_chat_room_id,
+        contents: JSON.stringify(contents),
+        customer: customer,
+        externalId: message_id,
     })
+    if(!message){
+        console.log('Inbound message not stored:', message_id)
+    }
 }
 
 /**
@@ -249,76 +247,67 @@ const webhookMessage = (res, body) => {
 
     // Iterates over each entry - there may be multiple if batched
     body.entry.forEach( async function (data) {
-        // Gets the body of the webhook event
-        let webhookEvent = data.messaging[0];
-        console.log(webhookEvent);
-        // Get the sender PSID
-        let chatters = [webhookEvent.sender.id, webhookEvent.recipient.id]
-        let chaterIndex = 0 
-        let message_id = webhookEvent.message.mid
-        let page_id = ''
+        try {
+            // Gets the body of the webhook event
+            let webhookEvent = data.messaging?.[0];
+            // Delivery and read receipts have no message; echoes are the company's own replies.
+            if(!webhookEvent?.message || webhookEvent.message.is_echo){
+                return
+            }
+            let chatters = [webhookEvent.sender.id, webhookEvent.recipient.id]
+            let message_id = webhookEvent.message.mid
+            let page_id = ''
+            let customer
 
-        console.log('Sender PSID: ' + webhookEvent.sender.id);
+            /** page_access_token  */
+            let access_token = ''
+            if(body.object == 'instagram'){
+                // Findout who is the company
+                for(let i=0; i < chatters.length; i++){
+                    let result = await findChannelToken(chatters[i], 'instagram')
 
-        /** page_access_token  */
-        let access_token = ''
-        if(body.object == 'instagram'){
-            // Findout who is the company
-            
-            for(let i=0; i < chatters.length; i++){
-                let result = await findChannelToken(chatters[i], 'instagram')
-
-                console.log('result returned', result)
-
-                if(result !== null){
-                    access_token = result.access_token; chaterIndex = i;
-                    page_id = result.channel_id
-                    break;
+                    if(result !== null){
+                        access_token = result.access_token
+                        page_id = result.channel_id
+                        customer = { id: chatters[1 - i] }
+                        break;
+                    }
+                }
+            }else{
+                access_token = await findChannelToken(webhookEvent.recipient.id, 'page')
+                page_id = webhookEvent.recipient.id
+                //get sender's infomation
+                if(access_token){
+                    // A failed profile lookup shouldn't lose the customer's message.
+                    let sender = await getMetaSenderInfo(webhookEvent.sender.id, access_token).catch(() => undefined)
+                    customer = { id: webhookEvent.sender.id, first_name: sender?.first_name, last_name: sender?.last_name, avatar: sender?.profile_pic }
                 }
             }
 
-        }else{
-           access_token = await findChannelToken(webhookEvent.recipient.id, 'page')
-           page_id = webhookEvent.recipient.id
-        }
-        console.log('page_access_token:', access_token)
+            if(!access_token){
+                console.log('Webhook message for an unknown channel:', message_id)
+                return
+            }
 
-        console.log('chatter', chatters[chaterIndex])
+            // Without a conversation id from Meta, the customer's id still identifies the conversation.
+            let cid = await chat_room_id(page_id, body.object, message_id, access_token) || customer.id
 
-        let cid = await chat_room_id(page_id, body.object, message_id, access_token)
-
-        console.log('chat room id:', cid)
-
-        //get sender's infomation
-        let sender
-        if(body.object == 'page'){
-            sender = await getMetaSenderInfo(webhookEvent.sender.id, access_token)
-        }else{
-            sender = await masterBox_meta_Route({
-                endPoints: 'getInstagramAccount',
-                method: 'POST',
-                payloads: { 'page_id': page_id },
-                headers: { "authorization": `Bearer ${access_token}` }
-            })
-        }
-        console.log('sender', sender)
+            //Check if sender followed the page or not
 
 
-        //Check if sender followed the page or not
+            // if chatbot is set
+            //filterMessage(webhookEvent, recipient_id, senderPsid, access_token)
 
-
-        // if chatbot is set
-        //filterMessage(webhookEvent, recipient_id, senderPsid, access_token)
-
-        //Save infomations to database
-        if(cid !== undefined && sender !== undefined){
-            appendMessage(
-                cid, 
-                (body.object == 'instagram')? 'ig' : 'fb', 
-                webhookEvent.message, sender, 
-                (body.object == 'instagram')?
-                chatters[chaterIndex] : webhookEvent.recipient.id
-            )            
+            //Save infomations to database
+            await appendMessage(
+                cid,
+                (body.object == 'instagram')? 'ig' : 'fb',
+                webhookEvent.message, customer,
+                page_id,
+                message_id
+            )
+        } catch (error) {
+            console.log('webhook_error', error)
         }
     });
 }
@@ -357,9 +346,11 @@ export default {
  * messenger, instagram direct message, whatsapp 訊息接收
  */
     webhookEvent: async (req, res, next) => {
+        if(!isSignedByMeta(req)){
+            return res.sendStatus(403)
+        }
         let body = req.body;
         const { entry, object } = body
-        console.log('req.body', req.body)
         // console.log('entry', object)
         // Checks if this is an event from a page subscription
         if (object === 'page' || object == 'instagram') {
@@ -385,17 +376,14 @@ export default {
 
             res.sendStatus(200)
 
-            let whatsappMessages = await whatsappWebhookMessages(entry)
+            try {
+                let whatsappMessages = await whatsappWebhookMessages(entry)
 
-            console.log(whatsappMessages)
-            if(Object.keys(whatsappMessages).length > 0){
-                appendMessage(
-                    whatsappMessages.chat_room_id,
-                    'whatsapp',
-                    whatsappMessages.content,
-                    whatsappMessages.info_Content,
-                    whatsappMessages.channel_id
-                )
+                for(const { chat_room_id, content, customer, channel_id } of whatsappMessages){
+                    await appendMessage(chat_room_id, 'whatsapp', content, customer, channel_id, content.id)
+                }
+            } catch (error) {
+                console.log('webhook_error', error)
             }
         }else {
 

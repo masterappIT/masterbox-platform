@@ -34,110 +34,61 @@ export const manage_wa_message = (wamid, message = {}, mode) => {
  * @param {array} entry - 訊息物件的陣列
  */
 export const whatsappWebhookMessages = async(entry) => {
-    let chat_room_id = '', senderwaid = '', recipient_id = '', content = {}, result = {}
+    const results = []
 
     entry.forEach((data) => {
         data.changes.forEach(params => {
-            console.log(params)
+            // Status updates describe messages the company sent, which are stored when they are sent.
+            if (params.field != "messages" || params.value.contacts === undefined || params.value.messages === undefined) return
 
-            // 公司主動寄出時收到的訊息
-            if(params.value.statuses !== undefined){
-                params.value.statuses.forEach((status) => {
-                    console.log(status)    
+            const contact = params.value.contacts[0]
 
-                    if(status.status == 'sent' || status.status == 'deliverd'){
-                        chat_room_id = status.conversation.id
-                        senderwaid = params.value.metadata.phone_number_id
-                        recipient_id = status.recipient_id
-                        content = {
-                            id: status.id.split('.')[1],
-                            timestamp: status.timestamp,
-                            message: manage_wa_message(status.id.split('.')[1], 'get')
-                        }
-
-                        // appendMessage(chat_room_id, 'whatsapp', content, senderwaid, senderwaid)
-                        result = { 
-                            chat_room_id: chat_room_id,
-                            content: content,
-                            info_Content: senderwaid,
-                            channel_id: senderwaid
-                         }
-                    }
-
-                    // 如果出錯
-                    if(status.errors !== undefined){
-                        status.errors.data.forEach(error => {
-                            // let code = error.code
-
-                            res.status(404).send(error.details)
-                        })                                 
-                    }
-                })
-                
-            }
-
-            // 被動接收公司客戶傳來的訊息
-            if (params.field == "messages") {
-                if(params.value.contacts !== undefined){
-                    chat_room_id = data.id
-                    
-                    params.value.contacts.forEach((contact) => {
-                        console.log('contact', contact)
-
-                        senderwaid = contact
-                    })
-
-                    params.value.messages.forEach((msg) => {
-                        console.log('message', msg)
-
-                        recipient_id = params.value.metadata.phone_number_id
-                        content = {
-                            id: msg.id.split('.')[1],
-                            timestamp: msg.timestamp,
-                        }
-
-                        switch(msg.type){
-                            case 'text':
-                                content.message = msg.text
-                            break;
-                            case 'image':
-                                content.message = msg.image_url
-                            break;
-                            case 'sticker':
-                                content.message = msg.sticker
-                            break;
-                            case 'button':
-                                content.message = msg.button
-                            break;
-                            case 'order':
-                                content.message = msg.order
-                            break;
-                            case 'unkonwn':
-                                content.message = msg.errors
-                            break;
-                            default:
-                            if(msg.contacts !== undefined){
-                                content.message = msg.contacts
-                            }
-
-                            if(msg.location !== undefined){
-                                content.message = msg.location
-                            }
-                        }
-                    })
-                    
-                    // appendMessage(chat_room_id, 'whatsapp', content, senderwaid, params.value.metadata.phone_number_id)
-                    result = { 
-                        chat_room_id: chat_room_id,
-                        content: content,
-                        info_Content: senderwaid,
-                        channel_id: params.value.metadata.phone_number_id
-                     }
+            params.value.messages.forEach((msg) => {
+                const content = {
+                    id: msg.id.split('.')[1] || msg.id,
+                    timestamp: msg.timestamp,
                 }
-            }
+
+                switch(msg.type){
+                    case 'text':
+                        content.message = msg.text
+                    break;
+                    case 'image':
+                        content.message = msg.image_url
+                    break;
+                    case 'sticker':
+                        content.message = msg.sticker
+                    break;
+                    case 'button':
+                        content.message = msg.button
+                    break;
+                    case 'order':
+                        content.message = msg.order
+                    break;
+                    case 'unkonwn':
+                        content.message = msg.errors
+                    break;
+                    default:
+                    if(msg.contacts !== undefined){
+                        content.message = msg.contacts
+                    }
+
+                    if(msg.location !== undefined){
+                        content.message = msg.location
+                    }
+                }
+
+                results.push({
+                    // Each customer's number is its own conversation.
+                    chat_room_id: contact.wa_id,
+                    content: content,
+                    customer: { id: contact.wa_id, name: contact.profile?.name },
+                    channel_id: params.value.metadata.phone_number_id,
+                })
+            })
         })
     })
-    return result
+    return results
 }
 
 /**

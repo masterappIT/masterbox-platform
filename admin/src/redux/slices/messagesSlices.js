@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit'
-import { apolloApiHelpers } from '../../graphQL';
+import { apolloApiHelpers, client, refreshSession } from '../../graphQL';
 import { SUBSCRIBE_MESSAGE } from '../../graphQL/subscription'
 import { GET_USER_SUBSCRIBED_CHANNELS, CHATROOMS } from '../../graphQL/channel'
 import { SEND_MESSAGE, CHATROOMS_MESSAGES } from '../../graphQL/messages'
@@ -27,16 +27,18 @@ const parseContents = (contents) => {
   if (contents && typeof contents === 'object') return contents;
   try {
     const parsed = JSON.parse(contents);
-    if (parsed && typeof parsed === 'object') return { ...parsed, text: parsed.text ?? parsed.message?.text };
+    if (parsed && typeof parsed === 'object') return { ...parsed, text: parsed.text ?? parsed.message?.text ?? parsed.message?.body };
   } catch (error) { }
   return { text: contents };
 };
 
-// Every stored message comes from a company account, so the channel is always the sender.
+// Conversations tell the two sides apart by comparing the sender with the channel.
+const CUSTOMER_SENDER = 'customer';
+
 const toMessage = ({ sentAt, createdAt, contents, sender, ...message }) => ({
   ...message,
   contents: parseContents(contents),
-  sender: sender || message.channel_id,
+  sender: sender || (message.inbound ? CUSTOMER_SENDER : message.channel_id),
   createdAt: createdAt || sentAt,
 });
 
@@ -90,20 +92,48 @@ export const getChatRoomsMessages = createAsyncThunk(
 
 
 
+const RESUBSCRIBE_DELAY_MS = 5000;
+
+let messagesSubscription = null;
+let resubscribeTimer = null;
+
+export const stopMessagesSubscription = () => {
+  clearTimeout(resubscribeTimer);
+  messagesSubscription?.unsubscribe();
+  messagesSubscription = null;
+}
+
 export const handleMessagesSubscription = createAsyncThunk(
   'messages/subscribe',
   async (_, { dispatch, getState }) => {
-    const userId = getState().user?.info?._id;
-    if (!userId) return null;
+    if (messagesSubscription || !getState().user?.accessToken) return;
 
-    try {
-      const res = await apolloApiHelpers('mutation', SUBSCRIBE_MESSAGE, { accountId: userId });
-      if (res?.error) return null;
-      dispatch(pushMessage(res));
-      return res;
-    } catch (error) {
-      return null;
-    }
+    const resubscribe = () => {
+      clearTimeout(resubscribeTimer);
+      resubscribeTimer = setTimeout(() => dispatch(handleMessagesSubscription()), RESUBSCRIBE_DELAY_MS);
+    };
+
+    messagesSubscription = client.subscribe({ query: SUBSCRIBE_MESSAGE }).subscribe({
+      next: ({ data }) => {
+        const message = data?.sendMessage;
+        if (!message) return;
+        dispatch(pushMessage(message));
+        // A customer's first message creates a chat room this page hasn't loaded yet.
+        const rooms = getState().messages.chatRooms;
+        if (!Array.isArray(rooms) || !rooms.some(({ chat_room_id }) => chat_room_id === message.to_chat_room_id)) dispatch(findChatsRooms());
+      },
+      error: async (error) => {
+        messagesSubscription = null;
+        const isExpired = error.graphQLErrors?.some(({ extensions }) => extensions?.code === 'UNAUTHENTICATED');
+        if (isExpired) await refreshSession().catch(() => null);
+        if (getState().user?.accessToken) resubscribe();
+      },
+      // The socket closed cleanly, which also ends the subscription.
+      complete: () => {
+        messagesSubscription = null;
+        if (getState().user?.accessToken) resubscribe();
+      },
+    });
   }
 )
 
@@ -197,6 +227,11 @@ export const messagesSlice = createSlice({
         allNewData[key].sort((a, b) => { return a.createdAt, b.createdAt }).reverse()
 
         state.messages = allNewData
+
+        // Keep the conversation with the newest message at the top.
+        const rooms = Array.isArray(state.chatRooms) ? state.chatRooms : []
+        const room = rooms.find(({ chat_room_id }) => chat_room_id === to_chat_room_id)
+        if (room) state.chatRooms = [{ ...room, updatedAt: newMessages.createdAt }, ...rooms.filter((other) => other !== room)]
 
       }
       return

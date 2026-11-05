@@ -17,6 +17,7 @@ export default gql`
     readAt: DateTime
     sentAt: DateTime
     isMine: Boolean
+    inbound: Boolean
   }
   type ChatRoomUser {
     id: String
@@ -50,7 +51,6 @@ export default gql`
     channel_id: String
   }
   type Mutation {
-    receivedMessageFromWebhook(MessageInput: MessageInput): Message
     appSendMessage(MessageInput: MessageInput): Message
     markMessageRead(messageId: ID!): Message
   }
@@ -60,5 +60,5 @@ export default gql`
     chatRooms: [ChatRoom!]!
     messages(conversationId: ID, roomId: ID): [Message!]!
   }
-  type Subscription { sendMessage(accountId: String): Message }
+  type Subscription { sendMessage: Message }
 `;
