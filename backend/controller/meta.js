@@ -435,7 +435,7 @@ export default {
         }
 
         const permissions =
-            'pages_messaging,business_management,whatsapp_business_management,whatsapp_business_messaging,pages_show_list,public_profile,pages_manage_metadata,instagram_basic,instagram_manage_messages,leads_retrieval'
+            'pages_messaging,business_management,whatsapp_business_management,whatsapp_business_messaging,pages_show_list,public_profile,pages_manage_metadata,pages_read_engagement,instagram_basic,instagram_manage_messages,leads_retrieval'
 
         // whatsapp_business_management permission seems to be granted when extras is not included
         // const extras = { feature: 'whatsapp_embedded_signup' }
