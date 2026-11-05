@@ -310,6 +310,64 @@ export const getFacebookUserId = (req, access_token, whatsappAccounts=[], next=n
  * @param {string} access_token - page access token, 粉絲頁的 access token
  * @returns {object} Infomations of the sender, 發送者的基本資料
  */
+// Instagram's profile of someone who messaged the account: name, @username and picture.
+export const getInstagramSenderInfo = async(igsid, access_token) => JSON.parse(await metaClient({
+    endPoints: igsid,
+    method: 'GET',
+    queryStrings: { fields: 'name,username,profile_pic', access_token },
+}))
+
+// How a customer is stored on a conversation, from Messenger's or Instagram's profile of them.
+// The name in a conversation's participants stands in when the profile lookup found nothing.
+export const messengerCustomer = (id, profile = {}, participantName) => ({
+    id, first_name: profile.first_name || participantName, last_name: profile.last_name, avatar: profile.profile_pic,
+})
+export const instagramCustomer = (id, profile = {}, participantName) => ({
+    id, first_name: profile.name || profile.username || participantName, username: profile.username || participantName, avatar: profile.profile_pic,
+})
+
+const HISTORY_CONVERSATIONS = 100
+// Meta only lets an app read the 20 most recent messages of an Instagram conversation.
+const HISTORY_MESSAGES = 20
+
+/**
+ * The most recent conversations of a page or Instagram account, each with its latest messages.
+ * @param {string} page_id - the Facebook page, also for its Instagram account
+ * @param {string} platform - messenger or instagram
+ */
+export const getRecentConversations = async(page_id, platform, access_token) => {
+    const fetchPage = (after, withAttachments) => metaClient({
+        endPoints: `${page_id}/conversations`,
+        method: 'GET',
+        queryStrings: {
+            platform, limit: 25, access_token, ...(after && { after }),
+            fields: `participants,updated_time,messages.limit(${HISTORY_MESSAGES}){id,message,from,created_time${withAttachments ? ',attachments' : ''}}`,
+        },
+    }).then(JSON.parse)
+
+    const conversations = []
+    let after, withAttachments = true
+    do {
+        // Losing pictures is better than losing the conversations if Meta won't return attachments here.
+        const page = await fetchPage(after, withAttachments).catch((error) => {
+            if (!withAttachments || error.statusCode !== 400) throw error
+            withAttachments = false
+            return fetchPage(after, false)
+        })
+        conversations.push(...(page.data || []))
+        after = page.paging?.next ? page.paging.cursors?.after : undefined
+    } while (after && conversations.length < HISTORY_CONVERSATIONS)
+    return conversations.slice(0, HISTORY_CONVERSATIONS)
+}
+
+// A conversation message's attachments, in the shape webhook messages use.
+export const historyAttachments = (message) => (message.attachments?.data || []).flatMap((attachment) => {
+    const url = attachment.image_data?.url || attachment.video_data?.url || attachment.file_url
+    if (!url) return []
+    const type = attachment.image_data ? 'image' : attachment.video_data ? 'video' : 'file'
+    return [{ type, payload: { url } }]
+})
+
 export const getMetaSenderInfo = async(senderPsid, access_token) => {
     return new Promise((resolve, reject) => {
         metaClient({

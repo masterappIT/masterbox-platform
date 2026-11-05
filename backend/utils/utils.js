@@ -134,20 +134,35 @@ const findChannelByExternalId = async (externalId, where) => {
   return channels.find(({ accessInfo }) => accessInfo && [accessInfo.id, accessInfo.page_id, accessInfo.phone_number_id].includes(externalId));
 };
 
+const definedFields = (object) => Object.fromEntries(Object.entries(object || {}).filter(([, value]) => value !== undefined && value !== null && value !== ''));
+
+// The conversation's users with the customer's latest profile, or null when nothing changed.
+// A lookup that found nothing keeps the name and picture stored before; Meta's picture links expire, so newer ones replace them.
+const usersWithCustomer = (users, customer) => {
+  if (!customer?.id) return null;
+  const stored = Array.isArray(users) ? users : [];
+  const current = stored.find(user => user?.id === customer.id);
+  const merged = { ...current, ...definedFields(customer) };
+  if (current && Object.keys(merged).every(key => merged[key] === current[key])) return null;
+  return [merged, ...stored.filter(user => user?.id !== customer.id)];
+};
+
+// The platform's conversation id may not have been available earlier, so also match on the customer.
+const findCustomerRoom = (channel, chatRoomId, customer) => prisma.chatRoom.findFirst({
+  where: { companyId: channel.companyId, channelId: channel.id, OR: [{ chatRoomId }, ...(customer?.id ? [{ users: { array_contains: [{ id: customer.id }] } }] : [])] },
+});
+
 // Stores a customer's message from a platform webhook and tells the channel's accounts about it.
 export const saveInboundMessage = async ({ externalChannelId, platform, chatRoomId, contents, customer, externalId }) => {
   // A disabled channel takes in nothing; the message stays in the platform's own inbox.
   const channel = await findChannelByExternalId(externalChannelId, { platform, enabled: true });
   if (!channel) return null;
 
-  // The platform's conversation id may not have been available earlier, so also match on the customer.
-  const room = await prisma.chatRoom.findFirst({
-    where: { companyId: channel.companyId, channelId: channel.id, OR: [{ chatRoomId }, ...(customer ? [{ users: { array_contains: [{ id: customer.id }] } }] : [])] },
-  });
-  const users = customer ? [customer] : [];
+  const room = await findCustomerRoom(channel, chatRoomId, customer);
+  const users = usersWithCustomer(room?.users, customer);
   const roomId = room?.chatRoomId || room?.id || chatRoomId;
-  if (room) await prisma.chatRoom.update({ where: { id: room.id }, data: { updatedAt: new Date(), ...(customer && !room.users?.length ? { users } : {}) } });
-  else await prisma.chatRoom.create({ data: { companyId: channel.companyId, platform, channelId: channel.id, chatRoomId, users } });
+  if (room) await prisma.chatRoom.update({ where: { id: room.id }, data: { updatedAt: new Date(), ...(users ? { users } : {}) } });
+  else await prisma.chatRoom.create({ data: { companyId: channel.companyId, platform, channelId: channel.id, chatRoomId, users: users || [] } });
 
   try {
     const message = await prisma.message.create({
@@ -161,6 +176,41 @@ export const saveInboundMessage = async ({ externalChannelId, platform, chatRoom
     if (error.code === 'P2002') return null;
     throw error;
   }
+};
+
+/**
+ * Stores conversations from before the channel was connected. Messages already stored are left alone,
+ * so connecting the same channel again only adds what is new.
+ * @param conversations [{ chatRoomId, customer, messages: [{ externalId, sentAt, fromCompany, contents }] }]
+ * @param accountId who connected the channel; Meta doesn't say which agent sent the company's replies, so they are recorded under this account
+ * @returns the number of messages stored
+ */
+export const saveConversationHistory = async (channel, conversations, accountId) => {
+  let stored = 0;
+  for (const { chatRoomId, customer, messages } of conversations) {
+    if (!messages.length) continue;
+    const room = await findCustomerRoom(channel, chatRoomId, customer);
+    const users = usersWithCustomer(room?.users, customer);
+    const lastAt = new Date(Math.max(...messages.map(({ sentAt }) => new Date(sentAt).getTime())));
+    if (room && users) await prisma.chatRoom.update({ where: { id: room.id }, data: { users, updatedAt: room.updatedAt } });
+    // A new conversation sorts by its last message, not by when it was imported.
+    if (!room) await prisma.chatRoom.create({ data: { companyId: channel.companyId, platform: channel.platform, channelId: channel.id, chatRoomId, users: users || [], createdAt: lastAt, updatedAt: lastAt } });
+    const roomId = room?.chatRoomId || room?.id || chatRoomId;
+
+    const result = await prisma.message.createMany({
+      data: messages.map(({ externalId, sentAt, fromCompany, contents }) => ({
+        companyId: channel.companyId, platform: channel.platform, contents: JSON.stringify(contents), externalId,
+        createdAt: new Date(sentAt), createdBy: fromCompany ? accountId : null,
+      })),
+      skipDuplicates: true,
+    });
+    if (!result.count) continue;
+    stored += result.count;
+    // createMany can't add the recipients, so attach them to the messages it just made.
+    const created = await prisma.message.findMany({ where: { externalId: { in: messages.map(({ externalId }) => externalId) }, recipients: { none: {} } }, select: { id: true } });
+    await prisma.messageRecipient.createMany({ data: created.map(({ id }) => ({ messageId: id, channelId: channel.id, chatRoomIds: [roomId] })) });
+  }
+  return stored;
 };
 
 const channelRecords = ({ facebookPages = [], instagramAccounts = [], whatsappAccounts = [] }) => [

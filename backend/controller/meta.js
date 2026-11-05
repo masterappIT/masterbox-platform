@@ -3,7 +3,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { getJwtSecret } from '../lib/auth/jwtSecret.js';
 import { prisma } from '../lib/db/prisma.js';
-import { sortChannelSchema, findChannelToken, saveInboundMessage, markMessageFailed, metaFailureReason } from '../utils/utils.js';
+import { sortChannelSchema, findChannelToken, saveInboundMessage, saveConversationHistory, markMessageFailed, metaFailureReason } from '../utils/utils.js';
 
 // facebook
 import { getUserAccessToken, getDebugToken,
@@ -12,7 +12,9 @@ import { getUserAccessToken, getDebugToken,
     getPageFollowers, getMetaConversations,
     getConversationMessages, getMessage,
     getAttachment, metaSendMessage,
-    appSubscribePage, collectMetaChannels } from './meta_facebook.js'
+    appSubscribePage, collectMetaChannels,
+    getInstagramSenderInfo, messengerCustomer, instagramCustomer,
+    getRecentConversations, historyAttachments } from './meta_facebook.js'
 
 // whatsapp
 import { getNumberDetail, getBusinessProfile, 
@@ -271,6 +273,45 @@ const appendMessage = async (to_chat_room_id, platform, contents, customer, chan
     }
 }
 
+// Runs work on a few items at a time, so a big inbox doesn't fire hundreds of Meta requests at once.
+const mapInBatches = async (items, size, work) => {
+    const results = []
+    for (let i = 0; i < items.length; i += size) results.push(...await Promise.all(items.slice(i, i + size).map(work)))
+    return results
+}
+
+// Brings in each new Messenger and Instagram channel's recent conversations; WhatsApp has no history to read.
+export const importRecentHistory = async (channels, accountId) => {
+    for (const channel of channels) {
+        if (!channel.enabled || !['fb', 'ig'].includes(channel.platform)) continue
+        const { id, page_id, access_token } = channel.accessInfo || {}
+        const ownIds = [id, page_id].filter(Boolean)
+        const isInstagram = channel.platform === 'ig'
+        try {
+            const conversations = await getRecentConversations(page_id || id, isInstagram ? 'instagram' : 'messenger', access_token)
+            const history = await mapInBatches(conversations, 5, async (conversation) => {
+                const participant = conversation.participants?.data?.find(({ id }) => !ownIds.includes(id))
+                if (!participant) return null
+                const profile = await (isInstagram ? getInstagramSenderInfo : getMetaSenderInfo)(participant.id, access_token).catch(() => undefined)
+                return {
+                    chatRoomId: conversation.id,
+                    customer: isInstagram ? instagramCustomer(participant.id, profile, participant.username) : messengerCustomer(participant.id, profile, participant.name),
+                    messages: (conversation.messages?.data || []).filter(({ id }) => id).map((message) => ({
+                        externalId: message.id,
+                        sentAt: message.created_time,
+                        fromCompany: ownIds.includes(message.from?.id),
+                        contents: { mid: message.id, text: message.message || undefined, attachments: historyAttachments(message) },
+                    })),
+                }
+            })
+            const stored = await saveConversationHistory(channel, history.filter(Boolean), accountId)
+            console.log(`History import for ${channel.platform} channel ${channel.id}: ${stored} messages from ${conversations.length} conversations`)
+        } catch (error) {
+            console.log(`History import failed for ${channel.platform} channel ${channel.id}:`, error.responseBody || error.message)
+        }
+    }
+}
+
 /**
  * 從收到的訊息取出需要的資料
  * @param res repond, 用於回復FB 
@@ -309,7 +350,10 @@ const webhookMessage = (res, body) => {
                     if(result !== null){
                         access_token = result.access_token
                         page_id = result.channel_id
-                        customer = { id: chatters[1 - i] }
+                        const customerId = chatters[1 - i]
+                        // A failed profile lookup shouldn't lose the customer's message.
+                        const profile = await getInstagramSenderInfo(customerId, access_token).catch(() => undefined)
+                        customer = instagramCustomer(customerId, profile)
                         break;
                     }
                 }
@@ -320,7 +364,7 @@ const webhookMessage = (res, body) => {
                 if(access_token){
                     // A failed profile lookup shouldn't lose the customer's message.
                     let sender = await getMetaSenderInfo(webhookEvent.sender.id, access_token).catch(() => undefined)
-                    customer = { id: webhookEvent.sender.id, first_name: sender?.first_name, last_name: sender?.last_name, avatar: sender?.profile_pic }
+                    customer = messengerCustomer(webhookEvent.sender.id, sender)
                 }
             }
 
@@ -495,6 +539,8 @@ export default {
 
                 const { failed, ...channels } = await collectMetaChannels(req.query.code)
                 const { saved, skipped } = await sortChannelSchema({ companyId: account.companyId, accountId: account.id, ...channels })
+                // The inbox fills in by itself; connecting shouldn't wait for it.
+                importRecentHistory(saved, account.id)
 
                 return {
                     meta_connected: saved.length,
