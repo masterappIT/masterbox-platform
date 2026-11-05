@@ -40,6 +40,26 @@ export const createConnectUrl = (account, return_url) => {
     return `${process.env.BASE_URL}/meta/login?state=${encodeURIComponent(state)}`
 }
 
+// Apple's link preview (UA "... facebookexternalhit/1.1 Facebot Twitterbot/") fetches the Meta callback URL a
+// second time from the user's Mac. A code can only be exchanged once, so every request for the same code
+// shares the first exchange and gets the same result instead of "This authorization code has been used".
+const pendingConnects = new Map()
+
+/**
+ * 同一個授權碼只向 Meta 換一次，重複的回呼共用第一次的結果
+ * @param {string} code - Meta 授權碼
+ * @param {function} connect - 實際串接，回傳要帶回後台的參數
+ * @returns {Promise<object>} 帶回後台的參數
+ */
+const connectOnce = (code, connect) => {
+    if(!pendingConnects.has(code)){
+        pendingConnects.set(code, connect())
+        // Meta codes expire after 10 minutes, so a repeat after that could not succeed anyway.
+        setTimeout(() => pendingConnects.delete(code), 10 * 60 * 1000).unref()
+    }
+    return pendingConnects.get(code)
+}
+
 /**
  * 檢查附件檔案大小
  * @param {string} file - 檔案名稱 
@@ -466,24 +486,26 @@ export default {
             return backToAdmin({ meta_error: '已取消 Meta 授權，沒有串接任何頻道。' })
         }
 
-        try {
-            const account = await prisma.account.findFirst({ where: { id: state.account, companyId: state.company } })
-            if(!account){
-                return backToAdmin({ meta_error: '找不到發起串接的帳號，請重新登入後再試。' })
+        backToAdmin(await connectOnce(req.query.code, async() => {
+            try {
+                const account = await prisma.account.findFirst({ where: { id: state.account, companyId: state.company } })
+                if(!account){
+                    return { meta_error: '找不到發起串接的帳號，請重新登入後再試。' }
+                }
+
+                const { failed, ...channels } = await collectMetaChannels(req.query.code)
+                const { saved, skipped } = await sortChannelSchema({ companyId: account.companyId, accountId: account.id, ...channels })
+
+                return {
+                    meta_connected: saved.length,
+                    ...(skipped.length > 0 && { meta_skipped: skipped.join('、') }),
+                    ...(failed.length > 0 && { meta_failed: failed.join('、') }),
+                }
+            } catch (error) {
+                console.log('Meta connect failed:', error.responseBody || error.message)
+                return { meta_error: '串接 Meta 失敗，請稍後再試。' }
             }
-
-            const { failed, ...channels } = await collectMetaChannels(req.query.code)
-            const { saved, skipped } = await sortChannelSchema({ companyId: account.companyId, accountId: account.id, ...channels })
-
-            backToAdmin({
-                meta_connected: saved.length,
-                ...(skipped.length > 0 && { meta_skipped: skipped.join('、') }),
-                ...(failed.length > 0 && { meta_failed: failed.join('、') }),
-            })
-        } catch (error) {
-            console.log('Meta connect failed:', error.responseBody || error.message)
-            backToAdmin({ meta_error: '串接 Meta 失敗，請稍後再試。' })
-        }
+        }))
     },
 
     /**
