@@ -32,6 +32,7 @@ query ChatRooms {
       avatar
     }
     chat_room_id
+    updatedAt
   }
 }
  `;
