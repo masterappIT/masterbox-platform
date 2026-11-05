@@ -37,7 +37,16 @@ export const updateCompanyInfo = createAsyncThunk(
     if (res.error) {
       return alert(res.error)
     }
-    dispatch(saveCompanyInfoFromServer(res))
+
+    // The mutation only returns a status string, so read the saved company back.
+    // Skip the cache: it still holds the company as it was before this save.
+    const company = await apolloApiHelpers('query', COMPANY, { id: companyId }, { fetchPolicy: 'network-only' })
+
+    if (company.error) {
+      alert(company.error)
+    } else {
+      dispatch(saveCompanyInfoFromServer(company))
+    }
 
     alert('儲存成功')
 

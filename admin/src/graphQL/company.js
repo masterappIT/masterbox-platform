@@ -41,31 +41,7 @@ query Query($id: String) {
 
 export const UPDATE_COMPANY_INFO = gql`
 mutation UpdateCompanyInfo($updateCompanyInput: UpdateCompanyInfoInput) {
-  updateCompanyInfo(UpdateCompanyInput: $updateCompanyInput) {
-    chinese_name
-    english_name
-    logo
-    mobile
-    email
-    country
-    pin_number
-    address
-    principal_info {
-      first_name
-      last_name
-      cn_name
-      mobile
-    }
-    labels
-    _id
-    subscription {
-      name
-      period {
-        start
-        end
-      }
-    }
-  }
+  updateCompanyInfo(UpdateCompanyInput: $updateCompanyInput)
 }
 
 `
