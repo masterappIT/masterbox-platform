@@ -1,22 +1,99 @@
-import React, { useState } from 'react'
+import React, { useMemo, useState } from 'react'
+import { useRouter } from 'next/router'
 import { useMutation, useQuery } from '@apollo/client'
-import { MESSAGE_TEMPLATES, CREATE_MESSAGE_TEMPLATE, DELETE_MESSAGE_TEMPLATE } from '../src/graphQL/messageTemplate'
+import Table from '../src/stories/components/Table'
+import TableTop from '../src/components/Table/TableTop'
+import Pagination from '../src/stories/components/Pagination'
+import ConfirmDialog from '../src/stories/components/ConfirmDialog'
+import AlertStack from '../src/stories/components/AlertStack'
+import useAlerts from '../src/utils/useAlerts'
+import usePagination from '../src/utils/usePagination'
+import { MESSAGE_TEMPLATES, DELETE_MESSAGE_TEMPLATE } from '../src/graphQL/messageTemplate'
+import { parseTemplateMessages, platformLabel } from '../src/utils/messageTemplate'
+
+const formatDate = (value) => {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString('zh-TW', { hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
 
 function MessagingTemplatePage() {
-  const { data, loading, error } = useQuery(MESSAGE_TEMPLATES)
-  const [createTemplate] = useMutation(CREATE_MESSAGE_TEMPLATE, { refetchQueries: [{ query: MESSAGE_TEMPLATES }] })
-  const [deleteTemplate] = useMutation(DELETE_MESSAGE_TEMPLATE, { refetchQueries: [{ query: MESSAGE_TEMPLATES }] })
-  const [name, setName] = useState('')
-  const [contents, setContents] = useState('')
-  const [platform, setPlatform] = useState('fb')
-  const templates = data?.messageTemplates || []
-  const addTemplate = async (event) => {
-    event.preventDefault()
-    if (!name.trim() || !contents.trim()) return
-    await createTemplate({ variables: { input: { name: name.trim(), category: 'general', platform, contents: JSON.stringify({ text: contents.trim() }) } } })
-    setName(''); setContents('')
+  const router = useRouter()
+  const { data, loading, error, refetch } = useQuery(MESSAGE_TEMPLATES, { fetchPolicy: 'cache-and-network' })
+  const [deleteTemplate] = useMutation(DELETE_MESSAGE_TEMPLATE)
+  const { alerts, pushAlert, dismissAlert } = useAlerts()
+  const [search, setSearch] = useState('')
+  const [selectedKeys, setSelectedKeys] = useState([])
+  const [confirming, setConfirming] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  const templates = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    const all = data?.messageTemplates || []
+    return query ? all.filter((template) => template.name.toLowerCase().includes(query)) : all
+  }, [data, search])
+  const { page, pageCount, pageItems, setPage } = usePagination(templates)
+
+  const rows = pageItems.map((template) => {
+    const messages = parseTemplateMessages(template.contents)
+    return [
+      { key: 'name', element: 'text', value: template.name },
+      { key: 'platform', element: 'custom', value: <span className='flex items-center gap-[8px] min-w-0 px-[8px]'><img src={`/svg/${template.platform}.svg`} alt='' width={20} height={20} /><span className='truncate'>{platformLabel(template.platform)}</span></span> },
+      { key: 'contents', element: 'text', value: messages.length ? messages.join(' / ') : '（沒有文字內容）' },
+      { key: 'updatedAt', element: 'text', value: formatDate(template.updatedAt) },
+    ]
+  })
+
+  const removeSelected = async () => {
+    setDeleting(true)
+    const failed = []
+    for (const id of selectedKeys) {
+      try { await deleteTemplate({ variables: { id } }) } catch (err) { failed.push(err.message) }
+    }
+    setDeleting(false)
+    setConfirming(false)
+    await refetch()
+    if (failed.length) pushAlert('error', `有 ${failed.length} 個範本刪除失敗：${failed[0]}`)
+    else pushAlert('success', `已刪除 ${selectedKeys.length} 個範本`)
+    setSelectedKeys([])
   }
-  return <main className='p-8'><h1 className='text-2xl font-semibold'>訊息範本</h1><form onSubmit={addTemplate} className='mt-6 max-w-2xl space-y-2 rounded border bg-white p-5'><input value={name} onChange={(event) => setName(event.target.value)} placeholder='範本名稱' className='w-full rounded border p-2' /><textarea value={contents} onChange={(event) => setContents(event.target.value)} placeholder='範本內容' rows='3' className='w-full rounded border p-2' /><div className='flex gap-2'><select value={platform} onChange={(event) => setPlatform(event.target.value)} className='rounded border p-2'><option value='fb'>Facebook</option><option value='ig'>Instagram</option><option value='whatsapp'>WhatsApp</option><option value='line'>LINE</option><option value='wechat'>WeChat</option></select><button type='submit' disabled={!name.trim() || !contents.trim()} className='rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50'>新增範本</button></div></form>{loading && <p className='mt-6 text-gray-500'>載入中…</p>}{error && <p className='mt-6 text-red-600'>無法載入範本：{error.message}</p>}<ul className='mt-6 max-w-2xl divide-y rounded border bg-white'>{!loading && !templates.length && <li className='p-4 text-gray-500'>尚無訊息範本</li>}{templates.map((template) => <li key={template.id} className='flex items-center justify-between p-4'><div><p className='font-medium'>{template.name}</p><p className='text-sm text-gray-500'>{template.platform} · {template.contents}</p></div><button type='button' onClick={() => deleteTemplate({ variables: { id: template.id } })} className='text-red-600'>刪除</button></li>)}</ul></main>
+
+  const isFirstLoad = loading && !data
+  return (
+    <div className='w-full h-full'>
+      <Table
+        withCheckbox
+        withEdit
+        colsTemplate='24px minmax(160px,1.2fr) minmax(120px,0.8fr) minmax(200px,2fr) minmax(150px,0.8fr) 48px'
+        header={['訊息名稱', '平台', '內容', '最後更新']}
+        row={rows}
+        rowIds={pageItems.map((template) => template.id)}
+        loading={isFirstLoad}
+        emptyText={error ? '目前無法讀取訊息範本，請稍後再試' : search ? '找不到符合的範本' : '無任何一筆資料，趕快新增一筆資料吧'}
+        selectedKeys={selectedKeys}
+        onSelectionChange={setSelectedKeys}
+        onEdit={(id) => router.push(`/messaging-template/edit?id=${id}`)}
+        topElms={<TableTop
+          searchPlaceholder='依標題搜尋名稱'
+          searchOnChange={(value) => { setSearch(value); setPage(1) }}
+          addTitle='新增範本'
+          addOnClick={() => router.push('/messaging-template/edit')}
+          deleteOnClick={() => setConfirming(true)}
+          deleteDisabled={!selectedKeys.length}
+          deleteHint={selectedKeys.length ? undefined : '請先勾選要刪除的範本'}
+        />}
+        footer={<Pagination page={page} pageCount={pageCount} onChange={setPage} />}
+      />
+      <ConfirmDialog
+        isShow={confirming}
+        title={`確定要刪除 ${selectedKeys.length} 個範本嗎？`}
+        description='刪除後無法復原。'
+        busy={deleting}
+        onConfirm={removeSelected}
+        onCancel={() => setConfirming(false)}
+      />
+      <AlertStack alerts={alerts} onDismiss={dismissAlert} />
+    </div>
+  )
 }
 
 export default MessagingTemplatePage

@@ -36,7 +36,7 @@ function Toggle({ color, status, customStyles, onClick, disabled, label }) {
 
     return (
         <div role='switch' aria-checked={isOn} aria-disabled={Boolean(disabled)} aria-label={label} tabIndex={0}
-            className={`toggle toggle-${isOn ? 'primary' : 'secondary'} ${disabled ? 'opacity-50 cursor-wait' : ''} ${isTailwind && customStyles} `} style={!isTailwind ? { ...customStyles } : {}} onClick={onToggleStatus} onKeyDown={onKeyDown}>
+            className={`toggle toggle-${isOn ? 'primary' : 'secondary'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${isTailwind && customStyles} `} style={!isTailwind ? { ...customStyles } : {}} onClick={onToggleStatus} onKeyDown={onKeyDown}>
             <div className={`toggle-status toggle-${isOn ? 'primary-' : 'secondary-'}status`} />
         </div>
     )

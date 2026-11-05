@@ -1,9 +1,23 @@
 @import '_Common.module.scss';
 
 .button {
-	@apply py-[8px] px-[16px] h-[34px] text-button_primary  space-x-2 cursor-pointer;
+	@apply py-[8px] px-[16px] min-h-[34px] text-button_normal leading-[18px] gap-[4px] cursor-pointer select-none whitespace-nowrap transition-colors duration-150;
 
 	@include row;
+
+	&:focus-visible {
+		@apply outline outline-2 outline-offset-2 outline-primary_dark;
+	}
+
+	// Icon buttons in the design use 8px padding all round, which makes them 36px tall.
+	&-with-icon {
+		@apply p-[8px];
+	}
+
+	// The sign-in page's original button.
+	&-size-large {
+		@apply h-[34px] py-[8px] px-[16px] text-button_primary space-x-2 gap-0;
+	}
 
 	&-icon {
 		@apply h-[8px] w-[8px] rounded-full;
@@ -50,6 +64,9 @@
 	&-contained-primary {
 		@apply text-white bg-primary;
 		&:hover{
+			@apply  bg-primary_light
+		}
+		&:active{
 			@apply  bg-primary_dark
 		}
 	}
@@ -80,6 +97,9 @@
 	&-contained-grayscale {
 		@apply text-white bg-grayscale;
 		&:hover{
+			@apply  bg-grayscale_hover
+		}
+		&:active{
 			@apply  bg-grayscale_dark
 		}
 
@@ -139,6 +159,31 @@
 	// 		@apply bg-grayscale_light;;
 	// 	}
 	// }
+
+	// Keeps the disabled colour on hover and press.
+	&-disabled {
+		@apply cursor-not-allowed;
+		&.button-contained-primary,
+		&.button-contained-primary:hover,
+		&.button-contained-primary:active {
+			@apply bg-primary_lightest;
+		}
+		&.button-contained-alert,
+		&.button-contained-alert:hover,
+		&.button-contained-alert:active {
+			@apply bg-alert_light;
+		}
+		&.button-contained-grayscale,
+		&.button-contained-grayscale:hover,
+		&.button-contained-grayscale:active {
+			@apply bg-grayscale_lightest;
+		}
+		&.button-outlined-primary,
+		&.button-outlined-primary:hover,
+		&.button-outlined-primary:active {
+			@apply bg-transparent text-primary_light border-primary_light;
+		}
+	}
 
 	&-rounded-none {
 		@apply rounded-[0px];

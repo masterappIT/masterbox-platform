@@ -1,72 +1,105 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import Table from '../src/stories/components/Table';
-import { tableFactory } from '../src/utils/TableFactory';
-import TableTop from '../src/components/Table/TableTop';
-import { apolloApiHelpers } from '../src/graphQL';
-import { LIST_ACCOUNTS, CREATE_ACCOUNT, UPDATE_ACCOUNT, DELETE_ACCOUNT } from '../src/graphQL/account';
-import { selectUserInfo } from '../src/redux/slices/userSlices';
-import { useSelector } from 'react-redux';
+import React, { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/router'
+import { useDispatch, useSelector } from 'react-redux'
+import Table from '../src/stories/components/Table'
+import TableTop from '../src/components/Table/TableTop'
+import Avatar from '../src/stories/components/Avatar'
+import Button from '../src/stories/components/Button'
+import Pagination from '../src/stories/components/Pagination'
+import usePagination from '../src/utils/usePagination'
+import { customersFromRooms } from '../src/utils/customers'
+import { platformLabel, TEMPLATE_PLATFORMS } from '../src/utils/messageTemplate'
+import { findChatsRooms, getUserSubscribedChannels, selectChannels, selectChannelsStatus, selectChatRooms, selectChatRoomsStatus } from '../src/redux/slices/messagesSlices'
 
-const emptyForm = { email: '', password: '', name: '', mobile: '', role: 'user' };
+const NO_ROOMS = []
+
+const formatDate = (value) => {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString('zh-TW', { hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
 
 function CustomersManagementPage() {
-    const userInfo = useSelector(selectUserInfo);
-    const companyId = userInfo?.company_id;
-    const [rows, setRows] = useState([]);
-    const [search, setSearch] = useState('');
-    const [selectedKeys, setSelectedKeys] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState('');
-    const [form, setForm] = useState(emptyForm);
-    const [editingId, setEditingId] = useState(null);
-    const [showForm, setShowForm] = useState(false);
-    const [saving, setSaving] = useState(false);
+  const router = useRouter()
+  const dispatch = useDispatch()
+  const channels = useSelector(selectChannels)
+  const storedRooms = useSelector(selectChatRooms)
+  const rooms = Array.isArray(storedRooms) ? storedRooms : NO_ROOMS
+  const channelsStatus = useSelector(selectChannelsStatus)
+  const roomsStatus = useSelector(selectChatRoomsStatus)
+  const [requested, setRequested] = useState(false)
+  const [search, setSearch] = useState('')
+  const [platform, setPlatform] = useState('')
+  const [channelId, setChannelId] = useState('')
 
-    const loadAccounts = useCallback(async () => {
-        setLoading(true); setError('');
-        const result = await apolloApiHelpers('query', LIST_ACCOUNTS, { input: { company_id: companyId } });
-        if (result?.error) setError(result.error);
-        else setRows(result?.items || []);
-        setLoading(false);
-    }, [companyId]);
-    useEffect(() => { if (companyId) loadAccounts(); }, [companyId, loadAccounts]);
+  useEffect(() => {
+    setRequested(true)
+    dispatch(getUserSubscribedChannels())
+    dispatch(findChatsRooms())
+  }, [dispatch])
 
-    const normalizedRows = useMemo(() => rows.map(account => ({ status: 1, img: account.info?.avatar || account.info?.name || account.email, name: account.info?.name || account.email, id: account._id || account.id, role: account.role || 'user', email: account.email, last_online_time: account.last_online_time || '-', is_online: Boolean(account.is_online) })), [rows]);
-    const tableData = useMemo(() => { const query = search.trim().toLowerCase(); const filtered = query ? normalizedRows.filter(row => [row.name, row.email, row.id, row.role].some(value => String(value).toLowerCase().includes(query))) : normalizedRows; return new tableFactory('userMgmt', filtered); }, [normalizedRows, search]);
+  const customers = useMemo(() => customersFromRooms(rooms, channels), [rooms, channels])
+  const platformOptions = TEMPLATE_PLATFORMS.filter(({ value }) => channels.some((channel) => channel.platform === value))
+  const channelOptions = channels.filter((channel) => !platform || channel.platform === platform)
 
-    const openForm = () => {
-        const selected = normalizedRows.find(row => row.id === selectedKeys[0]);
-        setEditingId(selected?.id || null);
-        setForm(selected ? { email: selected.email || '', password: '', name: selected.name || '', mobile: '', role: selected.role || 'user' } : emptyForm);
-        setShowForm(true);
-    };
-    const saveAccount = async event => {
-        event.preventDefault(); setSaving(true); setError('');
-        const input = editingId ? { email: form.email, role: form.role, user_info: JSON.stringify({ name: form.name, mobile: form.mobile }) } : { email: form.email, password: form.password, role: form.role, user_info: JSON.stringify({ name: form.name, mobile: form.mobile }) };
-        const variables = editingId ? { _id: editingId, input } : { company_id: companyId, input };
-        const result = await apolloApiHelpers('mutation', editingId ? UPDATE_ACCOUNT : CREATE_ACCOUNT, variables);
-        if (result?.error) setError(result.error); else { setShowForm(false); setSelectedKeys([]); await loadAccounts(); }
-        setSaving(false);
-    };
-    const removeSelected = async () => {
-        if (!selectedKeys.length || !window.confirm(`確定要刪除選取的 ${selectedKeys.length} 位客戶嗎？`)) return;
-        setLoading(true); setError('');
-        for (const id of selectedKeys) { const result = await apolloApiHelpers('mutation', DELETE_ACCOUNT, { _id: id }); if (result?.error) { setError(result.error); break; } }
-        setSelectedKeys([]); await loadAccounts();
-    };
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    return customers.filter((customer) => (!platform || customer.platform === platform)
+      && (!channelId || customer.channelId === channelId)
+      && (!query || [customer.name, customer.id].some((value) => String(value || '').toLowerCase().includes(query))))
+  }, [customers, platform, channelId, search])
+  const { page, pageCount, pageItems, setPage } = usePagination(filtered)
 
-    if (!companyId) return <div className="p-4">正在取得公司資訊…</div>;
-    return <div className="w-full h-full">
-        <TableTop addTitle={selectedKeys.length === 1 ? '編輯客戶' : '新增客戶'} searchOnClick={setSearch} addOnClick={openForm} deleteOnClick={removeSelected} />
-        {error && <div className="mb-4 rounded bg-red-100 p-3 text-red-700">{error}</div>}
-        {showForm && <form onSubmit={saveAccount} className="mb-5 rounded bg-white p-4 shadow flex flex-wrap gap-3 items-end">
-            <label className="flex flex-col">Email<input required type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} className="border p-2" /></label>
-            {!editingId && <label className="flex flex-col">密碼<input required type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} className="border p-2" /></label>}
-            <label className="flex flex-col">姓名<input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="border p-2" /></label>
-            <label className="flex flex-col">角色<input value={form.role} onChange={e => setForm({ ...form, role: e.target.value })} className="border p-2" /></label>
-            <button type="submit" disabled={saving} className="rounded bg-blue-600 px-4 py-2 text-white">{saving ? '儲存中…' : '儲存'}</button><button type="button" onClick={() => setShowForm(false)} className="border px-4 py-2">取消</button>
-        </form>}
-        {loading ? <div className="p-4">載入中…</div> : !normalizedRows.length ? <div className="p-4">目前沒有客戶資料。</div> : <Table withCheckbox withEdit header={tableData.getHeaders()} row={tableData.getRowsData()} colsTemplate={tableData.getGridTemplate()} selectedKeys={selectedKeys} onSelectionChange={setSelectedKeys} />}
-    </div>;
+  const rows = pageItems.map((customer) => {
+    const name = customer.name || '未命名客戶'
+    return [
+      { key: 'avatar', element: 'custom', value: <Avatar img={customer.avatar} name={name} size='small' /> },
+      { key: 'name', element: 'text', value: name },
+      { key: 'id', element: 'text', value: customer.id },
+      { key: 'platform', element: 'custom', value: <span className='flex items-center gap-[8px] min-w-0 px-[8px]'><img src={`/svg/${customer.platform}.svg`} alt='' width={16} height={16} /><span className='truncate' title={customer.channelName}>{platformLabel(customer.platform)} · {customer.channelName}</span></span> },
+      { key: 'last', element: 'text', value: formatDate(customer.lastInteraction) },
+      { key: 'view', element: 'custom', value: <Button title='查看對話' customStyles='home-view' onClick={() => router.push(`/?room=${encodeURIComponent(customer.roomId)}`)} /> },
+    ]
+  })
+
+  const isPending = (status) => !requested || status === 'loading' || status === 'idle'
+  const loading = !customers.length && (isPending(channelsStatus) || isPending(roomsStatus))
+  const failed = channelsStatus === 'failed' || roomsStatus === 'failed'
+  let emptyText = '目前還沒有客戶。客戶傳訊息進來後，就會出現在這裡。'
+  if (failed) emptyText = '目前無法讀取客戶，請稍後再試'
+  else if (!channels.length) emptyText = '還沒有可用的社群平台，連接後客戶才會出現在這裡'
+  else if (customers.length) emptyText = '找不到符合條件的客戶'
+
+  return (
+    <div className='w-full h-full'>
+      <Table
+        colsTemplate='40px minmax(140px,1fr) minmax(160px,1fr) minmax(200px,1.4fr) minmax(150px,0.8fr) 104px'
+        header={['照片', '名稱', '帳號ID', '社群平台', '最後互動時間', '']}
+        row={rows}
+        rowIds={pageItems.map((customer) => customer.key)}
+        loading={loading}
+        emptyText={emptyText}
+        topElms={<TableTop searchPlaceholder='依名稱或帳號ID搜尋' searchOnChange={(value) => { setSearch(value); setPage(1) }}>
+          <div className='flex flex-wrap gap-x-[24px] gap-y-[12px]'>
+            <label className='channel-filter'>
+              <span>選擇平台</span>
+              <select value={platform} onChange={(event) => { setPlatform(event.target.value); setChannelId(''); setPage(1) }}>
+                <option value=''>所有平台</option>
+                {platformOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </label>
+            <label className='channel-filter'>
+              <span>選擇頻道</span>
+              <select value={channelId} onChange={(event) => { setChannelId(event.target.value); setPage(1) }}>
+                <option value=''>所有頻道</option>
+                {channelOptions.map(({ account, name }) => <option key={account} value={account}>{name}</option>)}
+              </select>
+            </label>
+          </div>
+        </TableTop>}
+        footer={<Pagination page={page} pageCount={pageCount} onChange={setPage} />}
+      />
+    </div>
+  )
 }
+
 export default CustomersManagementPage

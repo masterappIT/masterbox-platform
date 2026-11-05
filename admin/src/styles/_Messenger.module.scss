@@ -2,11 +2,11 @@
 
 
 .messenger {
-	@apply flex-1 flex relative h-full sm:h-[calc(100vh-68px)];
+	@apply flex-1 flex relative h-full sm:h-[calc(100vh-61px)];
 	&-list,
 	&-sideInfo {
 		// @apply h-[100vh] sm:h-[calc(100vh-68px)]
-		@apply h-full sm:h-[calc(100vh-68px)];
+		@apply h-full sm:h-[calc(100vh-61px)];
 	}
 	&-list {
 		@apply  w-full sm:w-[20%] sm:w-[280px] sm:max-w-[328px] flex flex-col shadow-[2px_0px_8px_0_rgba(0,0,0,0.15)]  bg-black_white z-[1];

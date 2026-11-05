@@ -1,0 +1,113 @@
+.system-404 {
+	@apply fixed inset-0 overflow-hidden bg-white;
+
+	&-circle {
+		@apply absolute max-w-none pointer-events-none;
+
+		&-large {
+			left: 19.9vw;
+			top: -20.9vh;
+			width: 80.1vw;
+		}
+
+		&-medium {
+			left: 31.56vw;
+			top: -0.7vh;
+			width: 56.77vw;
+		}
+
+		&-small {
+			left: 43.6vw;
+			top: 20.6vh;
+			width: 33.39vw;
+		}
+	}
+
+	&-robot {
+		@apply absolute max-w-none pointer-events-none;
+		left: 57.08vw;
+		top: 5.2vh;
+		width: 31.25vw;
+	}
+
+	&-content {
+		@apply absolute flex flex-col items-start gap-[24px];
+		left: 18.75vw;
+		top: 30.4vh;
+		width: 35.3vw;
+		min-width: 320px;
+
+		h1 {
+			@apply m-0 font-black whitespace-nowrap text-primary_light;
+			margin-bottom: -16px;
+			font-size: clamp(22px, 2.5vw, 48px);
+			letter-spacing: 0.4em;
+		}
+
+		p {
+			@apply m-0 text-primary_light;
+			font-size: clamp(14px, 1.25vw, 24px);
+		}
+	}
+
+	&-code {
+		width: clamp(200px, 23vw, 441px);
+		height: auto;
+	}
+}
+
+@media (max-width: 767px) {
+	.system-404-robot {
+		left: 50%;
+		top: 24px;
+		width: 180px;
+		transform: translateX(-50%);
+	}
+
+	.system-404-content {
+		left: 24px;
+		right: 24px;
+		top: 220px;
+		width: auto;
+		min-width: 0;
+
+		h1 {
+			white-space: normal;
+			letter-spacing: 0.2em;
+		}
+	}
+}
+
+// Fills the content area, including its padding, so the line runs edge to edge.
+.system-500 {
+	@apply flex flex-col items-center justify-center text-center -m-[16px] sm:-m-[32px];
+	min-height: calc(100% + 32px);
+
+	@media (min-width: 640px) {
+		min-height: calc(100% + 64px);
+	}
+
+	&-code {
+		@apply mb-[32px];
+	}
+
+	&-robot {
+		@apply block w-full h-[160px] max-w-none object-cover object-center;
+	}
+
+	h1 {
+		@apply mt-[16px] mb-[8px] px-[16px] text-[24px] leading-[32px] font-medium text-black_primary;
+	}
+
+	p {
+		@apply m-0 mb-[24px] px-[16px] text-[16px] leading-[24px] text-grayscale;
+	}
+}
+
+.system-coming-soon {
+	@apply flex items-center justify-center min-h-full;
+
+	img {
+		@apply max-w-full h-auto;
+	}
+}

@@ -5,7 +5,7 @@ import { useDispatch } from "react-redux";
 import { saveCompanyInfo } from "../src/redux/slices/companySlices";
 import { updateCompanyInfo, fetchCompanyInfo } from '../src/redux/slices/companySlices';
 import validator from 'validator';
-import errorHandler, { type } from '../src/utils/errorHandler';
+import ErrorText from '../src/stories/components/ErrorText';
 import PhoneInput from 'react-phone-input-2'
 import 'react-phone-input-2/lib/style.css'
 
@@ -16,6 +16,7 @@ import PhoneSelector from '../src/components/Auth/PhoneSelector';
 import { useSelector } from "react-redux";
 import { selectCompanyInfo } from '../src/redux/slices/companySlices';
 import Card from "../src/stories/components/Card";
+import Loading from "../src/stories/components/Loading";
 import Headline from "../src/stories/components/Headline";
 import Button from "../src/stories/components/Button";
 import Form from "../src/stories/components/Form";
@@ -30,8 +31,16 @@ import { selectUserToken } from '../src/redux/slices/userSlices';
 import { useTranslation } from 'react-i18next';
 
 
+// Registered company names can mix scripts, as in "MasterBox 示範公司".
+const COMPANY_CHINESE_NAME = /[㐀-鿿]/;
+const COMPANY_ENGLISH_NAME = /^[A-Za-z0-9][A-Za-z0-9 .,&'()-]*$/;
+// The principal's Chinese name has to match their ID, so it stays Chinese, with name separators allowed.
+const PERSON_CHINESE_NAME = /^[㐀-鿿·・‧]+$/;
+const PERSON_ENGLISH_NAME = /^[A-Za-z]+(?:[ .'-]+[A-Za-z]+)*\.?$/;
+const DIGITS = /^[0-9]+$/;
+
 let dataStructure = {
-    basic: ['chinese_name', "english_name", 'email', 'mobile', 'pin_number', 'address','BR'],
+    basic: ['chinese_name', "english_name", 'email', 'mobile', 'pin_number', 'address'],
     principal_info: ['cn_name', 'mobile','first_name', 'last_name' ],
     subscription: ['plan', 'period'],
 }
@@ -62,19 +71,14 @@ const inputDataGenerator = (data = {}) => {
     Object.keys(dataStructure).forEach(key => {
         const dataSets = { title: key, children: [] }
 
-        if (data[key]) {
-            dataStructure[key].forEach((childKey, i) => {
-
-                dataSets.children.push({ name: childKey, value: data[key][childKey] || "" })
-
-            })
-            console.log('dataSets',dataSets)
-        }
+        // Every field is shown even when the section is still empty, so a new company can fill it in.
+        dataStructure[key].forEach((childKey) => {
+            dataSets.children.push({ name: childKey, value: data[key]?.[childKey] || "" })
+        })
 
         inputData.push(dataSets)
     })
 
-    console.log('inputData', inputData)
     return inputData
 
 }
@@ -92,22 +96,13 @@ export default function CompanyInformationPage() {
     const [inputsData, setInputsData] = useState([])
     const [inputsError, setInputsError] = useState(null)
     const [isSaving, setIsSaving] = useState(false)
-    const isLoaded = inputsData.length === Object.keys(dataStructure).length &&
-        Object.keys(companyInfo?.basic || {}).length > 0 &&
-        Object.keys(companyInfo?.principal_info || {}).length > 0 &&
-        Object.keys(companyInfo?.subscription || {}).length > 0
+    // Loaded once the company itself has arrived; the principal and subscription may still be empty.
+    const isLoaded = inputsData.length === Object.keys(dataStructure).length && Boolean(companyInfo?.basic?._id)
 
     const cancelClick = () => {
         if (!isLoaded || isSaving) return
         setInputsData(inputDataGenerator(companyInfo));
         setInputsError(null)
-    }
-
-    const isChinese = (data) => {
-        let ret = true;
-        for (var i = 0; i < data.length; i++)
-            ret = ret && (data.charCodeAt(i) >= 10000);
-        return ret;
     }
 
     const checkInputsData = () => {
@@ -131,20 +126,19 @@ export default function CompanyInformationPage() {
         let principal_cn_name = getValue('principal_info', 'cn_name')
         let principal_mobile = getValue('principal_info', 'mobile')
 
-        var regEn = /^[a-zA-Z]*$/;
-        var regNum = /^[0-9]*$/;
-        if (!isChinese(chinese_name) || chinese_name === '') errorMessages['basic']['chinese_name'] = new errorHandler(type.INVALID_FORMAT, 'chinese_name').createErrorMessage()
-        if (!regEn.test(english_name) || english_name === '') errorMessages['basic']['english_name'] = new errorHandler(type.INVALID_FORMAT, 'english_name').createErrorMessage()
-        if (!validator.isEmail(email) || email === '') errorMessages['basic']['email'] = new errorHandler(type.INVALID_FORMAT, 'email').createErrorMessage()
-        if (!validator.isMobilePhone(mobile, ['zh-TW', 'zh-HK', 'zh-CN']) || mobile === '') errorMessages['basic']['mobile'] = new errorHandler(type.INVALID_FORMAT, 'mobile').createErrorMessage()
-        if (!regNum.test(pin_number) || pin_number === '') errorMessages['basic']['pin_number'] = new errorHandler(type.INVALID_FORMAT, 'pin_number').createErrorMessage()
+        const invalid = (name) => `請輸入正確的${t(name)}`
+        const isPhone = (value) => validator.isMobilePhone(value, ['zh-TW', 'zh-HK', 'zh-CN'])
 
+        if (!COMPANY_CHINESE_NAME.test(chinese_name)) errorMessages['basic']['chinese_name'] = invalid('chinese_name')
+        if (!COMPANY_ENGLISH_NAME.test(english_name)) errorMessages['basic']['english_name'] = invalid('english_name')
+        if (!validator.isEmail(email)) errorMessages['basic']['email'] = invalid('email')
+        if (!isPhone(mobile)) errorMessages['basic']['mobile'] = invalid('mobile')
+        if (!DIGITS.test(pin_number)) errorMessages['basic']['pin_number'] = invalid('pin_number')
 
-        if (!regEn.test(principal_first_name) || principal_first_name === '') errorMessages['principal_info']['first_name'] = new errorHandler(type.INVALID_FORMAT, 'first_name').createErrorMessage()
-        if (!regEn.test(principal_last_name) || principal_last_name === '') errorMessages['principal_info']['last_name'] = new errorHandler(type.INVALID_FORMAT, 'last_name').createErrorMessage()
-
-        if (!isChinese(principal_cn_name) || principal_cn_name === '') errorMessages['principal_info']['cn_name'] = new errorHandler(type.INVALID_FORMAT, 'cn_name').createErrorMessage()
-        if (!validator.isMobilePhone(principal_mobile, ['zh-TW', 'zh-HK', 'zh-CN']) || principal_mobile === '') errorMessages['principal_info']['mobile'] = new errorHandler(type.INVALID_FORMAT, 'mobile').createErrorMessage()
+        if (!PERSON_ENGLISH_NAME.test(principal_first_name)) errorMessages['principal_info']['first_name'] = invalid('first_name')
+        if (!PERSON_ENGLISH_NAME.test(principal_last_name)) errorMessages['principal_info']['last_name'] = invalid('last_name')
+        if (!PERSON_CHINESE_NAME.test(principal_cn_name)) errorMessages['principal_info']['cn_name'] = invalid('cn_name')
+        if (!isPhone(principal_mobile)) errorMessages['principal_info']['mobile'] = invalid('mobile')
 
 
         setInputsError(errorMessages);
@@ -159,15 +153,20 @@ export default function CompanyInformationPage() {
         let updatedData = {}
 
         inputsData.forEach(({ title, children }) => {
+            // The plan is read-only here; the update input has no fields for it.
+            if (title === 'subscription') return
+
             const updatedChildren = children.filter(({ name, value }) => value !== companyInfo?.[title]?.[name])
+            if (updatedChildren.length === 0) return
+
+            if (title === 'principal_info') {
+                // Saving replaces the whole principal, so one change has to bring the other fields along.
+                updatedData.principal_info = Object.fromEntries(children.map(({ name, value }) => [name, value]))
+                return
+            }
 
             updatedChildren.forEach(({ name, value }) => {
-                if (title === 'principal_info') {
-                    updatedData.principal_info = { ...updatedData.principal_info, [name]: value }
-                }
-                else {
-                    updatedData[name] = value
-                }
+                updatedData[name] = value
             })
         })
 
@@ -187,8 +186,6 @@ export default function CompanyInformationPage() {
     }
 
     const onPhoneChange = (e , parentIndex, childIndex) => {
-        console.log(e)
-        
         const value = e
 
         const newInput = [...inputsData]
@@ -212,9 +209,7 @@ export default function CompanyInformationPage() {
 
 
 
-    console.log('inputsError', inputsError ? true : false)
-
-    if (!isLoaded) return null
+    if (!isLoaded) return <div className='flex justify-center pt-[96px]'><Loading /></div>
 
     return (
         <Form customStyles='company-information'
@@ -243,11 +238,11 @@ export default function CompanyInformationPage() {
                                                     inputClass="companyInfo-mobile"
                                                     inputStyle={{color: 'black'}}
                                                 />
+                                                {inputsError?.[title]?.[name] ? <ErrorText customStyles='mt-[8px] pl-[1px]' title={inputsError[title][name]} /> : ''}
                                             </div>
                                         :
                                         ((companyInfo?.basic?.country != 'HongKong') ) ?
-                                            <div key={name + c} className={`col-span-1 min-h-[92px] ${(name === 'BR') ? 'hidden' : ''} ${(name === 'address') ? 'hidden' : ''}  `} >
-                                                {console.log('country',companyInfo?.basic?.country)}
+                                            <div key={name + c} className={`col-span-1 min-h-[92px] ${(name === 'address') ? 'hidden' : ''}  `} >
                                                 <Input
                                                     disabled={title === "subscription" || name === 'email' ? true : false}
                                                     title={t(name)}
@@ -260,7 +255,6 @@ export default function CompanyInformationPage() {
                                         :
                                         ((name != 'address')) ? 
                                             <div key={name + c} className={`col-span-1 min-h-[92px] ${(name === 'address') ? 'hidden' : ''}`} >
-                                                {console.log('country',companyInfo?.basic?.country)}
                                                 <Input
                                                     disabled={title === "subscription" || name === 'email' ? true : false}
                                                     title={t(name)}
@@ -284,7 +278,7 @@ export default function CompanyInformationPage() {
                                         <div key={name + c} className='col-span-1 min-h-[92px]'>
                                             <Input
                                                 disabled={title === "subscription" || name === 'email' ? true : false}
-                                                title={name}
+                                                title={t(name)}
                                                 name={name}
                                                 value={value}
                                                 onChange={(event) => onInputChange(event.target.value, i, c)}

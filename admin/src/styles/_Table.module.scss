@@ -2,44 +2,86 @@
 
 .table {
 	// Stays inside its card and scrolls sideways when the columns don't fit.
-	@apply min-w-full h-[667px] max-w-full overflow-x-auto overflow-y-auto bg-bg_primary;
+	@apply flex flex-col w-full max-w-full min-h-[683px] overflow-x-auto bg-bg_primary;
 
 	&-top {
 		@apply w-full px-[24px] pt-[24px] flex flex-col justify-center;
-		// box-shadow: 0px 1px 0px rgba(0, 0, 0, 0.25);
-		// &-search {
-		// 	@apply w-[220px];
-		// }
-		// &-btn {
-		// 	@apply flex space-x-2;
-		// }
 	}
 
 	&-body {
-		&-noData{
-			@apply w-full flex justify-center items-start mt-[48px];
+		@apply flex-1 w-full;
+		min-width: fit-content;
+
+		&-noData {
+			@apply w-full flex justify-center items-start mt-[48px] px-[24px] text-center;
 		}
 	}
 
 	&-row {
-		@apply w-full grid content-center gap-1 px-[24px] py-[8px] h-[71px];
+		@apply w-full grid items-center gap-x-[32px] px-[24px] h-[60px] transition-colors duration-100;
+		box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
 
-		// grid-template-columns: 50px repeat(8, minmax(0, 1fr));
+		// The header is the first child, so the first row of data is white.
+		&:not(.table-header):nth-child(odd) {
+			@apply bg-bg_row_even;
+		}
 
-		box-shadow: 0px 1px 0px rgba(0, 0, 0, 0.25);
-
-		// &:last-child {
-		// 	box-shadow: 0px 0px 0px rgba(0, 0, 0, 0);
-		// }
+		&:not(.table-header):hover,
+		&-selected:not(.table-header),
+		&-selected:not(.table-header):nth-child(odd) {
+			@apply bg-bg_row_active;
+		}
 	}
 
 	&-header {
-		@apply text-headline_small font-[500];
+		@apply h-[84px] text-headline_small font-[500];
 	}
 
 	&-cell {
-		@apply min-w-full text-contentText_normal font-[400] flex justify-start items-center;
-		// Long names and emails wrap inside their column instead of running into the next one.
-		overflow-wrap: anywhere;
+		@apply min-w-0 text-contentText_normal font-[400] flex justify-start items-center;
+
+		&-center {
+			@apply justify-center;
+		}
+
+		&-text {
+			@apply block min-w-0 px-[8px] truncate;
+		}
+
+		.headline {
+			@apply px-[8px] whitespace-nowrap;
+		}
+
+		// Design checkbox: 24px, #666 border, orange tick when checked.
+		.checkbox-area-checkbox {
+			@apply appearance-none w-[24px] h-[24px] p-0 rounded-[4px] border border-grayscale;
+			filter: none !important;
+			background-size: 100% 100%;
+
+			&:checked {
+				@apply border-0;
+				background-image: url('/design/ui/checkbox-checked.svg');
+			}
+
+			&:focus-visible {
+				@apply outline outline-2 outline-offset-2 outline-primary_dark;
+			}
+		}
+	}
+
+	&-edit {
+		@apply flex items-center justify-center w-[32px] h-[32px] rounded-[4px] cursor-pointer transition-colors duration-100;
+
+		&:hover {
+			@apply bg-primary_lightest;
+		}
+
+		&:focus-visible {
+			@apply outline outline-2 outline-primary_dark;
+		}
+	}
+
+	&-footer {
+		@apply flex justify-end px-[24px] py-[24px];
 	}
 }

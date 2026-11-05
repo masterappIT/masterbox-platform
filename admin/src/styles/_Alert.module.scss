@@ -1,0 +1,37 @@
+.alert-stack {
+	@apply fixed z-[1100] flex flex-col gap-[8px] right-[16px] top-[16px] w-[calc(100vw-32px)];
+
+	@media (min-width: 640px) {
+		@apply right-[32px] top-[77px] w-[404px];
+	}
+}
+
+.alert {
+	@apply relative flex items-start gap-[16px] py-[16px] pl-[12px] pr-[28px] bg-white border-l-[4px];
+	filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.2));
+
+	&-success {
+		@apply border-secondary;
+	}
+
+	&-error {
+		@apply border-alert;
+	}
+
+	&-icon {
+		@apply shrink-0 w-[24px] h-[24px];
+	}
+
+	&-message {
+		@apply m-0 min-w-0 text-[16px] leading-[24px] font-medium text-black_primary;
+		overflow-wrap: anywhere;
+	}
+
+	&-close {
+		@apply absolute right-[8px] top-[8px] p-[2px] cursor-pointer;
+
+		&:focus-visible {
+			@apply outline outline-2 outline-primary_dark;
+		}
+	}
+}

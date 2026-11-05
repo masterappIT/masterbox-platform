@@ -1,0 +1,28 @@
+.loading {
+	@apply flex flex-col items-center gap-[4px];
+
+	&-corner {
+		@apply fixed right-[32px] bottom-[32px] z-[30];
+	}
+
+	&-ring {
+		@apply block w-[32px] h-[32px] rounded-full border-[2px] border-grayscale_lightest border-t-primary;
+		animation: loading-spin 900ms linear infinite;
+	}
+
+	&-title {
+		@apply text-[12px] leading-[16px] text-grayscale;
+	}
+}
+
+@keyframes loading-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.loading-ring {
+		animation-duration: 3s;
+	}
+}

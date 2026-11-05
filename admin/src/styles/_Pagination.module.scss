@@ -1,0 +1,54 @@
+.pagination {
+	@apply flex flex-wrap items-center justify-end gap-[5px] text-[13px] leading-[18px] text-black_primary;
+
+	button:focus-visible,
+	input:focus-visible {
+		@apply outline outline-2 outline-offset-1 outline-primary_dark;
+	}
+
+	&-arrow {
+		@apply flex items-center justify-center w-[16px] h-[24px] bg-transparent cursor-pointer;
+
+		&:disabled {
+			@apply opacity-30 cursor-not-allowed;
+		}
+	}
+
+	&-page,
+	&-gap {
+		@apply flex items-center justify-center min-w-[24px] h-[24px] px-[4px] rounded-[4px] border border-transparent;
+	}
+
+	&-page {
+		@apply cursor-pointer bg-white transition-colors duration-150;
+
+		&:hover {
+			@apply border-primary_light;
+		}
+
+		&:active {
+			@apply bg-primary_light border-primary_light;
+		}
+
+		&-current,
+		&-current:hover {
+			@apply bg-primary_lightest border-transparent rounded-[2px];
+		}
+	}
+
+	&-goto {
+		@apply flex items-center gap-[8px] ml-[8px] text-black_tertiary;
+
+		&-field {
+			@apply flex items-center w-[50px] h-[24px] pr-[4px] bg-white border border-primary_light rounded-[4px] overflow-hidden;
+
+			input {
+				@apply w-full min-w-0 h-full pl-[6px] bg-transparent text-black_primary outline-none;
+			}
+
+			button {
+				@apply shrink-0 cursor-pointer;
+			}
+		}
+	}
+}

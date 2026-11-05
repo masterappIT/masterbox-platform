@@ -1,0 +1,386 @@
+// Shared finish for the admin content area. The sign-in page, Chat Box and platform admin
+// sit outside `.ui-polish`, so nothing here reaches them.
+.ui-polish {
+	--polish-ink: #1f2328;
+	--polish-body: #3a3f45;
+	--polish-muted: #6b7078;
+	--polish-faint: #9aa0a6;
+	--polish-line: #e7e8eb;
+	--polish-line-soft: #f0f1f3;
+	--polish-control-line: #d5d7db;
+	--polish-radius-surface: 12px;
+	--polish-radius-control: 6px;
+	--polish-surface-shadow: 0 0 0 1px var(--polish-line), 0 1px 2px rgba(16, 24, 40, 0.04);
+	--polish-focus-ring: 0 0 0 3px rgba(255, 171, 55, 0.2);
+
+	// Surfaces
+	.card,
+	.pending-card,
+	.home-stat,
+	.home-card,
+	.table {
+		border-radius: var(--polish-radius-surface);
+		box-shadow: var(--polish-surface-shadow);
+	}
+
+	// Focus
+	a,
+	button,
+	select,
+	.button,
+	[role='button'],
+	[tabindex='0'] {
+		&:focus-visible {
+			outline: 2px solid theme('colors.primary_dark');
+			outline-offset: 2px;
+		}
+	}
+
+	button:not(:disabled):hover {
+		transform: none;
+	}
+
+	// Buttons
+	.button {
+		border-radius: var(--polish-radius-control);
+		font-weight: 500;
+		transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+
+		&-disabled {
+			&.button-contained-primary,
+			&.button-contained-primary:hover,
+			&.button-contained-primary:active {
+				background-color: #fff3e2;
+				color: #b98a4b;
+			}
+
+			&.button-contained-alert,
+			&.button-contained-alert:hover,
+			&.button-contained-alert:active {
+				background-color: #fdf0f0;
+				color: #c98b8b;
+			}
+
+			&.button-contained-grayscale,
+			&.button-contained-grayscale:hover,
+			&.button-contained-grayscale:active {
+				background-color: #f2f3f5;
+				color: var(--polish-faint);
+			}
+
+			img {
+				filter: brightness(0);
+				opacity: 0.3;
+			}
+		}
+	}
+
+	// Form controls
+	.input-inputBar-outlined,
+	.pending-input,
+	.selectInput-bar-outlined,
+	.template-editor-platform select,
+	.channel-filter select,
+	.bot-filter select,
+	.user-form-select select {
+		height: 34px;
+		border: 1px solid var(--polish-control-line);
+		border-radius: var(--polish-radius-control);
+		color: var(--polish-ink);
+		transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+
+		&::placeholder {
+			color: var(--polish-faint);
+		}
+
+		&:hover:not(:disabled):not(:focus) {
+			border-color: theme('colors.grayscale_light');
+		}
+
+		&:focus,
+		&:focus-visible {
+			border-color: theme('colors.primary');
+			box-shadow: var(--polish-focus-ring);
+			outline: none;
+		}
+
+		&:disabled {
+			background-color: #f5f6f7;
+			border-color: var(--polish-line);
+			color: var(--polish-faint);
+			cursor: not-allowed;
+		}
+	}
+
+	.search-input::placeholder {
+		color: var(--polish-faint);
+	}
+
+	.errorTxt .contentText {
+		color: theme('colors.alert_dark');
+	}
+
+	// Text hierarchy
+	.user-form-title,
+	.card > .headline-normal {
+		font-weight: 500;
+		color: var(--polish-ink);
+	}
+
+	.user-form-select span,
+	.template-editor-platform span,
+	.channel-filter span,
+	.bot-filter span {
+		font-size: 14px;
+		line-height: 20px;
+		font-weight: 500;
+		color: var(--polish-body);
+	}
+
+	.pending-note,
+	.user-form-hint {
+		font-size: 13px;
+		line-height: 20px;
+		color: var(--polish-muted);
+	}
+
+	// Tables
+	.table {
+		min-height: calc(100vh - 125px);
+	}
+
+	.table-row {
+		height: 56px;
+		box-shadow: inset 0 -1px 0 var(--polish-line-soft);
+	}
+
+	.table-header {
+		height: 48px;
+		background-color: #fafafb;
+		box-shadow: inset 0 1px 0 var(--polish-line), inset 0 -1px 0 var(--polish-line);
+
+		.headline {
+			font-size: 13px;
+			line-height: 20px;
+			font-weight: 500;
+			color: var(--polish-muted);
+		}
+	}
+
+	.table-cell {
+		color: var(--polish-ink);
+	}
+
+	.table-body-noData {
+		margin-top: 72px;
+		margin-bottom: 72px;
+	}
+
+	.table-edit:hover img {
+		opacity: 0.85;
+	}
+
+	.table-footer {
+		padding-top: 16px;
+		padding-bottom: 16px;
+	}
+
+	// Home
+	.home-stat {
+		padding: 20px;
+		gap: 4px;
+
+		h2 {
+			font-size: 14px;
+			line-height: 20px;
+			color: var(--polish-muted);
+		}
+
+		strong {
+			font-size: 36px;
+			line-height: 44px;
+			color: var(--polish-ink);
+		}
+
+		p {
+			font-size: 13px;
+			line-height: 20px;
+			color: var(--polish-muted);
+		}
+
+		&-tile {
+			margin-bottom: 8px;
+		}
+	}
+
+	.home-card {
+		padding: 20px;
+	}
+
+	.home-tab {
+		transition: background-color 0.15s ease, color 0.15s ease;
+	}
+
+	.home-tab:not(.home-tab-active) {
+		background-color: #f2f3f5;
+		color: var(--polish-body);
+
+		&:not(:disabled):hover {
+			background-color: var(--polish-line);
+		}
+
+		img {
+			filter: brightness(0);
+			opacity: 0.55;
+		}
+	}
+
+	.home-channel {
+		h3 {
+			font-weight: 500;
+			color: var(--polish-ink);
+		}
+
+		header p,
+		dt {
+			color: var(--polish-muted);
+		}
+
+		& + .home-channel {
+			box-shadow: inset 1px 0 0 var(--polish-line);
+		}
+
+		dd {
+			font-weight: 500;
+			color: var(--polish-ink);
+		}
+	}
+
+	// Loading
+	.table-skeleton {
+		display: flex;
+		flex-direction: column;
+
+		&-row {
+			display: grid;
+			grid-template-columns: 2fr 3fr 2fr 1fr;
+			align-items: center;
+			gap: 32px;
+			height: 56px;
+			padding: 0 32px;
+			box-shadow: inset 0 -1px 0 var(--polish-line-soft);
+		}
+
+		span {
+			display: block;
+			height: 12px;
+			border-radius: 6px;
+			background: linear-gradient(90deg, #f0f1f3 25%, #f7f8f9 50%, #f0f1f3 75%);
+			background-size: 200% 100%;
+			animation: polish-shimmer 1.4s ease-in-out infinite;
+		}
+
+		@media (prefers-reduced-motion: reduce) {
+			span {
+				animation: none;
+			}
+		}
+	}
+
+	// Coming soon
+	.system-coming-soon {
+		flex-direction: column;
+		// The artwork has the canvas colour behind it, so it sits straight on the page.
+		gap: 8px;
+		min-height: calc(100vh - 125px);
+		text-align: center;
+	}
+
+	// Dialogs
+	.popup-item {
+		border-radius: var(--polish-radius-surface);
+	}
+
+	// Phone field
+	.react-tel-input {
+		// The library's stylesheet and _Phone-register use !important, so these have to as well.
+		.form-control.companyInfo-mobile {
+			height: 34px !important;
+			border: 1px solid var(--polish-control-line) !important;
+			border-radius: var(--polish-radius-control);
+			transition: border-color 0.15s ease, box-shadow 0.15s ease;
+
+			&:hover:not(:disabled):not(:focus) {
+				border-color: theme('colors.grayscale_light') !important;
+			}
+
+			&:focus {
+				border-color: theme('colors.primary') !important;
+				box-shadow: var(--polish-focus-ring);
+				outline: none;
+			}
+		}
+
+		.flag-dropdown {
+			border-color: var(--polish-control-line);
+			border-radius: var(--polish-radius-control) 0 0 var(--polish-radius-control);
+		}
+	}
+}
+
+// Rendered in both the table's own and a page's empty space.
+.empty-state {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 4px;
+	max-width: 560px;
+	margin: 0 auto;
+	text-align: center;
+	text-wrap: balance;
+
+	&-icon {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 56px;
+		height: 56px;
+		margin-bottom: 12px;
+		border-radius: 50%;
+		background-color: theme('colors.primary_lightest');
+		color: theme('colors.primary_dark');
+	}
+
+	&-title {
+		margin: 0;
+		font-size: 16px;
+		line-height: 24px;
+		font-weight: 500;
+		color: #1f2328;
+	}
+
+	&-description {
+		margin: 0;
+		font-size: 13px;
+		line-height: 20px;
+		color: #6b7078;
+	}
+}
+
+.app-boot {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 100vw;
+	height: 100vh;
+}
+
+@keyframes polish-shimmer {
+	0% {
+		background-position: 200% 0;
+	}
+
+	100% {
+		background-position: -200% 0;
+	}
+}

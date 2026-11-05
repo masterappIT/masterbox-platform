@@ -55,7 +55,7 @@ function ChatroomList({ isMobile, chatRoomsList, componentHandler, setCurrentCom
               key={i}
               onClick={() => handleOnClick(chat_room_id)}
             >
-              <ChatroomItem key={i} isMobile={isMobile} title={userName || '沒有名字'} name={customer?.avatar} contentIcon={null} content={`ID : ${customer?.id || chat_room_id}`} notice={null} customStyles={{ padding: '10px 16px', cursor: 'pointer' }} />
+              <ChatroomItem key={i} isMobile={isMobile} title={userName || '沒有名字'} name={customer?.avatar || userName} contentIcon={null} content={`ID : ${customer?.id || chat_room_id}`} notice={null} customStyles={{ padding: '10px 16px', cursor: 'pointer' }} />
             </div>
           )
         }) :

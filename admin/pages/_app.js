@@ -2,6 +2,7 @@ import '/src/styles/globals.scss'
 import React, { useState, useEffect } from 'react';
 import Sidebar from '/src/stories/components/Sidebar'
 import HeaderBar from '/src/stories/components/HeaderBar'
+import Loading from '/src/stories/components/Loading'
 import { PersistGate } from 'redux-persist/integration/react';
 import store, { persistor } from "/src/redux/store"
 import { Provider, useSelector } from 'react-redux';
@@ -14,14 +15,21 @@ import { pathInfo } from '../src/utils/pathInfo';
 import Head from 'next/head';
 import '../i18n';
 
+// These pages keep their own look; everything else gets the shared finish in _Polish.module.scss.
+const UNPOLISHED_PAGES = ['/auth', '/chat-management', '/platform-admin', '/404'];
+
 function AppContent({ Component, pageProps }) {
-  const [showSidebarHeaderBar, setShowSidebarHeaderBar] = useState(false);
-  const [layoutSet, setLayoutSet] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const router = useRouter();
   const pathname = router.pathname;
+  // The design's 404 fills the screen; a 500 keeps the menu so people can move on.
+  const isFullScreenPage = pathname === '/auth' || pathname === '/404';
+  // PersistGate only mounts this on the client, so the menu can be there from the first paint.
+  const [showSidebarHeaderBar, setShowSidebarHeaderBar] = useState(!isFullScreenPage);
+  const [layoutSet, setLayoutSet] = useState(!isFullScreenPage);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const token = useSelector(selectUserToken);
   const userInfo = useSelector(selectUserInfo);
+  const isSystemPage = ['/404', '/500', '/_error'].includes(pathname);
   const isManagementPage = pathInfo.some(({ path }) => path === pathname && path !== '/');
   const isCustomBotPage = pathname === '/bot-messaging';
   const isAdmin = String(userInfo?.role || '').toLowerCase() === 'admin';
@@ -30,15 +38,16 @@ function AppContent({ Component, pageProps }) {
   const canPreviewPlatformAdmin = isPlatformAdminPage && process.env.NODE_ENV === 'development' && router.query.preview === '1';
 
   useEffect(() => {
-    setLayoutSet(pathname !== '/auth');
-    setShowSidebarHeaderBar(pathname !== '/auth');
-  }, [pathname]);
+    setLayoutSet(!isFullScreenPage);
+    setShowSidebarHeaderBar(!isFullScreenPage);
+  }, [isFullScreenPage]);
 
   useEffect(() => {
     if (!token) stopMessagesSubscription();
   }, [token]);
 
   useEffect(() => {
+    if (isSystemPage) return;
     const canPreviewBot = isCustomBotPage && process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_ENABLE_DEV_BYPASS === 'true';
     if (!token && pathname !== '/auth' && !canPreviewBot && !canPreviewPlatformAdmin) {
       router.replace('/auth');
@@ -53,7 +62,7 @@ function AppContent({ Component, pageProps }) {
       return;
     }
     if (userInfo?._id) store.dispatch(handleMessagesSubscription());
-  }, [token, isAdmin, isPlatformAdmin, isPlatformAdminPage, canPreviewPlatformAdmin, isManagementPage, isCustomBotPage, pathname, router, userInfo?._id]);
+  }, [isSystemPage, token, isAdmin, isPlatformAdmin, isPlatformAdminPage, canPreviewPlatformAdmin, isManagementPage, isCustomBotPage, pathname, router, userInfo?._id]);
 
   useEffect(() => {
     const stopScrolling = (e) => e.preventDefault();
@@ -68,15 +77,16 @@ function AppContent({ Component, pageProps }) {
         <div className={`z-[20] hidden sm:block transition-all duration-200 ${sidebarCollapsed ? 'w-[64px] min-w-[64px]' : 'w-[208px] min-w-[208px]'}`} style={showSidebarHeaderBar ? {} : { display: 'none' }}><Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(value => !value)} /></div>
         <div className='flex flex-col w-full overflow-hidden'>
           <HeaderBar customStyles='z-[10]' showSidebarHeaderBar={showSidebarHeaderBar} />
-          <div className={`${showSidebarHeaderBar ? 'w-full sm:h-[calc(100vh-68px)]' : 'w-[100vw]'} h-[100vh] ${pathname === '/' || pathname === '/messenger' ? 'overflow-hidden' : 'overflow-y-auto overflow-x-hidden'} ${layoutSet && pathname !== '/' && pathname !== '/messenger' ? 'p-[32px] bg-bg_tertiary' : ''}`}><Component {...pageProps} /></div>
+          <div className={`${showSidebarHeaderBar ? 'w-full sm:h-[calc(100vh-61px)]' : 'w-[100vw]'} h-[100vh] ${pathname === '/' || pathname === '/messenger' ? 'overflow-hidden' : 'overflow-y-auto overflow-x-hidden'} ${layoutSet && pathname !== '/' && pathname !== '/messenger' ? 'p-[16px] sm:p-[32px] bg-bg_tertiary' : ''} ${UNPOLISHED_PAGES.includes(pathname) ? '' : 'ui-polish'}`}><Component {...pageProps} /></div>
         </div>
       </div>
     </ApolloProvider>
   </>;
 }
 
-function MyApp({ Component, pageProps }) {
-  return <Provider store={store}><PersistGate loading={null} persistor={persistor}><AppContent Component={Component} pageProps={pageProps} /></PersistGate></Provider>;
+function MyApp({ Component, pageProps, router }) {
+  const bootScreen = router.pathname === '/auth' ? null : <div className='app-boot'><Loading /></div>;
+  return <Provider store={store}><PersistGate loading={bootScreen} persistor={persistor}><AppContent Component={Component} pageProps={pageProps} /></PersistGate></Provider>;
 }
 
 if (typeof window !== 'undefined' && window.Cypress) window.store = store;

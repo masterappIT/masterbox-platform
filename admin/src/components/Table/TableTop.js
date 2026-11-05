@@ -1,40 +1,53 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React from "react";
 import PropTypes from 'prop-types'
 import Search from "../../stories/components/Search";
 import Button from "../../stories/components/Button";
-import Icon from "../../stories/components/Icon";
 
-
-
-
-function TableTop({ searchOnClick, addOnClick, addTitle, deleteOnClick }) {
-
-
+/**
+ * Search field and actions above a table; filters go underneath as children.
+ * Leave out deleteOnClick or addOnClick to hide that button.
+ */
+function TableTop({ searchOnChange, searchPlaceholder, addOnClick, addTitle, addDisabled, addHint, deleteOnClick, deleteDisabled, deleteHint, children }) {
   return (
-    <div className="flex flex-wrap justify-between items-center gap-y-[12px] mb-[20px]">
-      <div className='w-[220px]'>
-        <Search placeholder='搜尋' onClick={searchOnClick}/>
+    <div className="flex flex-col gap-y-[20px] mb-[12px]">
+      <div className="flex flex-wrap justify-between items-start gap-[12px]">
+        <div className='w-[220px]'>
+          <Search placeholder={searchPlaceholder} onChange={searchOnChange} />
+        </div>
+        <div className='flex flex-wrap gap-[8px]'>
+          {deleteOnClick && <Button title='刪除' color='alert' disabled={deleteDisabled} hint={deleteHint} startElement={<img src='/design/ui/delete.svg' alt='' width={20} height={20} />} onClick={deleteOnClick} />}
+          {addOnClick && <Button title={addTitle} disabled={addDisabled} hint={addHint} startElement={<img src='/design/ui/plus.svg' alt='' width={20} height={20} />} onClick={addOnClick} />}
+        </div>
       </div>
-      <div className='flex flex-wrap gap-2'>
-        <Button title='刪除' color='alert' startElement={<Icon name='delete' />} customStyles={{ paddingRight: '10px', paddingLeft: '10px', whiteSpace: 'nowrap' }} onClick={deleteOnClick}/>
-        <Button title={addTitle} startElement={<Icon name='plus' size='small' />} customStyles={{ paddingRight: '10px', paddingLeft: '10px', whiteSpace: 'nowrap' }} onClick={addOnClick} />
-      </div>
+      {children}
     </div>
   );
 }
 
 TableTop.propTypes = {
-  deleteOnClick: PropTypes.func,
+  searchOnChange: PropTypes.func,
+  searchPlaceholder: PropTypes.string,
   addOnClick: PropTypes.func,
-  searchOnClick: PropTypes.func,
   addTitle: PropTypes.string,
+  addDisabled: PropTypes.bool,
+  addHint: PropTypes.string,
+  deleteOnClick: PropTypes.func,
+  deleteDisabled: PropTypes.bool,
+  deleteHint: PropTypes.string,
+  children: PropTypes.node,
 }
 
 TableTop.defaultProps = {
-  deleteOnClick:null,
-  addOnClick:null,
-  searchOnClick:null,
-  addTitle:'新增'
+  searchOnChange: null,
+  searchPlaceholder: '依標題搜尋名稱',
+  addOnClick: null,
+  addTitle: '新增',
+  addDisabled: false,
+  addHint: undefined,
+  deleteOnClick: null,
+  deleteDisabled: false,
+  deleteHint: undefined,
+  children: null,
 }
 
 export default TableTop

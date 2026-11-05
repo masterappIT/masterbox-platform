@@ -82,12 +82,9 @@ export const pathInfo=[
     // },
   ]
 
-  export const findHeaderBarTitle = (pathName) =>{
+  const TITLE_ONLY_PATHS = { '/messenger': 'messenger', '/user-management/add/[id]': 'add_user', '/user-management/edit/[id]': 'edit_user' }
 
-    const info = pathInfo.find(path => path.path.includes(pathName))
-    // const info = pathInfo.find(path => path.path === pathName)
+export const isPathActive = (path, pathName) => pathName === path || (path !== '/' && pathName.startsWith(`${path}/`))
 
-    return info?.title
-
-
-  }
+// Exact match first, so `/` doesn't pick up the first item; sub-pages take their section's title.
+export const findHeaderBarTitle = (pathName) => TITLE_ONLY_PATHS[pathName] || pathInfo.find(({ path }) => isPathActive(path, pathName))?.title

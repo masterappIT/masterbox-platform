@@ -1,83 +1,52 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import Headline from '../../stories/components/Headline';
-import ImageBox from '../../stories/components/ImageBox';
-import ContentText from '../../stories/components/ContentText';
 import Popup from '../../stories/components/Popup';
-import Card from '../../stories/components/Card';
 
-/**
- * Primary UI component for user interaction
- * 
- * @param { String } startElement element
- * @param { Element } endElement element
- * @param { String } title string
- * @param { String } id string
- * @param { Bool } variant oneOf_'text', 'contained', 'outlined'
- * @param { String } color oneOf_'primary', 'secondary', 'tertiary','quaternary','alert','grayscale','grayLight']),
- * @param { String } rounded oneOf_'none','small', 'normal', 'large'
- * @param { Element,String } customStyles oneOfType([PropTypes.string, PropTypes.object]),
- * @param { Func } onClick func
- *
- */
+// Only Meta (Facebook and Instagram) can be connected today; the others are shown as coming soon.
+const PLATFORMS = [
+  { key: 'meta', name: 'Meta', available: true },
+  { key: 'wechat', name: 'Wechat', available: false },
+  { key: 'line', name: 'Line', available: false },
+];
 
-
-function PopupChannel({ platforms, isShow, onClick }) {
-
+function PopupChannel({ isShow, onClick, onConnectMeta, connecting }) {
   return (
-    <Popup isShow={isShow ? true : false} onClick={onClick} size='normal'>
-      <div className='w-full h-full flex flex-col items-center justify-center '>
-        <Headline title='選擇一個社群平台' size='large' />
-        <ContentText title='選擇一個的社群平台，開使您的品牌社群經營' size='large' color='black-tertiary' customStyles='mt-[15px] mb-[24px]' />
-        <div className='flex space-x-[48px]'>
-          {platforms.map(({ name }, i) => {
-            return (
-              <Card  key={name + i} isHover={true} rounded={true} shadow='primary'>
-                <div key={name + i} className='w-[152px] h-[142px] flex flex-col justify-center items-center space-y-[12px] cursor-pointer'>
-                  <ImageBox src={`/svg/${name}.svg`} />
-
-                  <Headline title={name} />
-                </div>
-              </Card>
-
-            )
-
-
-          })}
-
-        </div>
-
+    <Popup isShow={isShow} onClick={onClick} size='fit' label='選擇一個社群平台'>
+      <div className='channel-picker'>
+        <h2 className='channel-picker-title'>選擇一個社群平台</h2>
+        <p className='channel-picker-description'>選擇一個的社群平台，開始您的品牌社群經營</p>
+        <ul className='channel-picker-list'>
+          {PLATFORMS.map(({ key, name, available }) => (
+            <li key={key}>
+              <button
+                type='button'
+                className='channel-picker-card'
+                disabled={!available || connecting}
+                aria-describedby={available ? undefined : `channel-picker-${key}-note`}
+                onClick={available ? onConnectMeta : undefined}
+              >
+                <img src={`/design/ui/platform-${key}.svg`} alt='' width={48} height={48} />
+                <span className='channel-picker-name'>{available && connecting ? '串接中…' : name}</span>
+                {!available && <span id={`channel-picker-${key}-note`} className='channel-picker-note'>尚未開放</span>}
+              </button>
+            </li>
+          ))}
+        </ul>
       </div>
     </Popup>
   );
-};
+}
 
 PopupChannel.propTypes = {
-  onClick: PropTypes.func,
   isShow: PropTypes.bool,
-  platforms: PropTypes.array,
-}
+  onClick: PropTypes.func.isRequired,
+  onConnectMeta: PropTypes.func.isRequired,
+  connecting: PropTypes.bool,
+};
 
 PopupChannel.defaultProps = {
-  isPopup: false,
-  onClick: null,
-  platforms: [
-    {
-      name: "Meta",
-      icon: "Meta",
-    },
-    {
-      name: "Wechat",
-      icon: "Wechat",
-      value: "Wechat"
-    },
-    {
-      name: "Line",
-      icon: "line",
-      value: "line"
-    },
-  ],
+  isShow: false,
+  connecting: false,
+};
 
-}
-
-export default PopupChannel
+export default PopupChannel;

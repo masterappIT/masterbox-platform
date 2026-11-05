@@ -8,7 +8,8 @@ import List from './List';
 import ListItem from './ListItem';
 import Headline from './Headline';
 import ImageBox from './ImageBox';
-import { pathInfo } from '../../utils/pathInfo';
+import { pathInfo, isPathActive } from '../../utils/pathInfo';
+import TeamMembers from '../../components/TeamMembers';
 
 import { useRouter } from 'next/router';
 import { useTranslation } from 'react-i18next';
@@ -23,7 +24,10 @@ const SidebarListItem = ({ index, icon, title, focus, path, collapsed }) => {
   return (
     <div
       className='sidebar-nav-item'
-      role='button'
+      role='link'
+      aria-label={title}
+      aria-current={focus ? 'page' : undefined}
+      title={collapsed ? title : undefined}
       tabIndex={0}
       onClick={() => router.push(path)}
       onKeyDown={(event) => {
@@ -73,14 +77,14 @@ function Sidebar({ logo, items, customStyles, toBottom, onClick, collapsed, onTo
     <div className={`sidebar ${collapsed ? 'sidebar-collapsed' : ''}`}>
       <div className='sidebar-logo'>
         <div className='sidebar-logo-mark'><ImageBox src={logo} /></div>
-        <button type='button' className='sidebar-toggle' onClick={onToggle} aria-label={collapsed ? '展開選單' : '收起選單'} title={collapsed ? '展開選單' : '收起選單'}><span aria-hidden='true' /></button>
+        <button type='button' className='sidebar-toggle' onClick={onToggle} aria-label={collapsed ? '展開選單' : '收起選單'} title={collapsed ? '展開選單' : '收起選單'}><img src='/design/ui/menu-toggle.svg' alt='' /></button>
       </div>
       <div className='sidebar-content'>
         <List customStyles='sidebar-content-list'>
           {items.map(({ icon, title, path }, index) => {
             return (
               index <= items.length - (toBottom + 1) &&
-              <SidebarListItem key={index} index={index} icon={icon} title={t(title)} focus={pathname === `${path}` ? true : false} path={path} collapsed={collapsed} />
+              <SidebarListItem key={index} index={index} icon={icon} title={t(title)} focus={isPathActive(path, pathname)} path={path} collapsed={collapsed} />
             )
           })}
 
@@ -90,11 +94,12 @@ function Sidebar({ logo, items, customStyles, toBottom, onClick, collapsed, onTo
           {items.map(({ icon, title, path }, index) => {
             return (
               index > items.length - (toBottom + 1) &&
-              <SidebarListItem key={index} index={index} icon={icon} title={title} focus={pathname === `${path}` ? true : false} path={path} collapsed={collapsed} />
+              <SidebarListItem key={index} index={index} icon={icon} title={t(title)} focus={isPathActive(path, pathname)} path={path} collapsed={collapsed} />
             )
           })}
         </List>
 
+        {!collapsed && <TeamMembers />}
       </div>
     </div>
   );

@@ -22,7 +22,7 @@ import ContentText from './ContentText';
  * @param { Func } onClick func
  */
 
-function Checkbox({ title, name,content, value, defaultChecked, checked, size,checkboxColor,labelColor,description, errorText, customStyles, onClick, onChange }) {
+function Checkbox({ ariaLabel, title, name,content, value, defaultChecked, checked, size,checkboxColor,labelColor,description, errorText, customStyles, onClick, onChange }) {
     const isTailwind = typeof customStyles === 'string';
 
     return (
@@ -38,6 +38,7 @@ function Checkbox({ title, name,content, value, defaultChecked, checked, size,ch
                     defaultChecked={defaultChecked}
                     checked={checked}
                     onChange={onClick}
+                    aria-label={ariaLabel}
                 />
                 {content?<ContentText title={content} customStyles='checkbox-area-content' color={labelColor}/>:''}
             </label>

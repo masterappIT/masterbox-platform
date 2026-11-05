@@ -10,3 +10,43 @@
 	}
 
 }
+.user-form {
+	@apply w-full max-w-[900px] p-[24px] border-0;
+
+	&-head {
+		@apply flex flex-wrap items-center justify-between gap-[12px] mb-[24px];
+	}
+
+	&-title {
+		@apply m-0 text-[16px] leading-[24px] font-medium text-black_primary;
+	}
+
+	&-row {
+		@apply flex flex-col md:flex-row gap-[16px] md:gap-[24px];
+	}
+
+	&-hint {
+		@apply m-0 mt-[4px] text-[12px] leading-[16px] text-grayscale;
+	}
+
+	&-select {
+		@apply flex flex-col gap-[4px];
+
+		span {
+			@apply text-[14px] leading-[20px] font-medium text-black_primary;
+		}
+
+		select {
+			@apply w-full h-[34px] mt-[4px] pl-[10px] pr-[32px] border border-black_tertiary rounded-[5px] text-[14px] text-black_primary cursor-pointer appearance-none;
+			background: #fff url('/design/ui/chevron-down.svg') no-repeat right 10px center / 16px 16px;
+
+			&:focus-visible {
+				@apply outline-none border-primary;
+			}
+
+			&:disabled {
+				@apply bg-bg_tertiary cursor-not-allowed;
+			}
+		}
+	}
+}

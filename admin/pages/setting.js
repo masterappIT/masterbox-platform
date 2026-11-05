@@ -1,8 +1,31 @@
-import React, { useState } from 'react'
+import React from 'react'
+import Card from '../src/stories/components/Card'
+import Button from '../src/stories/components/Button'
+import Toggle from '../src/stories/components/Toggle'
+import PendingNote from '../src/components/PendingNote'
+
+const UNAVAILABLE = '設定功能尚未開放，目前無法儲存'
 
 function SettingPage() {
-  const [saved, setSaved] = useState(false)
-  return <main className='p-8'><h1 className='text-2xl font-semibold'>設定</h1><section className='mt-6 max-w-xl rounded border bg-white p-5'><label className='block text-sm text-gray-600' htmlFor='notification-email'>通知 Email</label><input id='notification-email' type='email' placeholder='admin@example.com' className='mt-2 w-full rounded border p-2' /><label className='mt-4 flex items-center gap-2'><input type='checkbox' defaultChecked /> 啟用系統通知</label><button type='button' className='mt-5 rounded bg-blue-600 px-4 py-2 text-white' onClick={() => setSaved(true)}>保存設定</button>{saved && <p className='mt-3 text-green-700'>設定已保存（測試模式）。</p>}</section></main>
+  return (
+    <div className='flex justify-center'>
+      <Card rounded customStyles='user-form'>
+        <div className='user-form-head'>
+          <h2 className='user-form-title'>通知設定</h2>
+          <Button title='儲存' disabled hint={UNAVAILABLE} />
+        </div>
+        <PendingNote>{`${UNAVAILABLE}，以下欄位僅供預覽。`}</PendingNote>
+        <label className='user-form-select mt-[16px]'>
+          <span>通知 Email</span>
+          <input className='pending-input' type='email' placeholder='admin@example.com' disabled />
+        </label>
+        <div className='flex items-center justify-between gap-[16px] mt-[24px]'>
+          <span className='text-[14px] leading-[20px] font-medium text-black_primary'>啟用系統通知</span>
+          <Toggle status={0} label='啟用系統通知' disabled />
+        </div>
+      </Card>
+    </div>
+  )
 }
 
 export default SettingPage

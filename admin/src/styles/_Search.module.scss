@@ -1,9 +1,24 @@
 @import '_Common.module.scss';
 
 .search {
-	@apply w-full relative border-b bg-[#FFFFFF] pr-[10px] flex items-center cursor-pointer;
+	@apply w-full flex items-center gap-[8px] py-[4px] bg-white cursor-text transition-shadow duration-150;
+	box-shadow: 0 1px 0 rgba(0, 0, 0, 0.15);
+
+	&:focus-within {
+		box-shadow: 0 1px 0 theme('colors.primary');
+	}
+
+	&-icon {
+		@apply shrink-0 w-[16px] h-[16px];
+	}
+
 	&-input {
-		@apply w-full h-[30px] border-none bg-transparent text-[15px] outline-none pl-[5px];
+		@apply w-full min-w-0 h-[20px] border-none bg-transparent text-[14px] leading-[20px] outline-none;
+
+		&::placeholder {
+			color: #ccc;
+		}
+
 		&:-webkit-autofill,
 		&:-webkit-autofill:hover,
 		&:-webkit-autofill:focus,
@@ -12,9 +27,4 @@
 			transition: color 99999s ease-out, background-color 99999s ease-out;
 		}
 	}
-	icon{
-		@apply cursor-pointer;
-		filter: brightness(0.5) invert(1);
-	}
 }
-

@@ -197,6 +197,18 @@ export default function Messenger() {
 
 
 
+  // A link from the home page opens that conversation, switching to its channel first.
+  const linkedRoom = typeof router.query.room === 'string' ? router.query.room : null
+  useEffect(() => {
+    if (!linkedRoom || selectedChatroomID === linkedRoom) return
+    const room = chatrooms.find((chatRoom) => chatRoom.chat_room_id === linkedRoom)
+    const channelIndex = room ? channels.findIndex(({ account }) => account === room.channel_id) : -1
+    if (channelIndex < 0) return
+    setSelectedChannel(channelIndex)
+    selectChatroom(linkedRoom)
+    router.replace('/', undefined, { shallow: true })
+  }, [linkedRoom, chatrooms, channels])
+
   const currentConversation = useMemo(() => {
 
     const conversationsInfo = messages[`${currentChannel?.platform}-${currentChannel?.account}-${selectedChatroomID}`]

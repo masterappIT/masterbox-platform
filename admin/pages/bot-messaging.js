@@ -1,83 +1,196 @@
 import React, { useEffect, useState } from 'react'
-import { useRouter } from 'next/router'
+import { useDispatch, useSelector } from 'react-redux'
+import { useQuery } from '@apollo/client'
+import Button from '../src/stories/components/Button'
+import EmptyState from '../src/stories/components/EmptyState'
+import PendingNote from '../src/components/PendingNote'
+import TableTop from '../src/components/Table/TableTop'
+import { MESSAGE_TEMPLATES } from '../src/graphQL/messageTemplate'
+import { parseTemplateMessages, platformLabel, TEMPLATE_PLATFORMS } from '../src/utils/messageTemplate'
+import { getUserSubscribedChannels, selectChannels } from '../src/redux/slices/messagesSlices'
 
-const imgCard1 = 'https://www.figma.com/api/mcp/asset/4c950e1d-88b2-4c4e-9a1e-16dab7c3b2f0.png'
-const imgCard2 = 'https://www.figma.com/api/mcp/asset/8ce6705c-fb86-4783-a02c-2fa566b8ee00.png'
-const imgCard3 = 'https://www.figma.com/api/mcp/asset/3cd877a6-c939-4a8b-8210-8e5c5b558d0c.png'
-const imgCard4 = 'https://www.figma.com/api/mcp/asset/6f5acd1f-153a-4eee-aa35-ca155cba9b0b.png'
-const imgIconSearch = 'https://www.figma.com/api/mcp/asset/11db4689-1c58-425f-8ce6-1d0e703f054a.svg'
-const imgDelete = 'https://www.figma.com/api/mcp/asset/d020a72d-8130-4c3f-89a0-008763536763.svg'
-const imgPlus = 'https://www.figma.com/api/mcp/asset/5997c9eb-ad93-4ed5-b7fd-4272ed41301e.svg'
-const imgToggle = 'https://www.figma.com/api/mcp/asset/aad4c99a-6554-4103-91a2-b3f52b5d99d9.svg'
-const imgChevronDown = 'https://www.figma.com/api/mcp/asset/a32197c4-1f48-4126-b5b1-f38a79793442.svg'
+const UNAVAILABLE = '對話BOT 尚未開放，目前無法建立或儲存機器人'
+const CONFLICT_TEXT_LIMIT = 160
 
-const platformOptions = ['Facebook', 'Instagram']
-const channelOptions = ['所有頻道', 'Messenger', 'Instagram DM']
-const dateOptions = ['2022/09/26', new Date().toLocaleDateString('zh-TW')]
-const filterPlatforms = ['全部', ...platformOptions]
-const templates = [[imgCard1, '開頭訊息'], [imgCard2, '離線回覆'], [imgCard3, '關鍵字回覆'], [imgCard4, '常見問題']]
-const initialBots = templates.map(([image, title], index) => ({ id: `bot-${index + 1}`, image, title, platform: '所有平台', channel: '所有頻道', date: '2022/09/26 13:39', enabled: index < 2 }))
+const BOT_TYPES = [
+  { title: '開頭訊息', image: 'opening', description: '讓顧客在第一次開啟對話，或是加入好友時，會開啟您設定的回覆。' },
+  { title: '離線回覆', image: 'offline', description: '在非營業時間或離線時，讓顧客得知您將會盡快回覆。' },
+  { title: '關鍵字回覆', image: 'keyword', description: '當顧客輸入特定關鍵字時，系統將自動回覆您設置好的回覆範本。' },
+  { title: '客製化機器人', image: 'custom', description: '運用多種回覆模式，為專案量身打造機器人。' },
+]
 
-function SelectField({ label, value, onChange, options = ['全部'] }) {
-  return <label>{label}<span className='bot-select'><select value={value} onChange={onChange}>{options.map(item => <option key={item}>{item}</option>)}</select><img src={imgChevronDown} alt='' /></span></label>
+const PRESETS = [
+  ['Instagram 限時動態@商業帳號', '自動向在個人限時動態中，用@提及你 Instagram 商業帳號的人傳送訊息。'],
+  ['防疫實聯制', '提供從加入好友、填寫問卷、同步 Google 試算表、回覆訊息，一系列的規格化模組。'],
+  ['訂閱回覆', '讓顧客在訂閱您的社群後，能有一個完善的後續體驗。'],
+  ['飯店 / 旅館 / 民宿', '提供房型介紹、專案優惠、飯店設施以及用餐服務介紹，並提供顧客線上諮詢。'],
+  ['餐廳派對企劃', '為您的顧客提供線上預訂餐敘、派對、慶生等企劃服務，提升顧客與餐廳黏著度。'],
+  ['房地產買賣', '透過系列房產相關的線上諮詢，了解顧客更多資訊，將合格客戶轉化為仲介的銷售目標。'],
+  ['餐廳訂位', '透過預訂餐廳所需要的問題，紀錄顧客的資訊，轉交給餐廳人員進行安排並回覆。'],
+  ['找公寓 / 租房', '按照物件類型、地區、坪數、房間數量等條件，來協助顧客找到出租房屋及店面。'],
+  ['保險業', '代表您從潛在客戶那裡獲取他們的繁瑣資訊並儲存記錄，您將有更多時間專注於銷售。'],
+  ['用餐評論', '邀請消費顧客在多種社群上撰寫評論，以得到餐廳提供的優惠活動，獲得更多五星評價。'],
+  ['行銷活動', '利用挑戰題抽獎，拓展您的電商營銷業務，將顧客的興趣轉化為數據，提高商品營收數字。'],
+  ['婚禮企劃顧問', '以婚顧公司為主題，提供服務項目、經典服務案例、專案優惠、關於品牌以及線上諮詢。'],
+  ['髮廊', '提供髮廊的服務項目、價目表、環境及位置，以及專業髮型設計師的介紹。'],
+  ['美容沙龍', '提供美容沙龍的服務項目，如霧眉、接睫毛等，另有專案優惠及專業團隊介紹。'],
+  ['餐廳優惠推薦', '透過網友好評、地點查詢，讓顧客選擇各式類型餐點優惠券並前往購買並訂閱優惠資訊。'],
+  ['商城導購', '透過問答了解顧客喜好，並且引導到您官網或商城的特定類別及品項。'],
+  ['品牌店舖介紹', '傳達您的品牌理念、生活提案、店舖或門市資訊，讓顧客輕易地認識您的企業。'],
+  ['熱門排行', '將您的各種商品分類排行榜清楚列出，掌握最新潮流，吸引顧客選購慾望。'],
+  ['優惠代碼', '將您品牌商城的優惠代碼傳達給特定顧客，適合發送給精準 TA 的優惠活動。'],
+  ['活動懶人包', '包含活動報名、票務資訊、活動介紹、活動議程、活動報到、活動回饋流程。'],
+  ['客訴與建議', '將常見的客訴問題彙整，減少客服人員面對負面情緒，並讓顧客適時地留下建議資訊。'],
+  ['汽車經銷', '讓顧客可以瀏覽您的車輛規格，並填寫表單要求試乘，查詢車輛出售價格估算。'],
+  ['新聞 / 媒體 / 出版', '透過簡單問題，讓顧客訂閱新聞類別，將可以利用顧客興趣標籤，主動提供新聞資訊。'],
+  ['旅遊機構 / 旅行社', '提供旅遊線上諮詢、門市據點、景點介紹、專案優惠、國內外旅遊規劃以及代辦事項。'],
+]
+
+function BotList({ onAdd }) {
+  return (
+    <section className='pending-card min-h-[calc(100vh-125px)]'>
+      <TableTop
+        searchPlaceholder='依標題搜尋名稱'
+        addTitle='新增BOT'
+        addOnClick={onAdd}
+        deleteOnClick={() => {}}
+        deleteDisabled
+        deleteHint='沒有可刪除的機器人'
+      >
+        <div className='flex flex-wrap gap-x-[24px] gap-y-[12px]'>
+          {['選擇平台', '選擇頻道', '建立日期'].map((label) => (
+            <label key={label} className='bot-filter'>
+              <span>{label}</span>
+              <select disabled><option>全部</option></select>
+            </label>
+          ))}
+        </div>
+      </TableTop>
+      <div className='mt-[72px]'>
+        <EmptyState title='還沒有任何一台機器人' description={`${UNAVAILABLE}。你可以先瀏覽機器人的類型。`} />
+      </div>
+    </section>
+  )
+}
+
+function BotGallery({ onPick, onBack }) {
+  return (
+    <section className='pending-card'>
+      <div className='user-form-head'>
+        <h2 className='bot-gallery-title'>依據流程，為您的品牌建造與顧客進行自動化對話的各類型聊天機器人</h2>
+        <Button title='返回' color='grayscale' onClick={onBack} />
+      </div>
+      <PendingNote>{`${UNAVAILABLE}，此頁僅供預覽。`}</PendingNote>
+      <ul className='bot-grid'>
+        {BOT_TYPES.map(({ title, image, description }) => (
+          <li key={title}>
+            <button type='button' className='bot-card' onClick={() => onPick(title)}>
+              <img src={`/design/bot/${image}.jpg`} alt='' width={404} height={209} />
+              <strong>{title}</strong>
+              <span>{description}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <h3 className='bot-section-title'><span>MasterBox預設機器人</span></h3>
+      <ul className='bot-grid'>
+        {PRESETS.map(([title, description]) => (
+          <li key={title}>
+            <button type='button' className='bot-card' onClick={() => onPick(title)}>
+              <i className='bot-card-placeholder' aria-hidden='true' />
+              <strong>{title}</strong>
+              <span>{description}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+function BotEditor({ initialName, onCancel }) {
+  const dispatch = useDispatch()
+  const channels = useSelector(selectChannels)
+  const { data } = useQuery(MESSAGE_TEMPLATES)
+  const [name, setName] = useState(initialName)
+  const [platform, setPlatform] = useState('')
+  const [channelId, setChannelId] = useState('')
+  const [delay, setDelay] = useState('2')
+  const [conflictText, setConflictText] = useState('')
+  const [templateId, setTemplateId] = useState('')
+  const templates = data?.messageTemplates || []
+
+  useEffect(() => { dispatch(getUserSubscribedChannels()) }, [dispatch])
+
+  const platforms = TEMPLATE_PLATFORMS.filter(({ value }) => channels.some((channel) => channel.platform === value))
+  const channelOptions = channels.filter((channel) => !platform || channel.platform === platform)
+  const importTemplate = (id) => {
+    setTemplateId(id)
+    const template = templates.find((item) => item.id === id)
+    if (template) setConflictText(parseTemplateMessages(template.contents).join('\n'))
+  }
+
+  return (
+    <div className='bot-editor'>
+      <aside className='bot-editor-side'>
+        <button type='button' className='bot-editor-step bot-editor-step-active'>BOT設定</button>
+        <button type='button' className='bot-editor-step' disabled title={UNAVAILABLE}>＋ 新增流程</button>
+      </aside>
+      <div className='bot-editor-canvas'>
+        <section className='pending-card'>
+          <div className='user-form-head'>
+            <h2 className='user-form-title'>對話BOT設定</h2>
+            <div className='flex gap-[8px]'>
+              <Button title='取消' color='grayscale' onClick={onCancel} />
+              <Button title='儲存' disabled hint={UNAVAILABLE} />
+            </div>
+          </div>
+          <PendingNote>{`${UNAVAILABLE}，此頁僅供預覽。`}</PendingNote>
+          <div className='bot-editor-grid'>
+            <label className='user-form-select'><span>BOT名稱</span><input className='pending-input' placeholder='請輸入' value={name} onChange={(event) => setName(event.target.value)} /></label>
+            <label className='user-form-select'><span>匯入範本</span>
+              <select value={templateId} onChange={(event) => importTemplate(event.target.value)} disabled={!templates.length}>
+                <option value=''>{templates.length ? '選擇範本' : '還沒有訊息範本'}</option>
+                {templates.map(({ id, name: templateName }) => <option key={id} value={id}>{templateName}</option>)}
+              </select>
+            </label>
+            <label className='user-form-select'><span>發送平台</span>
+              <select value={platform} onChange={(event) => { setPlatform(event.target.value); setChannelId('') }}>
+                <option value=''>所有平台</option>
+                {platforms.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </label>
+            <label className='user-form-select'><span>發送頻道</span>
+              <select value={channelId} onChange={(event) => setChannelId(event.target.value)}>
+                <option value=''>所有頻道</option>
+                {channelOptions.map(({ account, name: channelName, platform: channelPlatform }) => <option key={account} value={account}>{`${platformLabel(channelPlatform)} · ${channelName}`}</option>)}
+              </select>
+            </label>
+            <label className='user-form-select'><span>觸發形式</span>
+              <select defaultValue='content'><option value='content'>顧客回覆內容後觸發</option></select>
+            </label>
+            <label className='user-form-select'><span>訊息回覆延遲時間</span>
+              <span className='bot-delay'>
+                <input className='pending-input' inputMode='numeric' aria-label='訊息回覆延遲秒數' value={delay} onChange={(event) => setDelay(event.target.value.replace(/\D/g, ''))} />
+                <i>秒</i>
+              </span>
+            </label>
+          </div>
+          <label className='user-form-select mt-[16px]'>
+            <span>機器人關鍵字發生衝突時回傳文字</span>
+            <textarea className='pending-input pending-textarea' rows={7} placeholder='請輸入文字（必填）' value={conflictText} maxLength={CONFLICT_TEXT_LIMIT} onChange={(event) => setConflictText(event.target.value)} />
+            <small className='user-form-hint'>{`${conflictText.length}/${CONFLICT_TEXT_LIMIT}`}</small>
+          </label>
+        </section>
+      </div>
+    </div>
+  )
 }
 
 export default function BotMessagingPage() {
-  const router = useRouter()
-  const preview = router.query.preview
-  const [screen, setScreen] = useState(2)
-  useEffect(() => {
-    if (router.isReady) setScreen(router.query.preview === '0' ? 1 : router.query.preview === '5' ? 5 : router.query.preview === '6' ? 6 : 2)
-  }, [router.isReady, router.query.preview])
-  const [bots, setBots] = useState(initialBots)
-  const [search, setSearch] = useState('')
-  const [platform, setPlatform] = useState('全部')
-  const [channel, setChannel] = useState('全部')
-  const [date, setDate] = useState('全部')
-  const [selected, setSelected] = useState([])
-  const [name, setName] = useState('')
-  const [template, setTemplate] = useState('')
-  const [sendPlatform, setSendPlatform] = useState('')
-  const [sendChannel, setSendChannel] = useState('')
-  const [trigger, setTrigger] = useState('關鍵字')
-  const [delay, setDelay] = useState('2')
-  const [keyword, setKeyword] = useState('')
-  const [behavior, setBehavior] = useState('傳送內容')
-  const [match, setMatch] = useState('完全相符')
-  const [action, setAction] = useState('文字訊息')
-  const [text, setText] = useState('')
-  const [conditionCount, setConditionCount] = useState(1)
-  const [savedAt, setSavedAt] = useState(null)
-  useEffect(() => {
-    let active = true
-    fetch('/api/bots').then(response => response.ok ? response.json() : Promise.reject(new Error('BOT API unavailable'))).then(data => { if (active && Array.isArray(data.bots)) setBots(current => data.bots.map(bot => ({ ...bot, image: templates.find(([, title]) => title === bot.title)?.[0] || imgCard1 }))) }).catch(() => {})
-    return () => { active = false }
-  }, [])
-  const filteredBots = bots.filter(bot => bot.title.includes(search) && (platform === '全部' || bot.platform === platform || bot.platform === '所有平台') && (channel === '全部' || bot.channel === channel) && (date === '全部' || bot.date.startsWith(date)))
-  const chooseTemplate = ([, title]) => { setTemplate(title); setName(title); setScreen(5) }
-  const removeSelected = async () => { const ids = selected; setBots(current => current.filter(bot => !ids.includes(bot.id))); setSelected([]); await fetch('/api/bots', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) }) }
-  const toggleBot = async id => { const bot = bots.find(item => item.id === id); if (!bot) return; const enabled = !bot.enabled; setBots(current => current.map(item => item.id === id ? { ...item, enabled } : item)); await fetch('/api/bots', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, enabled }) }) }
-  const saveBot = async () => {
-    const image = templates.find(([, title]) => title === template)?.[0] || imgCard1
-    const payload = { image, title: name || '新建BOT', platform: sendPlatform || '所有平台', channel: sendChannel || '所有頻道', enabled: true, flow: { behavior, trigger, match, keyword, action, text, conditionCount }, settings: { delay } }
-    const response = await fetch('/api/bots', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-    if (!response.ok) return
-    const bot = await response.json()
-    setBots(current => [...current, bot])
-    setSavedAt(new Date())
-    setScreen(2)
-  }
-  const renderToolbar = () => <section className='bot-panel'><div className='bot-toolbar'><label className='bot-search'><img src={imgIconSearch} alt='' /><input value={search} onChange={event => setSearch(event.target.value)} placeholder='依標題搜尋名稱' /></label><div className='bot-toolbar-actions'><button className='bot-delete' disabled={!selected.length} onClick={removeSelected}><img src={imgDelete} alt='' />刪除</button><button className='bot-add' onClick={() => setScreen(4)}><img src={imgPlus} alt='' />新增BOT</button></div></div><div className='bot-filters'><SelectField label='選擇平台' value={platform} onChange={event => setPlatform(event.target.value)} options={filterPlatforms} /><SelectField label='選擇頻道' value={channel} onChange={event => setChannel(event.target.value)} options={['全部', ...channelOptions]} /><SelectField label='建立日期' value={date} onChange={event => setDate(event.target.value)} options={['全部', ...dateOptions]} /></div></section>
+  const [screen, setScreen] = useState({ name: 'list' })
 
-  if (screen === 1) return <main className='bot-page'><section className='bot-empty-state bot-panel'><p>還沒建立任何一台機器人，立即試試我們強大的機器人功能吧</p><button className='bot-add' onClick={() => setScreen(4)}><img src={imgPlus} alt='' />新增BOT</button></section></main>
-
-  if (screen === 2) return <main className='bot-page'>{renderToolbar()}<section className='bot-grid'>{filteredBots.map((bot, index) => <article className={`bot-card ${selected.includes(bot.id) ? 'is-selected' : ''}`} key={bot.id || `${bot.title}-${index}`} role='button' tabIndex={0} onClick={() => { setName(bot.title); setScreen(5) }} onKeyDown={event => event.key === 'Enter' && setScreen(5)}><div className='bot-art'><img src={bot.image} alt='' /></div><div className='bot-card-body'><div className='bot-card-title'><h3>{bot.title}</h3><button className={`bot-switch ${bot.enabled ? 'is-on' : ''}`} aria-label={`${bot.title}啟用`} onClick={event => { event.stopPropagation(); toggleBot(bot.id) }}><img src={imgToggle} alt='' /></button></div><p>適用於：{bot.platform}</p><small>編輯時間：{bot.date}</small><label className='bot-card-check' onClick={event => event.stopPropagation()}><input type='checkbox' checked={selected.includes(bot.id)} onChange={() => setSelected(current => current.includes(bot.id) ? current.filter(item => item !== bot.id) : [...current, bot.id])} />選取</label></div></article>)}</section></main>
-
-  if (screen === 4) return <main className='bot-page'><section className='bot-template-grid bot-panel'><header><h2>新增機器人</h2><button className='bot-close' onClick={() => setScreen(bots.length ? 2 : 1)}>×</button></header><div className='bot-grid'>{templates.map(item => <article className='bot-card' key={item[1]} role='button' tabIndex={0} onClick={() => chooseTemplate(item)} onKeyDown={event => event.key === 'Enter' && chooseTemplate(item)}><div className='bot-art'><img src={item[0]} alt='' /></div><div className='bot-card-body'><h3>{item[1]}</h3><p>適用於：所有平台</p></div></article>)}</div></section></main>
-
-  if (screen === 5) return <main className='bot-page'><section className='bot-editor bot-panel'><header><h2>對話BOT設定</h2><button className='bot-close' onClick={() => setScreen(4)}>×</button></header><div className='bot-editor-fields'><label>BOT名稱<input value={name} onChange={event => setName(event.target.value)} placeholder='請輸入' /></label><label>匯入範本<select value={template} onChange={event => { setTemplate(event.target.value); setName(event.target.value) }}><option value=''>選擇或輸入以查詢範本</option>{templates.map(([, title]) => <option key={title}>{title}</option>)}</select></label><label>發送平台<select value={sendPlatform} onChange={event => setSendPlatform(event.target.value)}><option value=''>選擇或輸入以查詢平台</option>{platformOptions.map(item => <option key={item}>{item}</option>)}</select></label><label>發送頻道<select value={sendChannel} onChange={event => setSendChannel(event.target.value)}><option value=''>請選擇一個平台</option><option>所有頻道</option></select></label><label>觸發形式<select value={trigger} onChange={event => setTrigger(event.target.value)}><option>關鍵字</option><option>顧客回覆內容後觸發</option></select></label><label>訊息回覆延遲時間<div className='bot-delay'><input type='number' min='0' value={delay} onChange={event => setDelay(event.target.value)} /><span>秒</span></div></label><label className='wide'>機器人關鍵字發生衝突時回傳文字<textarea maxLength={160} value={text} onChange={event => setText(event.target.value)} placeholder='請輸入文字（必填）' /><small>{text.length}/160</small></label></div><footer><button onClick={() => setScreen(4)}>取消</button><button className='primary' onClick={() => setScreen(6)}>儲存</button></footer></section></main>
-
-  return <main className='bot-page bot-g6-page'><section className='bot-flow-panel bot-panel'><header><h2>流程設定</h2><button className='bot-close' onClick={() => setScreen(5)} aria-label='關閉'>×</button></header><div className='bot-flow-fields'><label>流程名稱<input value={name} onChange={event => setName(event.target.value)} placeholder='請輸入' /></label><label>行為模式<select value={behavior} onChange={event => setBehavior(event.target.value)}><option>傳送內容</option><option>等待回覆</option></select></label></div><div className='bot-flow-condition'><h3>條件</h3>{Array.from({ length: conditionCount }, (_, index) => <div className='bot-condition' key={index}><label>條件<select value={trigger} onChange={event => setTrigger(event.target.value)}><option>關鍵字</option><option>顧客回覆內容後觸發</option></select></label><label>完全相符<select value={match} onChange={event => setMatch(event.target.value)}><option>完全相符</option><option>包含</option></select></label><input value={keyword} onChange={event => setKeyword(event.target.value)} placeholder='填入關鍵字' /></div>)}<button className='bot-add-condition' onClick={() => setConditionCount(count => count + 1)}>新增條件</button></div><div className='bot-flow-actions'><h3>新增動作</h3><div className='bot-actions'>{['文字訊息', '圖片訊息', '輪播訊息', '用戶輸入'].map(item => <button className={action === item ? 'active' : ''} key={item} onClick={() => setAction(item)}>{item}</button>)}</div><div className='bot-action-editor'><h4>{action}</h4>{action === '文字訊息' ? <textarea maxLength={2000} value={text} onChange={event => setText(event.target.value)} placeholder='請輸入訊息內容' /> : <button type='button'>上傳{action.replace('訊息', '')}</button>}</div></div><footer><button onClick={() => setScreen(5)}>上一步</button><button className='primary' onClick={saveBot}>儲存</button></footer></section></main>
+  if (screen.name === 'gallery') return <BotGallery onBack={() => setScreen({ name: 'list' })} onPick={(title) => setScreen({ name: 'editor', title })} />
+  if (screen.name === 'editor') return <BotEditor initialName={screen.title} onCancel={() => setScreen({ name: 'gallery' })} />
+  return <BotList onAdd={() => setScreen({ name: 'gallery' })} />
 }
-
-

@@ -1,7 +1,11 @@
 @import './Common.module.scss';
 
 .toggle {
-	@apply w-[45px] h-[24px] rounded-[12px] p-[2px] cursor-pointer;
+	@apply w-[45px] h-[24px] rounded-[12px] p-[2px] cursor-pointer transition-colors duration-150;
+
+	&:focus-visible {
+		@apply outline outline-2 outline-offset-2 outline-primary_dark;
+	}
 
 	&-status {
 		@apply w-[20px] h-[20px] rounded-[50%] bg-black_white drop-shadow-[0_3px_3px_rgba(0,0,0,0.15)] transition-all;

@@ -118,12 +118,14 @@ export const companySlice = createSlice({
 
       delete info.labels;
 
-      state.info.principal_info = info.principal_info
+      // A new company has no principal yet; keep an empty section so the form can still be filled in.
+      state.info.principal_info = info.principal_info || {}
 
       delete info.principal_info;
 
-      state.info.subscription.plan = info.subscription?.name;
-      state.info.subscription.period = `${info.subscription?.period?.start} - ${info.subscription?.period?.end}`
+      const { start, end } = info.subscription?.period || {};
+      state.info.subscription.plan = info.subscription?.name || '';
+      state.info.subscription.period = start || end ? `${start || ''} - ${end || ''}` : '';
 
       delete info.subscription;
 

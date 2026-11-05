@@ -1,5 +1,5 @@
 .avatar {
-	@apply overflow-hidden aspect-square;
+	@apply overflow-hidden aspect-square shrink-0;
 	&-mini{
 		@apply w-[28px] h-[28px];
 
@@ -26,5 +26,16 @@
 	&-img {
 		@apply w-full h-full object-cover;
 	}
+
+	&-initial {
+		@apply flex items-center justify-center w-full h-full bg-grayscale_lightest text-grayscale font-medium select-none;
+		font-size: 0.45em;
+	}
+
+	&-mini { font-size: 28px; }
+	&-small { font-size: 32px; }
+	&-normal { font-size: 36px; }
+	&-medium { font-size: 40px; }
+	&-large { font-size: 48px; }
 
 }

@@ -57,7 +57,7 @@ export default function Conversations({ isCustomerSideInfo, setIsCustomerSideInf
           <>
             {!isMobile && <ChatroomItem
               title={customerName && customerName !== 'null' ? customerName : '沒有名字'}
-              name={customerInfo?.avatar}
+              name={customerInfo?.avatar || (customerName !== 'null' ? customerName : '')}
               customStyles={`messenger-room-client ${isMobile ? 'bg-primary' : ''}`}
               endElement={isMobile ? '' :
                 <Icon name='moreinfo'

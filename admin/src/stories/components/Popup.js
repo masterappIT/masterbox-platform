@@ -1,31 +1,32 @@
-import React, { useState } from 'react';
+import React, { useEffect } from 'react';
 import PropTypes from 'prop-types';
-import Card from './Card';
-import Icon from './Icon';
+
 /**
  * Primary UI component for user interaction
  */
-function Popup({ children, isShow, customStyles, onClick, size }) {
-
+function Popup({ children, isShow, customStyles, onClick, size, label }) {
   const isTailwind = typeof customStyles === 'string';
 
-  return (
-    <div className={`popup  ${isShow ? '' : 'popup-hidden'} `} onClick={() => onClick(false)}>
-      <div className={`popup-item popup-item-${size}`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className={`popup-item-child-${size} ${isTailwind && customStyles} `} style={!isTailwind ? { ...customStyles } : {}}>
+  useEffect(() => {
+    if (!isShow) return undefined;
+    const onKeyDown = (event) => { if (event.key === 'Escape') onClick(false); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isShow, onClick]);
 
+  return (
+    <div className={`popup ${isShow ? '' : 'popup-hidden'}`} onClick={() => onClick(false)}>
+      <div className={`popup-item popup-item-${size}`} role='dialog' aria-modal='true' aria-label={label} onClick={(e) => e.stopPropagation()}>
+        <div className={`popup-item-child-${size} ${isTailwind ? customStyles : ''}`} style={!isTailwind ? { ...customStyles } : {}}>
           {children}
-          <Icon name='closeBtn'
-            onClick={() => onClick(false)}
-            customStyles='popup-item-child-icon '
-          />
+          <button type='button' className='popup-item-child-icon' aria-label='關閉' onClick={() => onClick(false)}>
+            <img src='/svg/closeBtn.svg' alt='' />
+          </button>
         </div>
       </div>
     </div>
   );
-};
+}
 
 Popup.propTypes = {
   children: PropTypes.node,
@@ -33,14 +34,16 @@ Popup.propTypes = {
   customStyles: PropTypes.oneOfType([PropTypes.string, PropTypes.object]),
   onClick: PropTypes.func,
   isShow: PropTypes.bool,
-}
+  label: PropTypes.string,
+};
 
 Popup.defaultProps = {
   children: null,
   size: 'normal',
   customStyles: null,
   onClick: null,
-  isShow: false
-}
+  isShow: false,
+  label: undefined,
+};
 
-export default Popup
+export default Popup;

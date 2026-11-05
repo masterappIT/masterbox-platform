@@ -1,21 +1,10 @@
 import React, { useState } from 'react'
 import PropTypes from 'prop-types'
-import Headline from './Headline';
-import Card from './Card';
-import ErrorText from './ErrorText';
-import ContentText from './ContentText';
-import Selector from './Selector';
-import Input from './Input';
-import Icon from './Icon';
 
 /**
- * Primary UI component for user interaction
- *  
- * 
+ * Search field from the design: a 16px icon over a thin underline.
  */
-
-
-function Search({placeholder, customStyles, onClick, onChange}) {
+function Search({ placeholder, customStyles, onChange }) {
     const isTailwind = typeof customStyles === 'string';
     const [searchInput, setSearchInput] = useState('');
 
@@ -26,25 +15,23 @@ function Search({placeholder, customStyles, onClick, onChange}) {
     };
 
     return (
-        <div className={`search ${isTailwind && customStyles} `} style={!isTailwind ? { ...customStyles } : {}}>
-            <Icon name='search' customStyles='search-icon' onClick={onClick} />
-            <input className='search-input' type="text" name='search' placeholder={placeholder} value={searchInput} onChange={onInputChange} />
-        </div>
+        <label className={`search ${isTailwind ? customStyles : ''}`} style={!isTailwind ? { ...customStyles } : {}}>
+            <img className='search-icon' src='/design/ui/search.svg' alt='' width={16} height={16} />
+            <input className='search-input' type='text' name='search' aria-label={placeholder} placeholder={placeholder} value={searchInput} onChange={onInputChange} />
+        </label>
     )
 }
 
 Search.propTypes = {
     placeholder: PropTypes.string,
     customStyles: PropTypes.oneOfType([PropTypes.string, PropTypes.object]),
-    onClick: PropTypes.func,
     onChange: PropTypes.func,
 }
 
 Search.defaultProps = {
     placeholder: '搜尋',
     customStyles: null,
-    onClick:null,
-    onChange:null,
+    onChange: null,
 }
 
 export default Search

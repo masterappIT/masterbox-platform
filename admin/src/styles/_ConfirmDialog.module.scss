@@ -1,0 +1,17 @@
+.confirm-dialog {
+	@apply flex flex-col w-[calc(100vw-64px)] max-w-[420px] p-[8px];
+
+	&-title {
+		@apply m-0 pr-[24px] text-[18px] leading-[25px] font-medium text-black_primary;
+		overflow-wrap: anywhere;
+	}
+
+	&-description {
+		@apply mt-[8px] mb-0 text-[14px] leading-[20px] text-grayscale;
+		overflow-wrap: anywhere;
+	}
+
+	&-actions {
+		@apply flex justify-end gap-[8px] mt-[24px];
+	}
+}

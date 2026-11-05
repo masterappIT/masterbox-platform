@@ -13,19 +13,19 @@ import List from './List';
 function ChatroomItem({ contentIcon, content, contentShow, endElement, title, name,color, customStyles, notice, isMobile }) {
   let setColor
   color==='primary' 
-  let endIcon = <div className='ChatroomItem-endElement'>{notice ? <Notice title={notice} /> : endElement}</div>
+  let endIcon = <div className='ChatroomItem-endElement shrink-0'>{notice ? <Notice title={notice} /> : endElement}</div>
   return (
     <ListItem
       customStyles={customStyles}
       startElement={<Avatar customStyles='ChatroomItem-avatar' name={name} size={isMobile ? 'normal' : 'normal'} />} endElement={endIcon} >
-      <div className='flex-1'>
+      <div className='flex-1 min-w-0'>
         {/* <List customStyles={{ flexDirection: 'column', justifyContent: 'start', alignItems: 'start' }}> */}
-        <ContentText title={title} size='large' color={`${color==='primary'?'black-primary':'white'}`}/>
+        <ContentText title={title} size='large' customStyles='truncate' color={`${color==='primary'?'black-primary':'white'}`}/>
         {/* 這裡原本是用ListItem因為報錯li不能在li裏面所以暫時改List */}
         <List customStyles={{ padding: 0, textOverflow: 'ellipsis' }}>
           <List customStyles={{ flexDirection: 'row', justifyContent: 'start', alignItems: 'start' }}>
             {contentIcon}
-            {contentShow && <ContentText color={`${color==='primary'?'black-secondary':'white'}`} title={content} size='small' customStyles={{ padding: 0 }} />}
+            {contentShow && <ContentText color={`${color==='primary'?'black-secondary':'white'}`} title={content} size='small' customStyles={{ padding: 0, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} />}
           </List>
         </List>
       </div>

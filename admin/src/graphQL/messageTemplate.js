@@ -9,3 +9,6 @@ export const CREATE_MESSAGE_TEMPLATE = gql`
 export const DELETE_MESSAGE_TEMPLATE = gql`
   mutation DeleteMessageTemplate($id: ID!) { deleteMessageTemplate(id: $id) }
 `;
+export const UPDATE_MESSAGE_TEMPLATE = gql`
+  mutation UpdateMessageTemplate($id: ID!, $input: MessageTemplateInput!) { updateMessageTemplate(id: $id, input: $input) { id name category platform contents createdAt updatedAt } }
+`;

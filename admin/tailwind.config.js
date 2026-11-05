@@ -10,6 +10,7 @@ module.exports = {
     fontSize: {
       label_primary: '14px',
       button_primary: '12px',
+      button_normal: '13px',
       bubble_primary: '13px',
 
       headline_small:'14px',
@@ -56,6 +57,7 @@ module.exports = {
         grayscale_lightest: '#D9D9D9',
         grayscale_light: '#B3B3B3',
         grayscale_dark: '#4B4B4B',//我freestyle的
+        grayscale_hover: '#989797',
         // 文字使用
         black_primary:'#000000',
         black_secondary:'#666666',
@@ -70,6 +72,8 @@ module.exports = {
         bg_primary:'#ffffff',
         bg_secondary:'#F7F7F7',
         bg_tertiary:'#EFEFEF',
+        bg_row_even:'rgba(247,247,247,0.5)',
+        bg_row_active:'#FFF5E8',
         bg_popup:'#000000',
         imMaster_blue900:'#164280',
         imMaster_green:'#7BD4BF',
