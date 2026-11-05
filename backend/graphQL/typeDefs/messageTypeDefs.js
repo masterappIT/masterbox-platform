@@ -18,13 +18,27 @@ export default gql`
     sentAt: DateTime
     isMine: Boolean
   }
+  type ChatRoomUser {
+    id: String
+    name: String
+    first_name: String
+    last_name: String
+    avatar: String
+  }
   type ChatRoom {
     id: ID!
     title: String
     platform: String
     channel_id: String
+    chat_room_id: String
+    users: [ChatRoomUser!]!
     lastMessage: String
     updatedAt: DateTime
+  }
+  type SubscribedChannel {
+    channel_id: ID!
+    platform: String!
+    name: String!
   }
   input MessageInput {
     to_chat_room_id: String
@@ -42,6 +56,7 @@ export default gql`
   }
   type Query {
     Message: Message
+    getUserSubscribedChannels: [SubscribedChannel!]!
     chatRooms: [ChatRoom!]!
     messages(conversationId: ID, roomId: ID): [Message!]!
   }

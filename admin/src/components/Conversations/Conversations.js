@@ -71,17 +71,15 @@ export default function Conversations({ isCustomerSideInfo, setIsCustomerSideInf
             <div className={`messenger-room-messages `}>
 
 
-              {messages && messages.length && messages.map(({ channel_id, sender, contents, createdAt, platform }, i) =>
-                <>
-                  <ChatBubble key={contents.mid + i + contents.text} contents={platform === 'whatsapp' ? contents?.text?.body : contents?.text} showAvatar={channel_id !== sender.replaceAll('"', '')} name={customerInfo.avatar} time={createdAt} justifyItem={channel_id === sender.replaceAll('"', '') ? 'end' : 'start'} />
-                </>
+              {messages?.length > 0 && messages.map(({ channel_id, sender, contents, createdAt, platform }, i) =>
+                <ChatBubble key={contents.mid + i + contents.text} contents={platform === 'whatsapp' ? contents?.text?.body ?? contents?.text : contents?.text} showAvatar={channel_id !== sender.replaceAll('"', '')} name={customerInfo?.avatar} time={createdAt} justifyItem={channel_id === sender.replaceAll('"', '') ? 'end' : 'start'} />
               )}
 
 
               <div ref={bottomRef} />
             </div>
 
-            <MessageInput handlePushMessage={(message) => handlePushMessage(currentChatroom.chat_room_id, message, customerInfo.id)} isMobile={isMobile} />
+            <MessageInput handlePushMessage={(message) => handlePushMessage(currentChatroom.chat_room_id, message, customerInfo?.id)} isMobile={isMobile} />
           </>
         ) : (
           <div className="messenger-room-messages-null">

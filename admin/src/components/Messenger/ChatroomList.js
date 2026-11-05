@@ -48,14 +48,14 @@ function ChatroomList({ isMobile, chatRoomsList, componentHandler, setCurrentCom
         {(chatRoomsList && chatRoomsList.length) ? chatRoomsList.map(({ channel_id, chat_room_id, platform, users }, i) => {
 
           let customer = users.find(user => user.id !== channel_id)
-          let userName = `${(customer.first_name && customer.first_name) + (customer.last_name && customer.last_name)}`
+          let userName = `${customer?.first_name || ''}${customer?.last_name || ''}`.trim()
 
           return (
             <div
               key={i}
               onClick={() => handleOnClick(chat_room_id)}
             >
-              <ChatroomItem key={i} isMobile={isMobile} title={userName !== 'null' ? userName : '沒有名字'} name={customer.avatar} contentIcon={null} content={`ID : ${customer.id}`} notice={null} customStyles={{ padding: '10px 16px', cursor: 'pointer' }} />
+              <ChatroomItem key={i} isMobile={isMobile} title={userName || '沒有名字'} name={customer?.avatar} contentIcon={null} content={`ID : ${customer?.id || chat_room_id}`} notice={null} customStyles={{ padding: '10px 16px', cursor: 'pointer' }} />
             </div>
           )
         }) :

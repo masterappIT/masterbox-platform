@@ -136,6 +136,11 @@ class apolloReqBuilder {
         return this
     }
 
+    setOptions(options) {
+        Object.assign(this.#body, options);
+        return this
+    }
+
     callApi() {
 
         if (!('type' in this)) {
@@ -178,9 +183,10 @@ class apolloReqBuilder {
  * @param {('query' | 'mutation' | 'subscription')} type
  * @param {Object} gqlOptions - gql schema
  * @param {Object} variables
+ * @param {Object} options - extra client options, e.g. fetchPolicy
  * @returns 
  */
-export const apolloApiHelpers = async (type, gqlOptions, variables,) => {
+export const apolloApiHelpers = async (type, gqlOptions, variables, options) => {
 
     try {
 
@@ -191,6 +197,8 @@ export const apolloApiHelpers = async (type, gqlOptions, variables,) => {
         // console.log(' apolloApiHelpers:>> reqBody ', reqBody.callApi);
 
         if (variables) reqBody.setVariables(variables);
+
+        if (options) reqBody.setOptions(options);
 
         //for extra the data from res
         const reqName = getMainDefinition(gqlOptions).selectionSet.selections[0].name.value

@@ -6,13 +6,15 @@ import { gql, } from '@apollo/client';
 
 export const SEND_MESSAGE = gql`
 
-mutation Mutation($messageInput: MessageInput) {
-  sendMessage(MessageInput: $messageInput) 
-    {
-    status
-    message
+mutation SendMessage($messageInput: MessageInput) {
+  appSendMessage(MessageInput: $messageInput) {
+    _id
+    contents
+    platform
+    channel_id
+    to_chat_room_id
+    sentAt
   }
-  
 }
 
  `;
@@ -22,25 +24,14 @@ mutation Mutation($messageInput: MessageInput) {
 
 export const CHATROOMS_MESSAGES = gql`
 
-query Query($paginationInput: PaginationInput $getChatRoomsMessagesInput: getChatRoomsMessagesInput) {
-  getChatRoomsMessages(PaginationInput: $paginationInput, getChatRoomsMessagesInput: $getChatRoomsMessagesInput) {
-    data {
-      company_id
-      _id
-      contents
-      platform
-      to_chat_room_id
-      channel_id
-      sender
-      createdAt
-      updatedAt
-    }
-    meta {
-      total
-      limit
-      page
-      pages
-    }
+query ChatRoomMessages($roomId: ID) {
+  messages(roomId: $roomId) {
+    _id
+    contents
+    platform
+    channel_id
+    to_chat_room_id
+    sentAt
   }
 }
  `;

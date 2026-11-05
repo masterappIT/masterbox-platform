@@ -35,7 +35,7 @@ function ChatRoom({ currentChannel, channels, chatrooms, clientList, componentHa
     }
     return []
 
-  }, [chatrooms])
+  }, [chatrooms, channels, selectedChannel])
 
   return (
     <>

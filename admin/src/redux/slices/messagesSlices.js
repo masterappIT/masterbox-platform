@@ -11,85 +11,77 @@ import { info } from 'autoprefixer';
 
 
 
+// These lists change on the server, so always read them fresh instead of from Apollo's cache.
+const FRESH = { fetchPolicy: 'no-cache' };
+
+// The home page keys chat rooms by `account`; rooms point at their channel by its id.
+const toChannel = ({ channel_id, platform, name }) => ({ channel_id, platform, name, account: channel_id });
+
+const toChatRoom = ({ users, ...room }) => ({
+  ...room,
+  users: (users || []).map(({ name, first_name, ...user }) => ({ ...user, first_name: first_name || name })),
+});
+
+// Stored contents are plain text, a JSON message (`text`), or a Meta payload (`message.text`).
+const parseContents = (contents) => {
+  if (contents && typeof contents === 'object') return contents;
+  try {
+    const parsed = JSON.parse(contents);
+    if (parsed && typeof parsed === 'object') return { ...parsed, text: parsed.text ?? parsed.message?.text };
+  } catch (error) { }
+  return { text: contents };
+};
+
+// Every stored message comes from a company account, so the channel is always the sender.
+const toMessage = ({ sentAt, createdAt, contents, sender, ...message }) => ({
+  ...message,
+  contents: parseContents(contents),
+  sender: sender || message.channel_id,
+  createdAt: createdAt || sentAt,
+});
+
 export const getUserSubscribedChannels = createAsyncThunk(
   'channel/getUserSubscribedChannels',
-  async (paginationInput, { dispatch }) => {
+  async (_, { dispatch, rejectWithValue }) => {
 
-    try {
-      const res = await apolloApiHelpers('query', GET_USER_SUBSCRIBED_CHANNELS, paginationInput)
+    const res = await apolloApiHelpers('query', GET_USER_SUBSCRIBED_CHANNELS, undefined, FRESH)
 
-      const error = res.error
-      if (error) {
-        console.log('error', error)
-      }
-
-      return dispatch(saveChannels(res))
-
-    } catch (error) {
-      console.log('error', error)
+    if (res.error) {
+      console.log('error', res.error)
+      return rejectWithValue(res.error)
     }
+
+    return dispatch(saveChannels(res.map(toChannel)))
 
   }
 )
 export const findChatsRooms = createAsyncThunk(
   'channel/findChatsRooms',
-  async ({ paginationInput, findChatsRoomInput }, { dispatch }) => {
+  async (_, { dispatch, rejectWithValue }) => {
 
+    const res = await apolloApiHelpers('query', CHATROOMS, undefined, FRESH)
 
-    try {
-
-      const res = await apolloApiHelpers('query', CHATROOMS,
-
-        {
-          "paginationInput": {
-            page: paginationInput.page,
-            limit: paginationInput.limit,
-          },
-          "findChatsRoomInput": {
-            channel_id: findChatsRoomInput.channel_id,
-            platform: findChatsRoomInput.platform
-          }
-        }
-      )
-
-      const error = res.error
-      if (error) {
-        console.log('error', error)
-      }
-
-      return dispatch(saveChatrooms(res))
-
-    } catch (error) {
-      console.log('error', error)
+    if (res.error) {
+      console.log('error', res.error)
+      return rejectWithValue(res.error)
     }
+
+    return dispatch(saveChatrooms(res.map(toChatRoom)))
 
   }
 )
 export const getChatRoomsMessages = createAsyncThunk(
   'messages/getChatRoomsMessages',
-  async ({ paginationInput, getChatRoomsMessagesInput }, { dispatch }) => {
+  async ({ getChatRoomsMessagesInput: { platform, channel_id, chat_room_id } }, { dispatch, rejectWithValue }) => {
 
-    try {
+    const res = await apolloApiHelpers('query', CHATROOMS_MESSAGES, { roomId: chat_room_id }, FRESH)
 
-      const res = await apolloApiHelpers('query', CHATROOMS_MESSAGES,
-        {
-          "paginationInput": paginationInput,
-          "getChatRoomsMessagesInput": getChatRoomsMessagesInput
-        }
-      )
-
-      const error = res.error
-      if (error) {
-        console.log('error', error)
-      }
-      console.log('getChatRoomsMessages', error)
-      console.log('getChatRoomsMessages', res)
-
-      return dispatch(saveMessages(res))
-
-    } catch (error) {
-      console.log('error', error)
+    if (res.error) {
+      console.log('error', res.error)
+      return rejectWithValue(res.error)
     }
+
+    return dispatch(saveMessages({ key: `${platform}-${channel_id}-${chat_room_id}`, data: res.map(toMessage) }))
 
   }
 )
@@ -120,33 +112,21 @@ export const handleSendMessage = createAsyncThunk(
   'user/sendMessage',
   async (data, { dispatch }) => {
 
-    try {
-
-      const res = await apolloApiHelpers('mutation', SEND_MESSAGE,
-        {
-          messageInput: data
-
-        }
-      )
-
-      if (res.status === "success") {
-
-        dispatch(pushMessage(res.message))
-      }
-      if (res.status === "error") {
-        const error = JSON.parse(res.message)
-
-        alert(error?.error?.message)
+    const res = await apolloApiHelpers('mutation', SEND_MESSAGE,
+      {
+        messageInput: data
 
       }
+    )
 
-
+    if (res.error) {
+      alert(res.error)
       return res
-      // return dispatch(handleMessagesSubscription())
-
-    } catch (error) {
-      alert('error', error)
     }
+
+    dispatch(pushMessage(res))
+
+    return res
 
   }
 )
@@ -187,15 +167,7 @@ export const messagesSlice = createSlice({
      */
     pushMessage: (state, { payload }) => {
 
-      let newMessages = payload;
-
-
-      if (typeof (newMessages) === 'string') {
-        newMessages = JSON.parse(newMessages)
-
-      } else {
-        newMessages.contents = JSON.parse(newMessages.contents)
-      }
+      const newMessages = toMessage(typeof (payload) === 'string' ? JSON.parse(payload) : payload);
 
 
       const { platform, channel_id, to_chat_room_id, contents, _id } = newMessages;
@@ -264,40 +236,12 @@ export const messagesSlice = createSlice({
 
     saveChatrooms: (state, { payload }) => {
 
-      let newRooms = []
-      payload.forEach((room) => {
-        const existingRoomData = state.chatRooms;
-        const isNewRoom = existingRoomData.findIndex(
-          ({ platform, channel_id, chat_room_id }) => (platform === room.platform && channel_id === room.channel_id && chat_room_id === room.chat_room_id))
-        if (isNewRoom === -1) newRooms.push(room)
-
-      })
-
-      state.chatRooms = [...state.chatRooms, ...newRooms]
+      state.chatRooms = payload
 
     },
-    saveMessages: (state, { payload }) => {
+    saveMessages: (state, { payload: { key, data } }) => {
 
-      // state.messages = payload;
-
-
-      state.messages.meta = payload.meta;
-
-      const platform = payload.data[0].platform
-      const channel_id = payload.data[0].channel_id
-      const to_chat_room_id = payload.data[0].to_chat_room_id
-
-      const key = `${platform}-${channel_id}-${to_chat_room_id}`
-
-      const newData = payload.data.map(message => { return { ...message, contents: JSON.parse(message.contents) } })
-
-      newData.sort((a, b) => { return b.createdAt, a.createdAt }).reverse()
-
-      state.messages[key] = newData
-
-      const newMessages = Object.assign({}, state.messages)
-
-      state.messages = newMessages
+      state.messages = { ...state.messages, [key]: data }
 
     }
 
@@ -325,7 +269,10 @@ export const { pushMessage, addChannels, saveChannels, saveChatrooms, saveMessag
 
 export const selectMessages = (state) => state.messages?.messages;
 
-export const selectChannels = (state) => state.messages?.channels;
+const NO_CHANNELS = [];
+
+// Sessions from before the query fix may have persisted an error object here.
+export const selectChannels = (state) => Array.isArray(state.messages?.channels) ? state.messages.channels : NO_CHANNELS;
 
 export const selectChatRooms = (state) => state.messages?.chatRooms;
 

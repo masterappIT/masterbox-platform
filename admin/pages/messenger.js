@@ -99,7 +99,7 @@ export default function Messenger() {
       }))
 
     }
-  }, [selectedChannel])
+  }, [selectedChannel, channels])
 
 
 

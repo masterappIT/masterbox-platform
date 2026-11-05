@@ -99,11 +99,21 @@ export default {
   },
   Query: {
     Message: () => null,
+    async getUserSubscribedChannels(_, __, { account, isAuth }) {
+      withAuth(Boolean(isAuth || account));
+      if (!account?.company_id) return [];
+      // account_channels has no company check of its own, so scope by the company as well.
+      const channels = await prisma.companyChannel.findMany({
+        where: { companyId: account.company_id, accounts: { some: { accountId: account.account_id } } },
+        orderBy: { name: 'asc' },
+      });
+      return channels.map(channel => ({ channel_id: channel.id, platform: channel.platform, name: channel.name }));
+    },
     async chatRooms(_, __, { account, isAuth }) {
       withAuth(Boolean(isAuth || account));
       if (!account?.company_id) return [];
       const rooms = await prisma.chatRoom.findMany({ where: { companyId: account.company_id }, orderBy: { updatedAt: 'desc' } });
-      return rooms.map(room => ({ id: room.id, title: room.chatRoomId || room.id, platform: room.platform, channel_id: room.channelId, updatedAt: room.updatedAt }));
+      return rooms.map(room => ({ id: room.id, title: room.chatRoomId || room.id, platform: room.platform, channel_id: room.channelId, chat_room_id: room.chatRoomId || room.id, users: Array.isArray(room.users) ? room.users : [], updatedAt: room.updatedAt }));
     },
     async messages(_, { conversationId, roomId }, { account, isAuth }) {
       withAuth(Boolean(isAuth || account));

@@ -7,13 +7,10 @@ import { gql, } from '@apollo/client';
 
 export const GET_USER_SUBSCRIBED_CHANNELS = gql`
 
-query Query($paginationInput: PaginationInput) {
-  getUserSubscribedChannels(PaginationInput: $paginationInput) {
+query GetUserSubscribedChannels {
+  getUserSubscribedChannels {
     platform
     name
-    account
-    active
-    authorized
     channel_id
   }
 }
@@ -23,12 +20,13 @@ query Query($paginationInput: PaginationInput) {
 //  find chatroom
 export const CHATROOMS = gql`
 
-query Query($findChatsRoomInput: FindChatsRoomInput $paginationInput: PaginationInput) {
-  chatRooms(FindChatsRoomInput: $findChatsRoomInput, PaginationInput: $paginationInput) {
+query ChatRooms {
+  chatRooms {
     platform
     channel_id
     users {
       id
+      name
       last_name
       first_name
       avatar
@@ -37,12 +35,3 @@ query Query($findChatsRoomInput: FindChatsRoomInput $paginationInput: Pagination
   }
 }
  `;
-
-
-
-
-
-
-
-
-

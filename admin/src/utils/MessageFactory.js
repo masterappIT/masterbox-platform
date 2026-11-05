@@ -47,6 +47,11 @@ export class MessageFactory {
             this.#body.contents = new testMessage(contents);
         }
 
+        // The other platforms have no payload class yet; without contents the mutation is rejected.
+        if (!this.#body.contents) {
+            this.#body.contents = contents;
+        }
+
         console.log('this.#body :>> ', this.#body);
         // message.vehicleType = vehicleType;
 
