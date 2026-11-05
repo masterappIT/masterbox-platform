@@ -11,7 +11,8 @@ COPY . .
 RUN flutter build web \
   --release \
   --dart-define=GRAPHQL_ENDPOINT=https://api.masterbox.masterappinc.com/graphql \
-  --dart-define=REALTIME_ENDPOINT=https://api.masterbox.masterappinc.com
+  --dart-define=REALTIME_ENDPOINT=https://api.masterbox.masterappinc.com \
+  --dart-define=ADMIN_URL=https://admin.masterbox.masterappinc.com
 
 FROM nginx:1.27-alpine
 COPY --from=builder /app/build/web /usr/share/nginx/html

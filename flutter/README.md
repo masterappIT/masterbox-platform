@@ -9,13 +9,18 @@ flutter pub get
 flutter run -d chrome
 ```
 
-The local default endpoints are `http://localhost:4000/graphql` and `http://localhost:4000`. Configure deployed environments explicitly:
+The local default endpoints are `http://localhost:4000/graphql`, `http://localhost:4000` and, for the admin site, `http://localhost:3000`. Configure deployed environments explicitly:
 
 ```bash
 flutter run -d chrome \
   --dart-define=GRAPHQL_ENDPOINT=https://api.example.com/graphql \
-  --dart-define=REALTIME_ENDPOINT=https://api.example.com
+  --dart-define=REALTIME_ENDPOINT=https://api.example.com \
+  --dart-define=ADMIN_URL=https://admin.example.com
 ```
+
+`ADMIN_URL` is where a Meta channel connection finishes: the backend only returns to origins it allows, so the browser ends on the admin site's channel page.
+
+The web build calls the API from the browser, so its origin must be listed in the backend's `CORS_ALLOWED_ORIGINS`.
 
 ## Validation
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
 
@@ -27,6 +29,7 @@ class _CallPageState extends State<CallPage> {
   bool _micEnabled = true;
   bool _cameraEnabled = false;
   String? _error;
+  bool _ended = false;
 
   @override
   void initState() {
@@ -46,6 +49,7 @@ class _CallPageState extends State<CallPage> {
         _cameraEnabled = true;
       }
       await local.setMicrophoneEnabled(true);
+      unawaited(widget.graphQL.reportCallEvent(widget.call.id, 'call.started'));
       if (mounted) setState(() {});
     } catch (error) {
       if (mounted) setState(() => _error = '$error');
@@ -72,7 +76,15 @@ class _CallPageState extends State<CallPage> {
     if (mounted) setState(() {});
   }
 
+  /// Without this the call would stay open on the server forever.
+  void _reportEnded() {
+    if (_ended) return;
+    _ended = true;
+    unawaited(widget.graphQL.reportCallEvent(widget.call.id, 'call.ended'));
+  }
+
   Future<void> _hangUp() async {
+    _reportEnded();
     await _room.disconnect();
     if (mounted) Navigator.of(context).pop();
   }
@@ -95,6 +107,7 @@ class _CallPageState extends State<CallPage> {
 
   @override
   void dispose() {
+    _reportEnded();
     _room.removeListener(_roomChanged);
     _room.disconnect();
     super.dispose();

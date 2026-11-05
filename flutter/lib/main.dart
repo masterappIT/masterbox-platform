@@ -6,19 +6,26 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'services/graphql_service.dart';
 import 'services/dynamic_island_service.dart';
 import 'models/app_models.dart';
 import 'call_page.dart';
+import 'pages/channels_page.dart';
+import 'pages/manage_page.dart';
+import 'pages/users_page.dart';
+import 'widgets/common.dart';
 
-const primaryColor = Color(0xFFFFAB37);
 const authBlue = primaryColor;
 
 void main() => runApp(const MasterBoxApp());
 
 class MasterBoxApp extends StatefulWidget {
-  const MasterBoxApp({super.key});
+  const MasterBoxApp({this.graphQL, super.key});
+
+  /// Tests pass a service with a stubbed connection.
+  final GraphQLService? graphQL;
 
   @override
   State<MasterBoxApp> createState() => _MasterBoxAppState();
@@ -54,9 +61,10 @@ class _MasterBoxAppState extends State<MasterBoxApp> {
       themeMode: themeMode,
       theme: _masterBoxTheme(Brightness.light),
       darkTheme: _masterBoxTheme(Brightness.dark),
-      home: AppRoot(onThemeModeChanged: setThemeMode),
+      home: AppRoot(onThemeModeChanged: setThemeMode, graphQL: widget.graphQL),
       onUnknownRoute: (settings) => MaterialPageRoute(
-        builder: (_) => AppRoot(onThemeModeChanged: setThemeMode),
+        builder: (_) =>
+            AppRoot(onThemeModeChanged: setThemeMode, graphQL: widget.graphQL),
       ),
     );
   }
@@ -135,25 +143,19 @@ ThemeData _masterBoxTheme(Brightness brightness) {
 }
 
 class AppRoot extends StatefulWidget {
-  const AppRoot({required this.onThemeModeChanged, super.key});
+  const AppRoot({required this.onThemeModeChanged, this.graphQL, super.key});
   final ValueChanged<bool> onThemeModeChanged;
+  final GraphQLService? graphQL;
   @override
   State<AppRoot> createState() => _AppRootState();
 }
 
 class _AppRootState extends State<AppRoot> {
   bool signedIn = false;
-  String? authToken;
-  String? refreshToken;
-  String? accountId;
-  String? companyId;
   bool restoring = false;
-  GraphQLService get graphQL => GraphQLService(
-    token: authToken,
-    refreshToken: refreshToken,
-    accountId: accountId,
-    companyId: companyId,
-  );
+  late final GraphQLService graphQL = (widget.graphQL ?? GraphQLService())
+    ..onTokensChanged = _saveSession
+    ..onSessionExpired = handleLogout;
 
   @override
   void initState() {
@@ -161,66 +163,97 @@ class _AppRootState extends State<AppRoot> {
     restoreSession();
   }
 
+  @override
+  void dispose() {
+    graphQL.stopRealtime();
+    super.dispose();
+  }
+
   Future<void> restoreSession() async {
     final prefs = await SharedPreferences.getInstance();
-    final storedRefreshToken = prefs.getString('refresh_token');
-    final storedToken = prefs.getString('auth_token');
-    final service = GraphQLService(
-      token: storedToken,
-      refreshToken: storedRefreshToken,
-      accountId: prefs.getString('account_id'),
-      companyId: prefs.getString('company_id'),
-    );
-    if (storedToken?.isNotEmpty != true &&
-        storedRefreshToken?.isNotEmpty == true &&
-        await service.refresh()) {
-      await prefs.setString('auth_token', service.token!);
+    final storedRole = prefs.getString('account_role');
+    graphQL
+      ..token = prefs.getString('auth_token')
+      ..refreshToken = prefs.getString('refresh_token')
+      ..accountId = prefs.getString('account_id')
+      ..companyId = prefs.getString('company_id')
+      ..account = CurrentAccount(
+        id: prefs.getString('account_id'),
+        email: prefs.getString('account_email'),
+        role: storedRole,
+        name: prefs.getString('account_name'),
+        companyId: prefs.getString('company_id'),
+      );
+    // Sessions saved before roles were kept learn theirs from the refresh.
+    if (graphQL.refreshToken?.isNotEmpty == true &&
+        (!graphQL.isAuthenticated || storedRole == null)) {
+      try {
+        await graphQL.refresh();
+      } catch (_) {
+        // Offline: carry on with what was saved and retry on the next request.
+      }
     }
     if (!mounted) return;
     setState(() {
-      authToken = service.token;
-      refreshToken = service.refreshToken;
-      accountId = service.accountId;
-      companyId = service.companyId;
-      signedIn = authToken?.isNotEmpty == true;
+      signedIn = graphQL.isAuthenticated;
       restoring = false;
     });
+  }
+
+  Future<void> _saveSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    Future<void> save(String key, String? value) async {
+      if (value?.isNotEmpty == true) await prefs.setString(key, value!);
+    }
+
+    await save('auth_token', graphQL.token);
+    await save('refresh_token', graphQL.refreshToken);
+    await save('account_id', graphQL.accountId);
+    await save('company_id', graphQL.companyId);
+    await save('account_email', graphQL.account?.email);
+    await save('account_role', graphQL.account?.role);
+    await save('account_name', graphQL.account?.name);
+  }
+
+  Future<void> _startSession(AuthTokens tokens) async {
+    graphQL
+      ..token = tokens.token
+      ..refreshToken = tokens.refreshToken
+      ..accountId = tokens.accountId
+      ..companyId = tokens.companyId
+      ..account = tokens.account;
+    await _saveSession();
+    if (!mounted) return;
+    setState(() => signedIn = true);
   }
 
   Future<void> handleLogin(String email, String password) async {
     final tokens = await graphQL.authenticate(email: email, password: password);
     if (!mounted) return;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('auth_token', tokens.token);
-    if (tokens.refreshToken?.isNotEmpty == true) {
-      await prefs.setString('refresh_token', tokens.refreshToken!);
-    }
-    if (tokens.accountId?.isNotEmpty == true) {
-      await prefs.setString('account_id', tokens.accountId!);
-    }
-    if (tokens.companyId?.isNotEmpty == true) {
-      await prefs.setString('company_id', tokens.companyId!);
-    }
+    await _startSession(tokens);
+  }
+
+  Future<void> handleRegister(CompanyRegistration input) async {
+    final tokens = await graphQL.registerCompany(input);
     if (!mounted) return;
-    setState(() {
-      authToken = tokens.token;
-      refreshToken = tokens.refreshToken;
-      accountId = tokens.accountId;
-      companyId = tokens.companyId;
-      signedIn = true;
-    });
+    await _startSession(tokens);
   }
 
   Future<void> handleLogout() async {
+    graphQL.clearSession();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('auth_token');
-    await prefs.remove('refresh_token');
-    if (mounted) {
-      setState(() {
-        signedIn = false;
-        authToken = null;
-      });
+    for (final key in const [
+      'auth_token',
+      'refresh_token',
+      'account_id',
+      'company_id',
+      'account_email',
+      'account_role',
+      'account_name',
+    ]) {
+      await prefs.remove(key);
     }
+    if (mounted) setState(() => signedIn = false);
   }
 
   @override
@@ -235,6 +268,7 @@ class _AppRootState extends State<AppRoot> {
             onLogout: handleLogout,
           )
         : LoginPage(
+            onRegister: handleRegister,
             onLogin: (email, password, developmentMode) async {
               if (kDebugMode && developmentMode) {
                 try {
@@ -246,10 +280,14 @@ class _AppRootState extends State<AppRoot> {
                   );
                 } catch (_) {
                   if (!mounted) return;
-                  setState(() {
-                    authToken = 'development-token';
-                    signedIn = true;
-                  });
+                  graphQL
+                    ..token = developmentToken
+                    ..account = const CurrentAccount(
+                      id: null,
+                      email: null,
+                      role: 'admin',
+                    );
+                  setState(() => signedIn = true);
                 }
               } else {
                 await handleLogin(email, password);
@@ -260,13 +298,14 @@ class _AppRootState extends State<AppRoot> {
 }
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({required this.onLogin, super.key});
+  const LoginPage({required this.onLogin, this.onRegister, super.key});
   final Future<void> Function(
     String email,
     String password,
     bool developmentMode,
   )
   onLogin;
+  final Future<void> Function(CompanyRegistration input)? onRegister;
   @override
   State<LoginPage> createState() => _LoginPageState();
 }
@@ -276,10 +315,16 @@ class _LoginPageState extends State<LoginPage>
   bool developmentMode = kDebugMode;
   bool showLoginForm = true;
   bool forgotPassword = false;
+  bool registering = false;
   bool loading = false;
   String? errorMessage;
+  Map<String, String> fieldErrors = const {};
   final email = TextEditingController();
   final password = TextEditingController();
+  final chineseName = TextEditingController();
+  final englishName = TextEditingController();
+  final mobile = TextEditingController();
+  String? country;
   late final AnimationController intro;
 
   @override
@@ -301,7 +346,78 @@ class _LoginPageState extends State<LoginPage>
     intro.dispose();
     email.dispose();
     password.dispose();
+    chineseName.dispose();
+    englishName.dispose();
+    mobile.dispose();
     super.dispose();
+  }
+
+  void _setMode({bool forgot = false, bool register = false}) => setState(() {
+    forgotPassword = forgot;
+    registering = register;
+    errorMessage = null;
+    fieldErrors = const {};
+  });
+
+  Map<String, String> _registrationErrors() {
+    final address = email.text.trim();
+    final phone = mobile.text.trim();
+    return {
+      if (chineseName.text.trim().isEmpty) 'chinese_name': '請輸入中文名稱',
+      if (englishName.text.trim().isEmpty) 'english_name': '請輸入英文名稱',
+      if (address.isEmpty)
+        'email': '請輸入電子信箱'
+      else if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(address))
+        'email': '電子信箱格式不正確',
+      if (password.text.isEmpty) 'password': '請輸入密碼',
+      if (country == null) 'country': '請選擇所在地區',
+      if (phone.isEmpty)
+        'mobile': '請輸入電話號碼'
+      else if (phone.length < 5)
+        'mobile': '電話號碼格式不正確',
+    };
+  }
+
+  bool get _canSubmit {
+    if (loading || forgotPassword) return false;
+    if (registering) return true;
+    return developmentMode ||
+        (email.text.isNotEmpty && password.text.isNotEmpty);
+  }
+
+  Future<void> _submit() async {
+    if (registering) {
+      final found = _registrationErrors();
+      setState(() => fieldErrors = found);
+      if (found.isNotEmpty) return;
+    }
+    setState(() {
+      loading = true;
+      errorMessage = null;
+    });
+    try {
+      if (registering) {
+        await widget.onRegister?.call(
+          CompanyRegistration(
+            chineseName: chineseName.text.trim(),
+            englishName: englishName.text.trim(),
+            email: email.text.trim(),
+            password: password.text,
+            country: country!,
+            mobile: mobile.text.trim(),
+          ),
+        );
+      } else {
+        await widget.onLogin(email.text.trim(), password.text, developmentMode);
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => errorMessage = error.toString().replaceFirst('Bad state: ', ''),
+        );
+      }
+    }
+    if (mounted) setState(() => loading = false);
   }
 
   @override
@@ -365,34 +481,109 @@ class _LoginPageState extends State<LoginPage>
                               child: Column(
                                 children: [
                                   Text(
-                                    forgotPassword ? '重設密碼' : '登入 MasterBox',
+                                    forgotPassword
+                                        ? '重設密碼'
+                                        : (registering
+                                              ? '免費試用註冊'
+                                              : '登入 MasterBox'),
                                     style: const TextStyle(
                                       fontSize: 22,
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
                                   const SizedBox(height: 18),
-                                  TextField(
-                                    controller: email,
-                                    onChanged: (_) => setState(() {}),
-                                    decoration: const InputDecoration(
-                                      labelText: 'Email',
-                                      prefixIcon: Icon(Icons.email_outlined),
+                                  if (forgotPassword)
+                                    const Text(
+                                      '目前無法自行重設密碼，請聯絡公司管理員協助重設。',
+                                      textAlign: TextAlign.center,
                                     ),
-                                  ),
+                                  if (registering) ...[
+                                    TextField(
+                                      controller: chineseName,
+                                      decoration: InputDecoration(
+                                        labelText: '中文名稱',
+                                        prefixIcon: const Icon(
+                                          Icons.business_outlined,
+                                        ),
+                                        errorText: fieldErrors['chinese_name'],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 14),
+                                    TextField(
+                                      controller: englishName,
+                                      decoration: InputDecoration(
+                                        labelText: '英文名稱',
+                                        prefixIcon: const Icon(
+                                          Icons.business_outlined,
+                                        ),
+                                        errorText: fieldErrors['english_name'],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 14),
+                                  ],
+                                  if (!forgotPassword)
+                                    TextField(
+                                      controller: email,
+                                      onChanged: (_) => setState(() {}),
+                                      decoration: InputDecoration(
+                                        labelText: 'Email',
+                                        prefixIcon: const Icon(
+                                          Icons.email_outlined,
+                                        ),
+                                        errorText: fieldErrors['email'],
+                                      ),
+                                    ),
                                   if (!forgotPassword) ...[
                                     const SizedBox(height: 14),
                                     TextField(
                                       controller: password,
                                       onChanged: (_) => setState(() {}),
                                       obscureText: true,
-                                      decoration: const InputDecoration(
+                                      decoration: InputDecoration(
                                         labelText: '密碼',
-                                        prefixIcon: Icon(Icons.lock_outline),
+                                        prefixIcon: const Icon(
+                                          Icons.lock_outline,
+                                        ),
+                                        errorText: fieldErrors['password'],
                                       ),
                                     ),
                                     const SizedBox(height: 12),
-                                    if (kDebugMode)
+                                    if (registering) ...[
+                                      DropdownButtonFormField<String>(
+                                        isExpanded: true,
+                                        initialValue: country,
+                                        decoration: InputDecoration(
+                                          labelText: '所在地區',
+                                          prefixIcon: const Icon(Icons.public),
+                                          errorText: fieldErrors['country'],
+                                        ),
+                                        items: const [
+                                          DropdownMenuItem(
+                                            value: 'Taiwan',
+                                            child: Text('Taiwan'),
+                                          ),
+                                          DropdownMenuItem(
+                                            value: 'Hong Kong',
+                                            child: Text('Hong Kong'),
+                                          ),
+                                        ],
+                                        onChanged: (value) =>
+                                            setState(() => country = value),
+                                      ),
+                                      const SizedBox(height: 14),
+                                      TextField(
+                                        controller: mobile,
+                                        keyboardType: TextInputType.phone,
+                                        decoration: InputDecoration(
+                                          labelText: '電話號碼',
+                                          prefixIcon: const Icon(
+                                            Icons.phone_outlined,
+                                          ),
+                                          errorText: fieldErrors['mobile'],
+                                        ),
+                                      ),
+                                    ],
+                                    if (kDebugMode && !registering)
                                       SwitchListTile(
                                         contentPadding: EdgeInsets.zero,
                                         title: const Text('開發免登入'),
@@ -416,99 +607,59 @@ class _LoginPageState extends State<LoginPage>
                                     ),
                                     const SizedBox(height: 8),
                                   ],
-                                  SizedBox(
-                                    width: double.infinity,
-                                    child: FilledButton.icon(
-                                      onPressed: loading
-                                          ? null
-                                          : (forgotPassword
-                                                ? (email.text.isNotEmpty
-                                                      ? () => setState(
-                                                          () => forgotPassword =
-                                                              false,
-                                                        )
-                                                      : null)
-                                                : ((developmentMode ||
-                                                          (email
-                                                                  .text
-                                                                  .isNotEmpty &&
-                                                              password
-                                                                  .text
-                                                                  .isNotEmpty))
-                                                      ? () async {
-                                                          setState(() {
-                                                            loading = true;
-                                                            errorMessage = null;
-                                                          });
-                                                          try {
-                                                            await widget.onLogin(
-                                                              email.text.trim(),
-                                                              password.text,
-                                                              developmentMode,
-                                                            );
-                                                          } catch (error) {
-                                                            if (mounted) {
-                                                              setState(
-                                                                () => errorMessage = error
-                                                                    .toString()
-                                                                    .replaceFirst(
-                                                                      'Bad state: ',
-                                                                      '',
-                                                                    ),
-                                                              );
-                                                            }
-                                                          }
-                                                          if (mounted) {
-                                                            setState(
-                                                              () => loading =
-                                                                  false,
-                                                            );
-                                                          }
-                                                        }
-                                                      : null)),
-                                      icon: loading
-                                          ? const SizedBox(
-                                              width: 18,
-                                              height: 18,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                              ),
-                                            )
-                                          : Icon(
-                                              forgotPassword
-                                                  ? Icons.mail_outline
-                                                  : Icons.login,
-                                            ),
-                                      label: Text(
-                                        loading
-                                            ? '登入中…'
-                                            : (forgotPassword
-                                                  ? '寄送重設連結'
-                                                  : (developmentMode
-                                                        ? '以開發模式進入'
-                                                        : '登入')),
+                                  if (!forgotPassword)
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: FilledButton.icon(
+                                        onPressed: _canSubmit ? _submit : null,
+                                        icon: loading
+                                            ? const SizedBox(
+                                                width: 18,
+                                                height: 18,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                    ),
+                                              )
+                                            : const Icon(Icons.login),
+                                        label: Text(
+                                          loading
+                                              ? (registering ? '註冊中…' : '登入中…')
+                                              : (registering
+                                                    ? '立即註冊'
+                                                    : (developmentMode
+                                                          ? '以開發模式進入'
+                                                          : '登入')),
+                                        ),
                                       ),
                                     ),
-                                  ),
                                   const SizedBox(height: 8),
-                                  TextButton(
-                                    onPressed: () => setState(
-                                      () => forgotPassword = !forgotPassword,
+                                  if (!forgotPassword && !registering)
+                                    TextButton(
+                                      onPressed: () => _setMode(forgot: true),
+                                      child: const Text('忘記密碼？'),
                                     ),
-                                    child: Text(
-                                      forgotPassword ? '返回登入' : '忘記密碼？',
+                                  if (widget.onRegister != null && !registering)
+                                    TextButton(
+                                      onPressed: () => _setMode(register: true),
+                                      child: const Text('免費試用註冊'),
                                     ),
-                                  ),
+                                  if (forgotPassword || registering)
+                                    TextButton(
+                                      onPressed: () => _setMode(),
+                                      child: const Text('返回登入'),
+                                    ),
                                 ],
                               ),
                             ),
                           ),
                         ),
                       const SizedBox(height: 18),
-                      const Text(
-                        'API 連線尚未設定時仍可使用示範資料',
-                        style: TextStyle(color: Colors.white70, fontSize: 12),
-                      ),
+                      if (kDebugMode)
+                        const Text(
+                          'API 連線尚未設定時仍可使用示範資料',
+                          style: TextStyle(color: Colors.white70, fontSize: 12),
+                        ),
                     ],
                   ),
                 ),
@@ -537,27 +688,136 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int index = 0;
+
+  StreamSubscription<ChatMessage>? _newMessages;
+  final _announced = <String>{};
+
+  bool get _isAdmin => widget.graphQL.account?.isAdmin == true;
+
   @override
-  Widget build(BuildContext context) => Scaffold(
-    body: index == 2
-        ? SettingsPage(
-            onThemeModeChanged: widget.onThemeModeChanged,
-            onLogout: widget.onLogout,
-          )
-        : (index == 1
-              ? ChatPage(graphQL: widget.graphQL)
-              : ClientPage(graphQL: widget.graphQL)),
-    bottomNavigationBar: _BottomBar(
-      selectedIndex: index,
-      onSelected: (value) => setState(() => index = value),
-    ),
-  );
+  void initState() {
+    super.initState();
+    _newMessages = widget.graphQL.messageEvents.listen(_announce);
+    widget.graphQL.startRealtime();
+  }
+
+  @override
+  void dispose() {
+    _newMessages?.cancel();
+    super.dispose();
+  }
+
+  /// The settings page's notification switch. Works while the app is open;
+  /// there is no push service behind it yet.
+  Future<void> _announce(ChatMessage message) async {
+    if (message.isMine || message.roomId == widget.graphQL.openRoomId) return;
+    // A message is sent again whenever it changes, such as being read.
+    if (!_announced.add(message.id)) return;
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted || prefs.getBool('notifications') == false) return;
+    final text = message.text.isEmpty ? '傳來一則附件' : message.text;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '新訊息：$text',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        action: SnackBarAction(
+          label: '查看',
+          onPressed: () => _openRoom(message.roomId),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openRoom(String? roomId) async {
+    try {
+      final rooms = await widget.graphQL.fetchConversations();
+      final room = rooms.where((item) => item.messageRoomId == roomId);
+      if (mounted && room.isNotEmpty) _openConversation(room.first);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('目前無法開啟對話，請稍後再試')));
+      }
+    }
+  }
+
+  void _openConversation(ChatConversation conversation) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ConversationPage(
+          graphQL: widget.graphQL,
+          conversation: conversation,
+        ),
+      ),
+    );
+  }
+
+  void _openChannels() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ChannelsPage(graphQL: widget.graphQL),
+      ),
+    );
+  }
+
+  void _addUser() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => UserFormPage(graphQL: widget.graphQL),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isAdmin = _isAdmin;
+    final pages = <Widget>[
+      ClientPage(
+        graphQL: widget.graphQL,
+        onOpenConversation: _openConversation,
+        onManageChannels: isAdmin ? _openChannels : null,
+        onInvite: isAdmin ? _addUser : null,
+      ),
+      ChatPage(
+        graphQL: widget.graphQL,
+        onOpenConversation: _openConversation,
+        onManageChannels: isAdmin ? _openChannels : null,
+      ),
+      if (isAdmin)
+        ManagePage(
+          graphQL: widget.graphQL,
+          onOpenConversation: _openConversation,
+          onOpenCustomers: () => setState(() => index = 0),
+        ),
+      SettingsPage(
+        graphQL: widget.graphQL,
+        onThemeModeChanged: widget.onThemeModeChanged,
+        onLogout: widget.onLogout,
+      ),
+    ];
+    return Scaffold(
+      body: pages[index.clamp(0, pages.length - 1)],
+      bottomNavigationBar: _BottomBar(
+        selectedIndex: index,
+        showManage: isAdmin,
+        onSelected: (value) => setState(() => index = value),
+      ),
+    );
+  }
 }
 
 class _BottomBar extends StatelessWidget {
-  const _BottomBar({required this.selectedIndex, required this.onSelected});
+  const _BottomBar({
+    required this.selectedIndex,
+    required this.onSelected,
+    this.showManage = false,
+  });
   final int selectedIndex;
   final ValueChanged<int> onSelected;
+  final bool showManage;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -576,7 +836,7 @@ class _BottomBar extends StatelessWidget {
     child: SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 10, 18, 8),
+        padding: const EdgeInsets.fromLTRB(8, 10, 8, 8),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
@@ -596,8 +856,17 @@ class _BottomBar extends StatelessWidget {
               selectedIndex: selectedIndex,
               onSelected: onSelected,
             ),
+            if (showManage)
+              _BottomBarItem(
+                index: 2,
+                icon: Icons.dashboard_outlined,
+                selectedIcon: Icons.dashboard,
+                label: 'Manage',
+                selectedIndex: selectedIndex,
+                onSelected: onSelected,
+              ),
             _BottomBarItem(
-              index: 2,
+              index: showManage ? 3 : 2,
               icon: Icons.settings_outlined,
               selectedIcon: Icons.settings,
               label: 'Setting',
@@ -633,57 +902,99 @@ class _BottomBarItem extends StatelessWidget {
     final color = selected
         ? primaryColor
         : Theme.of(context).colorScheme.onSurfaceVariant;
-    return InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: () => onSelected(index),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
-        decoration: BoxDecoration(
-          color: selected
-              ? primaryColor.withValues(alpha: 0.14)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(selected ? selectedIcon : icon, color: color, size: 23),
-            const SizedBox(height: 3),
-            Text(
-              label,
-              style: TextStyle(
-                color: color,
-                fontSize: 12,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: () => onSelected(index),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(vertical: 7),
+          decoration: BoxDecoration(
+            color: selected
+                ? primaryColor.withValues(alpha: 0.14)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(selected ? selectedIcon : icon, color: color, size: 23),
+              const SizedBox(height: 3),
+              Text(
+                label,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 12,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
+/// What the Client page's channel switcher has picked.
+class _CustomerFilter {
+  const _CustomerFilter({required this.label, this.platform, this.channelId});
+  final String label;
+  final String? platform;
+  final String? channelId;
+
+  bool matches(Customer customer) =>
+      (platform == null || customer.platform == platform) &&
+      (channelId == null || customer.channelId == channelId);
+}
+
+const _allChannelsFilter = _CustomerFilter(label: '全部頻道');
+const _platformFilters = [
+  _allChannelsFilter,
+  _CustomerFilter(label: 'Facebook', platform: 'fb'),
+  _CustomerFilter(label: 'Instagram', platform: 'ig'),
+  _CustomerFilter(label: 'LINE', platform: 'line'),
+  _CustomerFilter(label: 'WhatsApp', platform: 'whatsapp'),
+];
+
 class ClientPage extends StatefulWidget {
-  const ClientPage({required this.graphQL, super.key});
+  const ClientPage({
+    required this.graphQL,
+    this.onOpenConversation,
+    this.onManageChannels,
+    this.onInvite,
+    super.key,
+  });
   final GraphQLService graphQL;
+  final ValueChanged<ChatConversation>? onOpenConversation;
+  final VoidCallback? onManageChannels;
+  final VoidCallback? onInvite;
   @override
   State<ClientPage> createState() => _ClientPageState();
 }
 
 class _ClientPageState extends State<ClientPage> {
   String selectedChannel = '尚未指派社群';
+  _CustomerFilter filter = _allChannelsFilter;
+  List<SocialChannel> channels = const [];
+  List<Customer> customers = const [];
+  bool customersLoading = true;
+  String customerQuery = '';
   late Future<List<ClientUser>> users;
   String? _connectionMessage;
+
+  bool get _canListUsers => widget.graphQL.account?.isAdmin == true;
 
   @override
   void initState() {
     super.initState();
     users = _loadUsers();
+    _loadCustomers();
   }
 
   Future<List<ClientUser>> _loadUsers() async {
+    // Only admins may list the team; the backend refuses everyone else.
+    if (!_canListUsers) return const [];
     try {
       return await widget.graphQL.fetchUsers();
     } catch (_) {
@@ -694,34 +1005,77 @@ class _ClientPageState extends State<ClientPage> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) => _PageFrame(
-    title: 'Client',
-    subtitle: '社群客戶',
-    action: IconButton(
-      onPressed: () => showModalBottomSheet<void>(
-        context: context,
-        showDragHandle: true,
-        builder: (context) => SafeArea(
+  Future<void> _loadCustomers() async {
+    try {
+      final loadedChannels = await widget.graphQL.fetchChannels();
+      final rooms = await widget.graphQL.fetchConversations();
+      if (!mounted) return;
+      setState(() {
+        channels = loadedChannels;
+        customers = customersFromRooms(rooms, loadedChannels);
+        customersLoading = false;
+        _connectionMessage = null;
+        if (loadedChannels.isNotEmpty) selectedChannel = filter.label;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        customersLoading = false;
+        _connectionMessage = '客戶資料暫時無法載入';
+      });
+    }
+  }
+
+  Future<void> _reload() async {
+    setState(() {
+      users = _loadUsers();
+    });
+    await _loadCustomers();
+  }
+
+  void _pick(_CustomerFilter value) => setState(() {
+    filter = value;
+    selectedChannel = value.label;
+  });
+
+  List<Customer> get _visibleCustomers {
+    final query = customerQuery.trim().toLowerCase();
+    return customers
+        .where(
+          (customer) =>
+              filter.matches(customer) &&
+              (query.isEmpty ||
+                  customer.name.toLowerCase().contains(query) ||
+                  customer.id.toLowerCase().contains(query)),
+        )
+        .toList();
+  }
+
+  void _showChannelSwitcher() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) => SafeArea(
+        child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               const ListTile(title: Text('切換頻道'), subtitle: Text('選擇要查看的社群頻道')),
-              for (final channel in [
-                '全部頻道',
-                'Facebook',
-                'Instagram',
-                'LINE',
-                'WhatsApp',
+              for (final option in [
+                ..._platformFilters,
+                for (final channel in channels)
+                  _CustomerFilter(label: channel.name, channelId: channel.id),
               ])
                 ListTile(
-                  title: Text(channel),
+                  title: Text(option.label),
                   leading: Icon(
-                    channel == selectedChannel
+                    option.label == filter.label
                         ? Icons.radio_button_checked
                         : Icons.radio_button_off,
                   ),
                   onTap: () {
+                    _pick(option);
                     Navigator.pop(context);
                   },
                 ),
@@ -729,100 +1083,187 @@ class _ClientPageState extends State<ClientPage> {
           ),
         ),
       ),
-      icon: const Icon(Icons.tune, color: Colors.white),
-    ),
-    child: ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        const _SectionTitle(title: '頻道', action: '管理'),
-        _ChannelTile(
-          icon: Icons.forum_outlined,
-          title: selectedChannel,
-          count: 0,
-        ),
-        if (_connectionMessage != null)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              _connectionMessage!,
-              style: const TextStyle(color: Colors.orange),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final visible = _visibleCustomers;
+    return PageFrame(
+      title: 'Client',
+      subtitle: '社群客戶',
+      action: IconButton(
+        onPressed: _showChannelSwitcher,
+        icon: const Icon(Icons.tune, color: Colors.white),
+      ),
+      child: RefreshIndicator(
+        onRefresh: _reload,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            SectionTitle(
+              title: '頻道',
+              action: widget.onManageChannels == null ? null : '管理',
+              onAction: widget.onManageChannels,
             ),
-          ),
-        const _SectionTitle(title: '用戶', action: '邀請'),
-        FutureBuilder<List<ClientUser>>(
-          future: users,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            final loadedUsers = snapshot.data ?? const <ClientUser>[];
-            if (loadedUsers.isEmpty) {
-              return const _EmptyState(
-                icon: Icons.people_outline,
-                message: '查無任何用戶',
-                detail: '連接頻道後，用戶會顯示在這裡',
-              );
-            }
-            return Column(
-              children: loadedUsers
-                  .map(
-                    (user) => ListTile(
-                      leading: CircleAvatar(
-                        child: Text(user.name.isEmpty ? '?' : user.name[0]),
-                      ),
-                      title: Text(user.name),
-                      subtitle: Text(user.id),
-                    ),
-                  )
-                  .toList(),
-            );
-          },
+            ChannelTile(
+              icon: Icons.forum_outlined,
+              title: selectedChannel,
+              count: visible.length,
+            ),
+            if (_connectionMessage != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  _connectionMessage!,
+                  style: const TextStyle(color: Colors.orange),
+                ),
+              ),
+            const SectionTitle(title: '客戶'),
+            TextField(
+              onChanged: (value) => setState(() => customerQuery = value),
+              decoration: const InputDecoration(
+                hintText: '依名稱或帳號ID搜尋',
+                prefixIcon: Icon(Icons.search),
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (customersLoading)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: CircularProgressIndicator(),
+                ),
+              )
+            else if (visible.isEmpty)
+              EmptyState(
+                icon: Icons.person_search_outlined,
+                message: customers.isEmpty ? '目前還沒有客戶' : '找不到符合條件的客戶',
+                detail: customers.isEmpty ? '客戶傳訊息進來後，就會出現在這裡。' : null,
+              )
+            else
+              for (final customer in visible)
+                ConversationTile(
+                  name: customer.displayName,
+                  preview:
+                      '${platformLabel(customer.platform)} · ${customer.channelName}',
+                  time: formatRelativeTime(customer.lastInteraction),
+                  avatarUrl: customer.avatarUrl,
+                  platform: customer.platform,
+                  onTap: () =>
+                      widget.onOpenConversation?.call(customer.conversation),
+                ),
+            const SizedBox(height: 12),
+            SectionTitle(
+              title: '用戶',
+              action: widget.onInvite == null ? null : '邀請',
+              onAction: widget.onInvite,
+            ),
+            FutureBuilder<List<ClientUser>>(
+              future: users,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final loadedUsers = snapshot.data ?? const <ClientUser>[];
+                if (loadedUsers.isEmpty) {
+                  return EmptyState(
+                    icon: Icons.people_outline,
+                    message: '查無任何用戶',
+                    detail: _canListUsers ? '新增使用者後，就會顯示在這裡' : '只有管理者可以查看成員列表',
+                  );
+                }
+                return Column(
+                  children: loadedUsers
+                      .map(
+                        (user) => ListTile(
+                          leading: PersonAvatar(
+                            name: user.name,
+                            imageUrl: user.avatarUrl,
+                          ),
+                          title: Text(user.name),
+                          subtitle: Text(user.email ?? user.id),
+                        ),
+                      )
+                      .toList(),
+                );
+              },
+            ),
+          ],
         ),
-      ],
-    ),
-  );
+      ),
+    );
+  }
 }
 
 class ChatPage extends StatefulWidget {
-  const ChatPage({required this.graphQL, super.key});
+  const ChatPage({
+    required this.graphQL,
+    this.onOpenConversation,
+    this.onManageChannels,
+    super.key,
+  });
   final GraphQLService graphQL;
+  final ValueChanged<ChatConversation>? onOpenConversation;
+  final VoidCallback? onManageChannels;
   @override
   State<ChatPage> createState() => _ChatPageState();
 }
 
 class _ChatPageState extends State<ChatPage> {
+  static const _demoRoom = ChatConversation(
+    id: 'demo',
+    title: '示範聊天室',
+    lastMessage: '歡迎使用 MasterBox',
+  );
+
   final searchController = TextEditingController();
+  final searchFocus = FocusNode();
+
   String query = '';
   late Future<List<ChatConversation>> conversations;
+  List<SocialChannel>? channels;
+  String? selectedChannelId;
   Timer? _pollTimer;
+  StreamSubscription<ChatMessage>? _messageEvents;
   bool _pollInFlight = false;
   int _pollFailures = 0;
   String? _connectionMessage;
+
+  bool get _isDevelopment => widget.graphQL.isDevelopmentSession;
 
   @override
   void initState() {
     super.initState();
     conversations = _loadInitialConversations();
+    _loadChannels();
     _pollTimer = Timer.periodic(
       const Duration(seconds: 15),
       (_) => _refreshConversations(),
     );
+    _messageEvents = widget.graphQL.messageEvents.listen(
+      (_) => _refreshConversations(),
+    );
+  }
+
+  Future<void> _loadChannels() async {
+    try {
+      final result = await widget.graphQL.fetchChannels();
+      if (mounted) setState(() => channels = result);
+    } catch (_) {
+      // The conversations' own error says the connection is down.
+    }
   }
 
   Future<List<ChatConversation>> _loadInitialConversations() async {
+    if (!_isDevelopment) return widget.graphQL.fetchConversations();
     try {
       final result = await widget.graphQL.fetchConversations();
       if (result.isNotEmpty) return result;
     } catch (_) {
       // The demo room keeps the offline development flow usable.
     }
-    return const [
-      ChatConversation(
-        id: 'demo',
-        title: '示範聊天室',
-        lastMessage: '歡迎使用 MasterBox',
-      ),
-    ];
+    return const [_demoRoom];
   }
 
   Future<void> _refreshConversations() async {
@@ -847,123 +1288,207 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
+  Future<void> _refreshAll() async {
+    await Future.wait([_refreshConversations(), _loadChannels()]);
+  }
+
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _messageEvents?.cancel();
+    searchFocus.dispose();
     searchController.dispose();
     super.dispose();
   }
 
+  void _clearSearch() {
+    searchController.clear();
+    setState(() => query = '');
+  }
+
+  void _open(ChatConversation room) {
+    final open = widget.onOpenConversation;
+    if (open != null) {
+      open(room);
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            ConversationPage(graphQL: widget.graphQL, conversation: room),
+      ),
+    );
+  }
+
+  /// The company's rooms narrowed to the channels this account can use, as the
+  /// admin inbox does. Until the channels are known, nothing is hidden.
+  List<ChatConversation> _visibleRooms(List<ChatConversation> rooms) {
+    final known = channels;
+    final search = query.trim().toLowerCase();
+    return rooms.where((room) {
+      if (known != null &&
+          room.platform != null &&
+          !known.any((channel) => channel.id == room.channelId)) {
+        return false;
+      }
+      if (selectedChannelId != null && room.channelId != selectedChannelId) {
+        return false;
+      }
+      return room.title.toLowerCase().contains(search);
+    }).toList();
+  }
+
+  Widget _channelFilter(List<SocialChannel> items) => SizedBox(
+    height: 48,
+    child: ListView(
+      scrollDirection: Axis.horizontal,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: ChoiceChip(
+            label: const Text('全部頻道'),
+            selected: selectedChannelId == null,
+            onSelected: (_) => setState(() => selectedChannelId = null),
+          ),
+        ),
+        for (final channel in items)
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ChoiceChip(
+              avatar: Icon(platformIcon(channel.platform), size: 16),
+              label: Text(channel.name),
+              selected: selectedChannelId == channel.id,
+              onSelected: (_) => setState(() => selectedChannelId = channel.id),
+            ),
+          ),
+      ],
+    ),
+  );
+
+  Widget _noRooms() {
+    final known = channels;
+    if (known != null && known.isEmpty) {
+      return EmptyState(
+        icon: Icons.hub_outlined,
+        message: '還沒有可用的社群平台',
+        detail: widget.onManageChannels != null
+            ? '連接 Facebook、Instagram 等社群平台後，客戶傳來的訊息就會出現在這裡。'
+            : '請聯絡公司管理員連接社群平台，並開放給你的帳號使用。',
+        actionLabel: widget.onManageChannels != null ? '前往社群平台管理' : null,
+        onAction: widget.onManageChannels,
+      );
+    }
+    return const EmptyState(
+      icon: Icons.chat_bubble_outline,
+      message: '目前還沒有對話',
+      detail: '客戶傳訊息到這個社群平台後，對話就會出現在這裡。',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return _PageFrame(
+    final known = channels;
+    return PageFrame(
       title: 'Chat',
       subtitle: '所有聊天室',
       action: IconButton(
-        onPressed: () => searchController.clear(),
+        onPressed: searchFocus.requestFocus,
+        tooltip: '搜尋聊天室',
         icon: const Icon(Icons.search, color: Colors.white),
       ),
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          TextField(
-            controller: searchController,
-            onChanged: (value) => setState(() => query = value),
-            decoration: InputDecoration(
-              hintText: '搜尋聊天室',
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon: IconButton(
-                onPressed: () {
-                  searchController.clear();
-                  setState(() => query = '');
-                },
-                icon: const Icon(Icons.clear),
+      child: RefreshIndicator(
+        onRefresh: _refreshAll,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            TextField(
+              controller: searchController,
+              focusNode: searchFocus,
+              onChanged: (value) => setState(() => query = value),
+              decoration: InputDecoration(
+                hintText: '搜尋聊天室',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: IconButton(
+                  onPressed: _clearSearch,
+                  icon: const Icon(Icons.clear),
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 16),
-          if (_connectionMessage != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                _connectionMessage!,
-                style: const TextStyle(color: Colors.orange),
+            const SizedBox(height: 8),
+            if (known != null && known.isNotEmpty) _channelFilter(known),
+            const SizedBox(height: 8),
+            if (_connectionMessage != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  _connectionMessage!,
+                  style: const TextStyle(color: Colors.orange),
+                ),
               ),
+            FutureBuilder<List<ChatConversation>>(
+              future: conversations,
+              builder: (context, snapshot) {
+                // A refresh swaps the future; keep showing the list meanwhile.
+                if (snapshot.connectionState == ConnectionState.waiting &&
+                    !snapshot.hasData) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: CircularProgressIndicator(),
+                    ),
+                  );
+                }
+                if (snapshot.hasError) {
+                  return ErrorRetry(
+                    message: '${snapshot.error}',
+                    onRetry: _refreshConversations,
+                  );
+                }
+                final rooms = _visibleRooms(snapshot.data ?? const []);
+                if (rooms.isEmpty && query.trim().isEmpty) {
+                  if (!_isDevelopment) return _noRooms();
+                  return ConversationTile(
+                    name: _demoRoom.title,
+                    preview: _demoRoom.lastMessage,
+                    time: '剛剛',
+                    onTap: () => _open(_demoRoom),
+                  );
+                }
+                if (rooms.isEmpty) {
+                  return const EmptyState(
+                    icon: Icons.chat_bubble_outline,
+                    message: '找不到聊天室',
+                    detail: '目前沒有可顯示的對話',
+                  );
+                }
+                return Column(
+                  children: rooms
+                      .map(
+                        (room) => ConversationTile(
+                          name: room.title,
+                          preview: room.lastMessage.isNotEmpty
+                              ? room.lastMessage
+                              : (known
+                                        ?.where(
+                                          (channel) =>
+                                              channel.id == room.channelId,
+                                        )
+                                        .firstOrNull
+                                        ?.name ??
+                                    platformLabel(room.platform)),
+                          time: formatRelativeTime(room.updatedAt),
+                          avatarUrl: room.customer?.avatarUrl,
+                          platform: room.platform,
+                          onTap: () => _open(room),
+                        ),
+                      )
+                      .toList(),
+                );
+              },
             ),
-          FutureBuilder<List<ChatConversation>>(
-            future: conversations,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: CircularProgressIndicator(),
-                  ),
-                );
-              }
-              if (snapshot.hasError) {
-                return _ErrorRetry(
-                  message: '${snapshot.error}',
-                  onRetry: _refreshConversations,
-                );
-              }
-              final rooms = (snapshot.data ?? [])
-                  .where(
-                    (room) => room.title.toLowerCase().contains(
-                      query.trim().toLowerCase(),
-                    ),
-                  )
-                  .toList();
-              if (rooms.isEmpty && query.trim().isEmpty) {
-                return _ConversationTile(
-                  name: '示範聊天室',
-                  preview: '歡迎使用 MasterBox',
-                  time: '剛剛',
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ConversationPage(
-                        graphQL: widget.graphQL,
-                        conversation: const ChatConversation(
-                          id: 'demo',
-                          title: '示範聊天室',
-                          lastMessage: '歡迎使用 MasterBox',
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              }
-              if (rooms.isEmpty) {
-                return const _EmptyState(
-                  icon: Icons.chat_bubble_outline,
-                  message: '找不到聊天室',
-                  detail: '目前沒有可顯示的對話',
-                );
-              }
-              return Column(
-                children: rooms
-                    .map(
-                      (room) => _ConversationTile(
-                        name: room.title,
-                        preview: room.lastMessage,
-                        time: '',
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => ConversationPage(
-                              graphQL: widget.graphQL,
-                              conversation: room,
-                            ),
-                          ),
-                        ),
-                      ),
-                    )
-                    .toList(),
-              );
-            },
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -971,10 +1496,12 @@ class _ChatPageState extends State<ChatPage> {
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({
+    required this.graphQL,
     required this.onThemeModeChanged,
     required this.onLogout,
     super.key,
   });
+  final GraphQLService graphQL;
   final ValueChanged<bool> onThemeModeChanged;
   final VoidCallback onLogout;
   @override
@@ -984,44 +1511,97 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   bool notifications = true;
   bool darkMode = false;
-  String language = '繁體中文';
+  bool? apiReachable;
+
+  /// Live Activities exist only on iPhones.
+  bool get _liveActivitySupported =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
   @override
   void initState() {
     super.initState();
-    darkMode =
-        WidgetsBinding.instance.platformDispatcher.platformBrightness ==
-        Brightness.dark;
+    widget.graphQL.ping().then((reachable) {
+      if (mounted) setState(() => apiReachable = reachable);
+    });
+
     SharedPreferences.getInstance().then((prefs) {
       if (!mounted) return;
       setState(() {
         notifications = prefs.getBool('notifications') ?? true;
-        darkMode = prefs.getBool('dark_mode') ?? darkMode;
-        language = prefs.getString('language') ?? '繁體中文';
+        darkMode = prefs.getBool('dark_mode') ?? false;
       });
     });
   }
 
-  Future<void> _save(String key, Object value) async {
+  String get _accountSummary {
+    if (widget.graphQL.isDevelopmentSession) return '開發模式';
+    final account = widget.graphQL.account;
+    if (account == null) return '';
+    final role = accountRoleNames[account.role] ?? account.role;
+    return [
+      if (account.name?.isNotEmpty == true) account.name!,
+      if (account.email?.isNotEmpty == true) account.email!,
+      if (role?.isNotEmpty == true) role!,
+    ].join(' · ');
+  }
+
+  Future<void> _save(String key, bool value) async {
     final prefs = await SharedPreferences.getInstance();
-    if (value is bool) await prefs.setBool(key, value);
-    if (value is String) await prefs.setString(key, value);
+    await prefs.setBool(key, value);
+  }
+
+  Future<void> _runLiveActivity(
+    Future<void> Function() action,
+    String success,
+  ) async {
+    String result = success;
+    try {
+      await action();
+    } on PlatformException catch (error) {
+      result = '操作失敗：${error.message}';
+    } on MissingPluginException {
+      result = '這台裝置不支援 Live Activity';
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(result)));
+    }
+  }
+
+  Future<void> _confirmLogout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('確定要登出嗎？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('登出'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) widget.onLogout();
   }
 
   @override
-  Widget build(BuildContext context) => _PageFrame(
+  Widget build(BuildContext context) => PageFrame(
     title: '設定',
     subtitle: 'MasterBox',
     child: ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const _SectionTitle(title: '偏好設定'),
+        const SectionTitle(title: '偏好設定'),
         Card(
           child: Column(
             children: [
               SwitchListTile(
                 title: const Text('訊息通知'),
-                subtitle: const Text('收到新訊息時通知我'),
+                subtitle: const Text('App 開啟時，收到新訊息會跳出提示'),
                 value: notifications,
                 onChanged: (v) {
                   setState(() => notifications = v);
@@ -1040,53 +1620,46 @@ class _SettingsPageState extends State<SettingsPage> {
               ListTile(
                 leading: const Icon(Icons.language),
                 title: const Text('語言'),
+                // The app's text is only in Traditional Chinese so far.
                 trailing: DropdownButton<String>(
-                  value: language,
+                  value: '繁體中文',
                   underline: const SizedBox.shrink(),
                   items: const [
                     DropdownMenuItem(value: '繁體中文', child: Text('繁體中文')),
-                    DropdownMenuItem(value: 'English', child: Text('English')),
+                    DropdownMenuItem(
+                      value: 'English',
+                      enabled: false,
+                      child: Text('English（尚未開放）'),
+                    ),
                   ],
-                  onChanged: (value) {
-                    if (value != null) {
-                      setState(() => language = value);
-                      _save('language', value);
-                    }
-                  },
+                  onChanged: (_) {},
                 ),
               ),
             ],
           ),
         ),
         const SizedBox(height: 18),
-        const _SectionTitle(title: '靈動島預覽'),
+        const SectionTitle(title: '靈動島預覽'),
         Card(
           child: Column(
             children: [
               ListTile(
                 leading: const Icon(Icons.dynamic_feed, color: primaryColor),
                 title: const Text('啟動 Live Activity'),
-                subtitle: const Text('先啟動通知，再選擇下方 5 種 Figma 狀態'),
-                onTap: () async {
-                  try {
-                    await DynamicIslandService.start(
-                      conversationId: 'demo-conversation',
-                      title: 'MasterBox 對話',
-                      detail: '正在處理新訊息',
-                    );
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Live Activity 已啟動')),
-                      );
-                    }
-                  } on PlatformException catch (error) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('啟動失敗：${error.message}')),
-                      );
-                    }
-                  }
-                },
+                subtitle: Text(
+                  _liveActivitySupported
+                      ? '先啟動通知，再選擇下方 5 種狀態'
+                      : '只有 iPhone 支援 Live Activity',
+                ),
+                enabled: _liveActivitySupported,
+                onTap: () => _runLiveActivity(
+                  () => DynamicIslandService.start(
+                    conversationId: 'demo-conversation',
+                    title: 'MasterBox 對話',
+                    detail: '正在處理新訊息',
+                  ),
+                  'Live Activity 已啟動',
+                ),
               ),
               ...[
                 (stage: 1, title: '訊息通知', detail: '收到新的客服訊息'),
@@ -1106,50 +1679,48 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                   title: Text(state.title),
                   subtitle: Text(state.detail),
-                  onTap: () async {
-                    await DynamicIslandService.update(
+                  enabled: _liveActivitySupported,
+                  onTap: () => _runLiveActivity(
+                    () => DynamicIslandService.update(
                       title: state.title,
                       detail: state.detail,
                       progress: 0,
                       stage: state.stage,
-                    );
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('已切換至：${state.title}')),
-                      );
-                    }
-                  },
+                    ),
+                    '已切換至：${state.title}',
+                  ),
                 ),
               ),
               ListTile(
                 leading: const Icon(Icons.stop_circle_outlined),
                 title: const Text('結束示範'),
-                onTap: () async {
-                  await DynamicIslandService.end();
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Live Activity 已結束')),
-                    );
-                  }
-                },
+                enabled: _liveActivitySupported,
+                onTap: () => _runLiveActivity(
+                  DynamicIslandService.end,
+                  'Live Activity 已結束',
+                ),
               ),
             ],
           ),
         ),
         const SizedBox(height: 18),
-        const _SectionTitle(title: '帳戶與連線'),
+        const SectionTitle(title: '帳戶與連線'),
         Card(
           child: Column(
             children: [
-              const ListTile(
-                leading: Icon(Icons.person_outline),
-                title: Text('帳戶'),
-                subtitle: Text('開發模式'),
+              ListTile(
+                leading: const Icon(Icons.person_outline),
+                title: const Text('帳戶'),
+                subtitle: Text(_accountSummary),
               ),
-              const ListTile(
-                leading: Icon(Icons.cloud_outlined),
-                title: Text('API 連線'),
-                subtitle: Text('尚未連接'),
+              ListTile(
+                leading: const Icon(Icons.cloud_outlined),
+                title: const Text('API 連線'),
+                subtitle: Text(switch (apiReachable) {
+                  null => '檢查中…',
+                  true => '已連線',
+                  false => '尚未連接',
+                }),
               ),
               const ListTile(
                 leading: Icon(Icons.info_outline),
@@ -1159,7 +1730,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ListTile(
                 leading: const Icon(Icons.logout),
                 title: const Text('登出'),
-                onTap: widget.onLogout,
+                onTap: _confirmLogout,
               ),
             ],
           ),
@@ -1194,24 +1765,35 @@ class _ConversationPageState extends State<ConversationPage> {
 
   late EncryptionMode _encryptionMode;
   late int _disappearingSeconds;
+  final _scroll = ScrollController();
+  StreamSubscription<ChatMessage>? _messageEvents;
+  int _shownMessages = 0;
+  int _localCounter = 0;
+  final _markedViewed = <String>{};
 
   @override
   void initState() {
     super.initState();
     _encryptionMode = widget.conversation.encryptionMode;
     _disappearingSeconds = widget.conversation.disappearingMessageSeconds;
-    messages = widget.graphQL.fetchMessages(widget.conversation.id);
+    widget.graphQL.openRoomId = widget.conversation.messageRoomId;
+    messages = _fetchMessages();
+    _loadDisappearing();
+
     _pollTimer = Timer.periodic(
       const Duration(seconds: 10),
       (_) => _refreshMessages(),
     );
+    _messageEvents = widget.graphQL.messageEvents
+        .where((message) => message.roomId == widget.conversation.messageRoomId)
+        .listen((_) => _refreshMessages());
   }
 
   Future<void> _refreshMessages() async {
     if (_pollInFlight) return;
     _pollInFlight = true;
     try {
-      final latest = await widget.graphQL.fetchMessages(widget.conversation.id);
+      final latest = await _fetchMessages();
       _pollFailures = 0;
       if (mounted) {
         setState(() {
@@ -1232,45 +1814,205 @@ class _ConversationPageState extends State<ConversationPage> {
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _messageEvents?.cancel();
+    if (widget.graphQL.openRoomId == widget.conversation.messageRoomId) {
+      widget.graphQL.openRoomId = null;
+    }
+    _scroll.dispose();
     controller.dispose();
     super.dispose();
   }
 
   Future<void> _retry(ChatMessage message) async {
-    final index = localMessages.indexWhere((item) => item.id == message.id);
-    if (index < 0) return;
+    void replace(ChatMessage updated) {
+      final index = localMessages.indexWhere((item) => item.id == message.id);
+      if (index >= 0) localMessages[index] = updated;
+    }
+
     if (mounted) {
-      setState(
-        () => localMessages[index] = message.copyWith(
-          failed: false,
-          sending: true,
-        ),
-      );
+      setState(() => replace(message.copyWith(failed: false, sending: true)));
     }
     try {
       await widget.graphQL.sendMessage(
-        conversationId: widget.conversation.id,
+        conversation: widget.conversation,
         contents: message.text,
         attachment: message.attachment,
+        disappearingSeconds: _disappearingSeconds,
       );
+      // The server now has it, so the list below shows it from there.
+      final latest = await _fetchMessages();
       if (mounted) {
-        setState(
-          () => localMessages[index] = message.copyWith(
-            failed: false,
-            sending: false,
-          ),
-        );
+        setState(() {
+          localMessages.removeWhere((item) => item.id == message.id);
+          messages = Future.value(latest);
+        });
       }
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
         setState(
-          () => localMessages[index] = message.copyWith(
-            failed: true,
-            sending: false,
+          () => replace(
+            message.copyWith(failed: true, sending: false, sendError: '$error'),
           ),
         );
       }
     }
+  }
+
+  void _send() {
+    final text = controller.text.trim();
+    final file = pendingFile;
+    if (text.isEmpty && file == null) return;
+    final attachment = file == null
+        ? null
+        : <String, dynamic>{
+            'name': file.name,
+            'size': file.size,
+
+            'type': 'file',
+          };
+    final outgoing = ChatMessage(
+      id: 'local-${_localCounter++}',
+      text: text,
+      sentAt: DateTime.now(),
+      isMine: true,
+      sending: true,
+      attachment: attachment,
+    );
+    setState(() {
+      localMessages.add(outgoing);
+      controller.clear();
+      pendingFile = null;
+    });
+    _retry(outgoing);
+  }
+
+  Future<List<ChatMessage>> _fetchMessages() async {
+    final latest = await widget.graphQL.fetchMessages(
+      widget.conversation.messageRoomId,
+    );
+    for (final message in latest.where((item) => item.needsViewedMark)) {
+      if (_markedViewed.add(message.id)) {
+        unawaited(
+          widget.graphQL.markMessageRead(message.id).catchError((Object _) {
+            _markedViewed.remove(message.id);
+          }),
+        );
+      }
+    }
+    return latest;
+  }
+
+  String get _disappearingKey =>
+      'room_disappearing_${widget.conversation.messageRoomId}';
+
+  // The backend applies this per message, so the choice is kept on the device.
+  Future<void> _loadDisappearing() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getInt(_disappearingKey);
+    if (saved != null && mounted) {
+      setState(() => _disappearingSeconds = saved);
+    }
+  }
+
+  /// Keeps the newest message in view, as the admin inbox does.
+  void _scrollToEndIfNew(int count) {
+    if (count == _shownMessages) return;
+    _shownMessages = count;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scroll.hasClients) {
+        _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      }
+    });
+  }
+
+  Future<void> _openAttachment(String url) async {
+    final opened = await launchUrl(
+      Uri.parse(url),
+      mode: LaunchMode.externalApplication,
+    );
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('無法開啟附件')));
+    }
+  }
+
+  void _showCustomerInfo() {
+    final room = widget.conversation;
+    final customer = room.customer;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              PersonAvatar(
+                name: room.title,
+                imageUrl: customer?.avatarUrl,
+                radius: 36,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                room.title,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ListTile(
+                leading: Icon(platformIcon(room.platform), color: primaryColor),
+                title: const Text('社群平台'),
+                subtitle: Text(platformLabel(room.platform)),
+              ),
+              if (customer != null)
+                ListTile(
+                  leading: const Icon(
+                    Icons.badge_outlined,
+                    color: primaryColor,
+                  ),
+                  title: const Text('帳號ID'),
+                  subtitle: Text(customer.id),
+                ),
+              ListTile(
+                leading: const Icon(Icons.schedule, color: primaryColor),
+                title: const Text('最後互動時間'),
+                subtitle: Text(formatDateTime(room.updatedAt)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _attachmentView(MessageAttachment attachment) {
+    final url = attachment.safeUrl;
+    final fallback = Text(
+      '[${attachment.label}'
+      '${attachment.filename == null ? '' : '：${attachment.filename}'}]'
+      '${attachment.caption == null ? '' : ' ${attachment.caption}'}',
+    );
+    if (url == null) return fallback;
+    if (attachment.isImage) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: Image.network(
+          url,
+          width: 220,
+          fit: BoxFit.cover,
+          webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
+          // Meta's attachment links expire.
+          errorBuilder: (_, _, _) => fallback,
+        ),
+      );
+    }
+    return TextButton(
+      onPressed: () => _openAttachment(url),
+      child: Text('查看${attachment.label}'),
+    );
   }
 
   Future<void> _showAttachmentOptions() async {
@@ -1329,9 +2071,35 @@ class _ConversationPageState extends State<ConversationPage> {
     );
   }
 
+  /// Customers on a social platform have no way to join, so say so first.
+  Future<bool> _confirmInternalCall() async {
+    final platform = widget.conversation.platform;
+    if (platform == null) return true;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('這是 MasterBox 內部通話'),
+        content: Text('客戶無法從 ${platformLabel(platform)} 加入，也不會收到來電。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('繼續'),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
   Future<void> _startCall(String kind) async {
+    if (!await _confirmInternalCall()) return;
+    CallSession? call;
     try {
-      final call = await widget.graphQL.startCall(
+      call = await widget.graphQL.startCall(
         conversationId: widget.conversation.id,
         kind: kind,
       );
@@ -1340,10 +2108,14 @@ class _ConversationPageState extends State<ConversationPage> {
       await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) =>
-              CallPage(graphQL: widget.graphQL, call: call, token: token),
+              CallPage(graphQL: widget.graphQL, call: call!, token: token),
         ),
       );
     } catch (error) {
+      // A call that never connected shouldn't stay open on the server.
+      if (call != null) {
+        unawaited(widget.graphQL.reportCallEvent(call.id, 'call.ended'));
+      }
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('$error')));
@@ -1352,40 +2124,61 @@ class _ConversationPageState extends State<ConversationPage> {
   }
 
   Future<void> _showChatSettings() async {
-    var mode = _encryptionMode;
     var seconds = _disappearingSeconds;
     final saved = await showModalBottomSheet<bool>(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
       builder: (sheetContext) => StatefulBuilder(
         builder: (context, setSheetState) => SafeArea(
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 DropdownButtonFormField<EncryptionMode>(
-                  initialValue: mode,
-                  decoration: const InputDecoration(labelText: '加密模式'),
-                  items: EncryptionMode.values
-                      .map(
-                        (item) => DropdownMenuItem(
-                          value: item,
-                          child: Text(item.label),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (value) =>
-                      setSheetState(() => mode = value ?? mode),
+                  initialValue: EncryptionMode.standard,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: '加密模式',
+                    helperText: '目前傳輸時會加密。端對端加密需要雙方都支援，尚未開放。',
+                    helperMaxLines: 2,
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: EncryptionMode.standard,
+                      child: Text('傳輸加密'),
+                    ),
+                    DropdownMenuItem(
+                      value: EncryptionMode.endToEnd,
+                      enabled: false,
+                      child: Text('端對端加密（尚未開放）'),
+                    ),
+                  ],
+                  onChanged: (_) {},
                 ),
+                const SizedBox(height: 14),
                 DropdownButtonFormField<int>(
-                  initialValue: seconds,
-                  decoration: const InputDecoration(labelText: '消失訊息'),
-                  items: const [0, 30, 300, 3600, 86400]
+                  initialValue: disappearingOptions.contains(seconds)
+                      ? seconds
+                      : 0,
+                  isExpanded: true,
+                  decoration: InputDecoration(
+                    labelText: '消失訊息',
+                    helperText: widget.conversation.platform == null
+                        ? '訊息顯示後開始倒數，時間到就不再顯示。'
+                        : '只套用於留在 MasterBox 的附件紀錄，顯示後開始倒數。'
+                              '傳給客戶的訊息會留在 '
+                              '${platformLabel(widget.conversation.platform)}，無法消失。',
+                    helperMaxLines: 3,
+                  ),
+                  items: disappearingOptions
                       .map(
                         (item) => DropdownMenuItem(
                           value: item,
-                          child: Text(item == 0 ? '關閉' : '$item 秒後刪除'),
+                          child: Text(
+                            item == 0 ? '關閉' : '${disappearingLabel(item)}後刪除',
+                          ),
                         ),
                       )
                       .toList(),
@@ -1394,24 +2187,7 @@ class _ConversationPageState extends State<ConversationPage> {
                 ),
                 const SizedBox(height: 12),
                 FilledButton(
-                  onPressed: () async {
-                    setSheetState(() {});
-                    try {
-                      await widget.graphQL.updateConversationSettings(
-                        conversationId: widget.conversation.id,
-                        encryptionMode: mode,
-                        disappearingMessageSeconds: seconds,
-                      );
-                      if (sheetContext.mounted) {
-                        Navigator.pop(sheetContext, true);
-                      }
-                    } catch (error) {
-                      if (sheetContext.mounted) {
-                        ScaffoldMessenger.of(sheetContext)
-                            .showSnackBar(SnackBar(content: Text('$error')));
-                      }
-                    }
-                  },
+                  onPressed: () => Navigator.pop(sheetContext, true),
                   child: const Text('儲存設定'),
                 ),
               ],
@@ -1421,10 +2197,9 @@ class _ConversationPageState extends State<ConversationPage> {
       ),
     );
     if (saved == true && mounted) {
-      setState(() {
-        _encryptionMode = mode;
-        _disappearingSeconds = seconds;
-      });
+      setState(() => _disappearingSeconds = seconds);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_disappearingKey, seconds);
     }
   }
 
@@ -1433,6 +2208,12 @@ class _ConversationPageState extends State<ConversationPage> {
     appBar: AppBar(
       title: Text(widget.conversation.title),
       actions: [
+        if (widget.conversation.platform != null)
+          IconButton(
+            onPressed: _showCustomerInfo,
+            tooltip: '客戶資訊',
+            icon: const Icon(Icons.person_outline),
+          ),
         IconButton(
           onPressed: () => _startCall('voice'),
           tooltip: '語音通話',
@@ -1468,7 +2249,7 @@ class _ConversationPageState extends State<ConversationPage> {
               Expanded(child: Text(_encryptionMode.label)),
               if (_disappearingSeconds > 0)
                 Text(
-                  '消失：${_disappearingSeconds}s',
+                  '消失訊息：${disappearingLabel(_disappearingSeconds)}',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
             ],
@@ -1490,12 +2271,12 @@ class _ConversationPageState extends State<ConversationPage> {
             future: messages,
             builder: (context, snapshot) {
               if (snapshot.hasError && localMessages.isEmpty) {
-                return _ErrorRetry(
+                return ErrorRetry(
                   message: '${snapshot.error}',
                   onRetry: () {
                     setState(() {
                       messages = widget.graphQL.fetchMessages(
-                        widget.conversation.id,
+                        widget.conversation.messageRoomId,
                       );
                     });
                   },
@@ -1506,12 +2287,14 @@ class _ConversationPageState extends State<ConversationPage> {
                 ...localMessages,
               ];
               if (items.isEmpty) {
-                return const _EmptyState(
+                return const EmptyState(
                   icon: Icons.forum_outlined,
                   message: '尚無訊息',
                 );
               }
+              _scrollToEndIfNew(items.length);
               return ListView.builder(
+                controller: _scroll,
                 padding: const EdgeInsets.all(16),
                 itemCount: items.length,
                 itemBuilder: (_, i) {
@@ -1524,47 +2307,93 @@ class _ConversationPageState extends State<ConversationPage> {
                       onLongPress: message.failed
                           ? () => _retry(message)
                           : null,
-                      child: Card(
-                        color: message.failed
-                            ? Colors.red.withValues(alpha: 0.15)
-                            : (message.isMine
-                                  ? primaryColor.withValues(alpha: 0.2)
-                                  : Theme.of(context)
-                                        .colorScheme
-                                        .surfaceContainerHighest),
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Text(message.text.isEmpty ? '附件' : message.text),
-                              if (message.attachment != null)
-                                Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Text(
-                                    '附件：${message.attachment!['name']} (${message.attachment!['size']} bytes)',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodySmall,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: MediaQuery.sizeOf(context).width * 0.8,
+                        ),
+                        child: Card(
+                          color: message.failed
+                              ? Colors.red.withValues(alpha: 0.15)
+                              : (message.isMine
+                                    ? primaryColor.withValues(alpha: 0.2)
+                                    : Theme.of(context)
+                                          .colorScheme
+                                          .surfaceContainerHighest),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                if (message.text.isNotEmpty ||
+                                    message.attachments.isEmpty)
+                                  Text(
+                                    message.text.isEmpty ? '附件' : message.text,
                                   ),
-                                ),
-                              if (message.sending)
-                                const Padding(
-                                  padding: EdgeInsets.only(top: 4),
-                                  child: SizedBox(
-                                    width: 12,
-                                    height: 12,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
+                                for (final attachment in message.attachments)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: _attachmentView(attachment),
+                                  ),
+                                if (message.attachment != null)
+                                  Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Text(
+                                      '附件：${message.attachment!['name']} (${message.attachment!['size']} bytes)',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall,
                                     ),
                                   ),
-                                ),
-                              if (message.failed)
-                                TextButton(
-                                  onPressed: () => _retry(message),
-                                  child: const Text('重試'),
-                                ),
-                            ],
+                                if (message.sending)
+                                  const Padding(
+                                    padding: EdgeInsets.only(top: 4),
+                                    child: SizedBox(
+                                      width: 12,
+                                      height: 12,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                  ),
+                                if (message.deliveryError != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Text(
+                                      '未送達：${message.deliveryError}',
+                                      style: const TextStyle(
+                                        color: Colors.red,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                if (message.failed && message.sendError != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Text(
+                                      '訊息未送出：${message.sendError}',
+                                      style: const TextStyle(
+                                        color: Colors.red,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                if (!message.sending && !message.failed)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Text(
+                                      formatTime(message.sentAt),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall,
+                                    ),
+                                  ),
+                                if (message.failed)
+                                  TextButton(
+                                    onPressed: () => _retry(message),
+                                    child: const Text('重試'),
+                                  ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -1585,7 +2414,10 @@ class _ConversationPageState extends State<ConversationPage> {
                     child: ListTile(
                       leading: const Icon(Icons.attach_file),
                       title: Text(pendingFile!.name),
-                      subtitle: Text('${pendingFile!.size} bytes · 尚未上傳'),
+                      subtitle: Text(
+                        '${pendingFile!.size} bytes\n'
+                        '目前只會記錄檔名：檔案不會上傳，也不會傳給客戶',
+                      ),
                       trailing: IconButton(
                         icon: const Icon(Icons.close),
                         onPressed: () => setState(() => pendingFile = null),
@@ -1602,40 +2434,15 @@ class _ConversationPageState extends State<ConversationPage> {
                     Expanded(
                       child: TextField(
                         controller: controller,
+                        textInputAction: TextInputAction.send,
+                        onSubmitted: (_) => _send(),
                         decoration: const InputDecoration(hint: Text('輸入訊息…')),
                       ),
                     ),
                     const SizedBox(width: 8),
                     IconButton.filled(
                       key: const ValueKey('send-message'),
-                      onPressed: () {
-                        final text = controller.text.trim();
-                        final file = pendingFile;
-                        if (text.isNotEmpty || file != null) {
-                          final attachment = file == null
-                              ? null
-                              : <String, dynamic>{
-                                  'name': file.name,
-                                  'size': file.size,
-                                  'path': file.path,
-                                  'type': 'file',
-                                };
-                          final outgoing = ChatMessage(
-                            id: 'local-${localMessages.length}',
-                            text: text,
-                            sentAt: DateTime.now(),
-                            isMine: true,
-                            sending: true,
-                            attachment: attachment,
-                          );
-                          setState(() {
-                            localMessages.add(outgoing);
-                            controller.clear();
-                            pendingFile = null;
-                          });
-                          _retry(outgoing);
-                        }
-                      },
+                      onPressed: _send,
                       icon: const Icon(Icons.send),
                     ),
                   ],
@@ -1645,212 +2452,6 @@ class _ConversationPageState extends State<ConversationPage> {
           ),
         ),
       ],
-    ),
-  );
-}
-
-class _ErrorRetry extends StatelessWidget {
-  const _ErrorRetry({required this.message, required this.onRetry});
-  final String message;
-  final VoidCallback onRetry;
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.all(24),
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Icon(Icons.cloud_off, size: 40),
-        const SizedBox(height: 8),
-        Text(message, textAlign: TextAlign.center),
-        TextButton.icon(
-          onPressed: onRetry,
-          icon: const Icon(Icons.refresh),
-          label: const Text('重試'),
-        ),
-      ],
-    ),
-  );
-}
-
-class _PageFrame extends StatelessWidget {
-  const _PageFrame({
-    required this.title,
-    required this.subtitle,
-    required this.child,
-    this.action,
-  });
-  final String title, subtitle;
-  final Widget child;
-  final Widget? action;
-  @override
-  Widget build(BuildContext context) => AnnotatedRegion<SystemUiOverlayStyle>(
-    value: const SystemUiOverlayStyle(
-      statusBarColor: primaryColor,
-      statusBarIconBrightness: Brightness.light,
-      statusBarBrightness: Brightness.dark,
-    ),
-    child: Column(
-      children: [
-        Container(
-          color: primaryColor,
-          padding: EdgeInsets.fromLTRB(
-            20,
-            MediaQuery.paddingOf(context).top + 16,
-            12,
-            20,
-          ),
-          child: Row(
-            children: [
-              const CircleAvatar(
-                backgroundColor: Colors.white,
-                child: Icon(Icons.inventory_2_outlined, color: primaryColor),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      subtitle,
-                      style: const TextStyle(color: Colors.white70),
-                    ),
-                  ],
-                ),
-              ),
-              ...?action == null ? null : <Widget>[action!],
-            ],
-          ),
-        ),
-        Expanded(child: child),
-      ],
-    ),
-  );
-}
-
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle({required this.title, this.action});
-  final String title;
-  final String? action;
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 8),
-    child: Row(
-      children: [
-        Text(
-          title,
-          style: Theme.of(context).textTheme.titleMedium
-              ?.copyWith(fontWeight: FontWeight.bold),
-        ),
-        const Spacer(),
-        if (action != null)
-          Text(
-            action!,
-            style: TextStyle(color: Theme.of(context).colorScheme.primary),
-          ),
-      ],
-    ),
-  );
-}
-
-class _ChannelTile extends StatelessWidget {
-  const _ChannelTile({
-    required this.icon,
-    required this.title,
-    required this.count,
-  });
-  final IconData icon;
-  final String title;
-  final int count;
-  @override
-  Widget build(BuildContext context) => Card(
-    margin: const EdgeInsets.only(bottom: 8),
-    color: Theme.of(context).colorScheme.surface,
-    child: ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: CircleAvatar(
-        backgroundColor: primaryColor.withValues(alpha: 0.16),
-        foregroundColor: primaryColor,
-        child: Icon(icon, size: 20),
-      ),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-      trailing: Text(
-        '$count',
-        style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
-      ),
-    ),
-  );
-}
-
-class _ConversationTile extends StatelessWidget {
-  const _ConversationTile({
-    required this.name,
-    required this.preview,
-    required this.time,
-    required this.onTap,
-  });
-  final String name, preview, time;
-  final VoidCallback onTap;
-  @override
-  Widget build(BuildContext context) => Card(
-    margin: const EdgeInsets.only(bottom: 8),
-    color: Theme.of(context).colorScheme.surface,
-    child: ListTile(
-      onTap: onTap,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-      leading: const CircleAvatar(
-        backgroundColor: Color(0xFFFFEED7),
-        foregroundColor: primaryColor,
-        child: Icon(Icons.person_outline),
-      ),
-      title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: Padding(
-        padding: const EdgeInsets.only(top: 4),
-        child: Text(preview, maxLines: 1, overflow: TextOverflow.ellipsis),
-      ),
-      trailing: Text(
-        time,
-        style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-      ),
-    ),
-  );
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.icon, required this.message, this.detail});
-  final IconData icon;
-  final String message;
-  final String? detail;
-  @override
-  Widget build(BuildContext context) => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 52, color: Colors.grey.shade400),
-          const SizedBox(height: 12),
-          Text(
-            message,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-          ),
-          if (detail != null) ...[
-            const SizedBox(height: 6),
-            Text(
-              detail!,
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey.shade600),
-            ),
-          ],
-        ],
-      ),
     ),
   );
 }
