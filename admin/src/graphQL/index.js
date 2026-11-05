@@ -57,7 +57,7 @@ const wsLink =
 
 
 // The backend rejects the whole request when it carries an expired token, so these must go without one.
-const PUBLIC_OPERATIONS = ['LoginAccount', 'RefreshToken'];
+const PUBLIC_OPERATIONS = ['LoginAccount', 'RefreshToken', 'RegisterCompanyAccount'];
 
 const authLink = setContext(({ operationName }, { headers }) => {
     const token = PUBLIC_OPERATIONS.includes(operationName) ? null : getAccessToken();

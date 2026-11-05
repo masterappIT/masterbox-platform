@@ -17,9 +17,7 @@ import ContentText from '../src/stories/components/ContentText';
 import Selector from '../src/stories/components/Selector';
 import PhoneRegister from '../src/components/Auth/PhoneRegister';
 import { handleRegister } from '../src/redux/slices/userSlices';
-import { registerCompanyInfo } from '../src/redux/slices/companySlices';
 import { selectCompanyInfo } from '../src/redux/slices/companySlices';
-import errorHandler, { type } from '../src/utils/errorHandler';
 
 import { useTranslation } from 'react-i18next';
 import Dropdown from '../src/stories/components/Dropdown';
@@ -28,7 +26,7 @@ import ListItem from '../src/stories/components/ListItem';
 import LanguageSelector from '../src/components/Auth/LanguageSelector';
 
 
-const LOGIN_EMAIL_RULE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const EMAIL_RULE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 const AuthList = ({ data, inputsData, inputsError, formMessage, setFormMessage, setComponentHandler, onInputChange, onPhoneChange, handleBtnClick, setInputsData, setInputsError, props }) => {
     const { title, description, list, button, link, password } = data;
@@ -160,7 +158,7 @@ function AuthPage(props) {
                     },
                 ],
             button: {
-                title:  t('sign_up_now'),
+                title: isSubmitting ? t('registering') : t('sign_up_now'),
             },
             link: [
                 { title: t('log_in_to_the_management_background'), to: 'login' },
@@ -171,6 +169,7 @@ function AuthPage(props) {
             description: t('forgot_password_unavailable'),
             list: [],
             link: [
+                { title:  t('free_trial_registration'), to: 'register' },
                 { title:  t('back_to_login'), to: 'login' },
             ],
         }
@@ -179,11 +178,13 @@ function AuthPage(props) {
         const name = e.name || e.target.name
         const value = e.name ? e.value : e.target.value
         updateObjectState(inputsData, setInputsData, name, value)
+        setInputsError({ ...inputsError, [name]: '' })
         setFormMessage('')
     }
 
     const onPhoneChange = (value) => {
         updateObjectState(inputsData, setInputsData, 'mobile', value || '')
+        setInputsError({ ...inputsError, mobile: '' })
         setFormMessage('')
     }
 
@@ -212,7 +213,7 @@ function AuthPage(props) {
             const password = inputsData.password || ''
             const errors = {}
             if (!email) errors.email = t('login_email_required')
-            else if (!LOGIN_EMAIL_RULE.test(email) && email.toLowerCase() !== 'test') errors.email = t('login_invalid_email')
+            else if (!EMAIL_RULE.test(email) && email.toLowerCase() !== 'test') errors.email = t('login_invalid_email')
             if (!password) errors.password = t('login_password_required')
             setInputsError(errors)
             if (Object.keys(errors).length > 0) return
@@ -232,14 +233,27 @@ function AuthPage(props) {
             setInputsData(trimmedData)
 
             const errors = {}
-            const emailRule = /^[\w-]+(?:\.[\w-]+)*@([\w-]+\.)+[\w-]+$/
-            data.register.list.forEach(({ name }) => {
-                if (!trimmedData[name]) errors[name] = new errorHandler(type.INVALID_FORMAT, name).createErrorMessage()
+            const requiredMessages = {
+                chinese_name: 'register_chinese_name_required',
+                english_name: 'register_english_name_required',
+                email: 'login_email_required',
+                password: 'login_password_required',
+                country: 'register_country_required',
+                mobile: 'register_mobile_required',
+            }
+            Object.entries(requiredMessages).forEach(([name, message]) => {
+                if (!trimmedData[name]) errors[name] = t(message)
             })
-            if (!emailRule.test(trimmedData.email || '')) errors.email = new errorHandler(type.INVALID_FORMAT, 'email').createErrorMessage()
-            if (!trimmedData.mobile || trimmedData.mobile.length < 5) errors.mobile = new errorHandler(type.INVALID_FORMAT, 'mobile').createErrorMessage()
+            if (trimmedData.email && !EMAIL_RULE.test(trimmedData.email)) errors.email = t('login_invalid_email')
+            if (trimmedData.mobile && trimmedData.mobile.length < 5) errors.mobile = t('register_invalid_mobile')
             setInputsError(errors)
-            if (Object.keys(errors).length === 0) dispatch(registerCompanyInfo(trimmedData))
+            if (Object.keys(errors).length > 0) return
+
+            setIsSubmitting(true)
+            const { payload } = await dispatch(handleRegister(trimmedData))
+            setIsSubmitting(false)
+            if (payload?.fieldErrors) setInputsError(Object.fromEntries(Object.entries(payload.fieldErrors).map(([name, message]) => [name, t(message)])))
+            if (payload?.error) setFormMessage(t(payload.error))
         }
     }
 

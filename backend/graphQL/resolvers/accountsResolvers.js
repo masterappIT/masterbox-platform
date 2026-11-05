@@ -8,6 +8,7 @@ import { withAuth, requireAdmin } from '../../middleware/auth.js';
 
 const ACCESS_TOKEN_TTL = '2h';
 const REFRESH_TOKEN_TTL = '30d';
+const EMAIL_RULE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const issueTokens = (account) => ({
     token: jwt.sign({ account_id: account.id }, getJwtSecret(), { expiresIn: ACCESS_TOKEN_TTL }),
@@ -66,6 +67,35 @@ export default {
                 },
             });
             return accountView(newUser, issueTokens(newUser));
+        },
+
+        // Public sign-up: the nested create runs in one transaction, so a failed account leaves no company behind.
+        async registerCompanyAccount(_, { input }) {
+            const { password } = input;
+            const [chineseName, englishName, email, country, mobile] = [input.chinese_name, input.english_name, input.email, input.country, input.mobile].map(value => value.trim());
+            const normalizedEmail = email.toLowerCase();
+            if (!chineseName || !englishName || !country || !mobile || !password) throw new ApolloError('Missing registration fields', 'BAD_USER_INPUT');
+            if (!EMAIL_RULE.test(normalizedEmail)) throw new ApolloError('Invalid email', 'BAD_USER_INPUT');
+
+            try {
+                const company = await prisma.company.create({
+                    data: {
+                        chineseName,
+                        englishName,
+                        email: normalizedEmail,
+                        country,
+                        mobile,
+                        accounts: { create: { email: normalizedEmail, password: await bcrypt.hash(password, 10) } },
+                    },
+                    include: { accounts: true },
+                });
+                const [account] = company.accounts;
+                return accountView(account, issueTokens(account));
+            } catch (error) {
+                if (error.code !== 'P2002') throw error;
+                if (JSON.stringify(error.meta ?? {}).includes('mobile')) throw new ApolloError('Mobile already registered', 'MOBILE_ALREADY_REGISTERED');
+                throw new ApolloError('Email already registered', 'EMAIL_ALREADY_REGISTERED');
+            }
         },
 
         async createAccount(_, { input, company_id }, context) {

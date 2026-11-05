@@ -4,17 +4,6 @@ import { gql, } from '@apollo/client';
 
 
 
-// 註冊在此
-
-export const REGISTERCOMPANY = gql`
-mutation Mutation($chinese_name: String $english_name: String $email:String $country:String $mobile:String) {
-  registerCompany(CompanyRegisterInput:{chinese_name: $chinese_name,english_name:$english_name,email:$email,country:$country,mobile:$mobile}) {
-    _id
-  }
-}
-
-`;
-
 export const COMPANY = gql`
 
 query Query($id: String) {

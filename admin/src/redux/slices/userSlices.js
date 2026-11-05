@@ -3,28 +3,21 @@ import { apolloApiHelpers } from '../../graphQL';
 import { LOGIN, REFRESH_TOKEN } from '../../graphQL/account';
 import { SUBSCRIBE_MESSAGE } from '../../graphQL/subscription';
 import { handleMessagesSubscription } from './messagesSlices';
-import { REGISTER_ACCOUNT } from '../../graphQL/account';
+import { REGISTER_COMPANY_ACCOUNT } from '../../graphQL/account';
 
 
-/**
- * @param {String} email
- * @param {String} password
- */
 export const handleRegister = createAsyncThunk(
   'user/register',
-  async ({ _id, email, password }, { dispatch }) => {
-    try {
-      const res = await apolloApiHelpers('mutation', REGISTER_ACCOUNT, { company_id: _id, email: email, password: password })
-      const error = res.error
-      if (error) {
-        // if(error.includes('incorrect')) return new errorHandler(type.INVALID_PARAMS, 'email').throwAlert();
-      }
-      dispatch(saveUserInfo(res))
-    } catch (error) {
-      console.log('error', error)
-    }
+  async (data, { dispatch }) => {
+    const res = await apolloApiHelpers('mutation', REGISTER_COMPANY_ACCOUNT, data)
 
+    if (res?.error?.includes('Email already registered')) return { fieldErrors: { email: 'register_email_taken' } }
+    if (res?.error?.includes('Mobile already registered')) return { fieldErrors: { mobile: 'register_mobile_taken' } }
+    if (!res?.token) return { error: 'register_failed_try_later' }
 
+    dispatch(saveUserInfo(res))
+    dispatch(handleMessagesSubscription())
+    return {}
   }
 )
 

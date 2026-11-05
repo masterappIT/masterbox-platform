@@ -82,13 +82,15 @@ mutation RefreshToken($refreshToken:String! $account_id:String! $company_id: Str
 `;
 
 // 註冊在此
-export const REGISTER_ACCOUNT = gql`
-mutation REGISTER_ACCOUNT($company_id: String! $email: String! $password:String!) {
-  REGISTER_ACCOUNT(AccountRegisterInput:{company_id: $company_id, email: $email, password: $password}) {
-    _id
-    email
-    company_id
+export const REGISTER_COMPANY_ACCOUNT = gql`
+mutation RegisterCompanyAccount($chinese_name: String! $english_name: String! $email: String! $password: String! $country: String! $mobile: String!) {
+  registerCompanyAccount(input: {chinese_name: $chinese_name, english_name: $english_name, email: $email, password: $password, country: $country, mobile: $mobile}) {
     token
+    refreshToken
+    email
+    _id
+    company_id
+    role
     info {
       name
       avatar
@@ -96,7 +98,7 @@ mutation REGISTER_ACCOUNT($company_id: String! $email: String! $password:String!
     }
   }
 }
- `;
+`;
 
 // // 重新要token
 // export const REFRESHTOKEN = gql`

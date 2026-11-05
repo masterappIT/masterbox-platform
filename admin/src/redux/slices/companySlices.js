@@ -1,26 +1,7 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit'
 import { apolloApiHelpers } from '../../graphQL';
-import { COMPANY, REGISTERCOMPANY, UPDATE_COMPANY_INFO } from '../../graphQL/company';
+import { COMPANY, UPDATE_COMPANY_INFO } from '../../graphQL/company';
 
-
-export const registerCompanyInfo = createAsyncThunk(
-  //? 
-  'company/registerCompanyInfo',
-  async (data, { dispatch }) => {
-
-    // const companyId = store.getState().user.info.company_id;
-    // if (!companyId) return alert('miss company id')
-    const res = await apolloApiHelpers('mutation', REGISTERCOMPANY, data)
-    if (res.error) {
-      return alert(res.error)
-    }
-    dispatch(saveCompanyInfoFromServer(res))
-    const { _id } = res
-    const { email, password } = data
-    dispatch((await import('./userSlices')).handleRegister({ _id, email, password }))
-
-  }
-)
 
 export const fetchCompanyInfo = createAsyncThunk(
   'company/fetchCompanyInfo',

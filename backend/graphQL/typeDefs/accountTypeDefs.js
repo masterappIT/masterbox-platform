@@ -38,6 +38,15 @@ type AccountList {
       permissions: [String]
   }
 
+  input CompanyAccountRegisterInput {
+      chinese_name: String!
+      english_name: String!
+      email: String!
+      password: String!
+      country: String!
+      mobile: String!
+  }
+
   input AccountCreateInput {
       email: String!
       password: String!
@@ -79,6 +88,7 @@ type Query {
 
  type Mutation {
      registerAccount(AccountRegisterInput: AccountRegisterInput):Account
+     registerCompanyAccount(input: CompanyAccountRegisterInput!): Account!
      createAccount(input: AccountCreateInput!, company_id: String!): Account!
      updateAccount(_id: String!, input: AccountUpdateInput!): Account!
      deleteAccount(_id: String!): Boolean!
