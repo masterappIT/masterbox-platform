@@ -71,8 +71,8 @@ export default function Conversations({ isCustomerSideInfo, setIsCustomerSideInf
             <div className={`messenger-room-messages `}>
 
 
-              {messages?.length > 0 && messages.map(({ channel_id, sender, contents, createdAt, platform }, i) =>
-                <ChatBubble key={contents.mid + i + contents.text} contents={platform === 'whatsapp' ? contents?.text?.body ?? contents?.text : contents?.text} showAvatar={channel_id !== sender.replaceAll('"', '')} name={customerInfo?.avatar} time={createdAt} justifyItem={channel_id === sender.replaceAll('"', '') ? 'end' : 'start'} />
+              {messages?.length > 0 && messages.map(({ channel_id, sender, contents, createdAt, platform, delivery_error }, i) =>
+                <ChatBubble key={contents.mid + i + contents.text} contents={platform === 'whatsapp' ? contents?.text?.body ?? contents?.text : contents?.text} attachments={contents?.attachments} deliveryError={delivery_error} showAvatar={channel_id !== sender.replaceAll('"', '')} name={customerInfo?.avatar} time={createdAt} justifyItem={channel_id === sender.replaceAll('"', '') ? 'end' : 'start'} />
               )}
 
 

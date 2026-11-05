@@ -1,6 +1,5 @@
 import metaClient from '../api/metaClient.js';
 import {masterBox_meta_Route, masterBox_Api_graphql} from '../api/masterBoxClient.js';
-import { sortChannelSchema, findChannelToken } from '../utils/utils.js';
 
 
 /**
@@ -21,6 +20,126 @@ export const getUserAccessToken = async(code) => {
     })
 
     return result
+}
+
+
+/**
+ * 換取長效的 user_access_token，由它取得的粉絲頁 token 才不會在一小時後失效
+ * @param {string} access_token - 短效的 user_access_token
+ * @returns {string} 長效的 user_access_token
+ */
+export const exchangeLongLivedToken = async(access_token) => {
+    const result = await metaClient({
+        endPoints: 'oauth/access_token',
+        method: 'GET',
+        queryStrings: {
+            'grant_type': 'fb_exchange_token',
+            'client_id': process.env.FB_APP_ID,
+            'client_secret': process.env.FB_APP_SECRET,
+            'fb_exchange_token': access_token
+        }
+    })
+
+    return JSON.parse(result).access_token
+}
+
+
+/**
+ * 訂閱粉絲頁的訊息 webhook，並找出與它連動的 Instagram 帳號
+ * @param {object} page - me/accounts 回傳的粉絲頁
+ * @returns {object} 粉絲頁與 Instagram 帳號；訂閱失敗時只回傳 failed
+ */
+const connectFacebookPage = async(page) => {
+    try {
+        await metaClient({
+            endPoints: `${page.id}/subscribed_apps`,
+            method: 'POST',
+            queryStrings: { 'subscribed_fields': 'messages,messaging_postbacks', 'access_token': page.access_token }
+        })
+    } catch (error) {
+        console.log('Page subscribe failed:', page.id, error.responseBody || error.message)
+        return { failed: page.name || page.id }
+    }
+
+    // A page without Instagram access can still receive Messenger messages.
+    const links = await metaClient({
+        endPoints: page.id,
+        method: 'GET',
+        queryStrings: {
+            'fields': 'instagram_business_account{id,name,username},connected_instagram_account{id,name,username}',
+            'access_token': page.access_token
+        }
+    }).then(JSON.parse).catch((error) => {
+        console.log('Instagram lookup failed:', page.id, error.responseBody || error.message)
+        return {}
+    })
+    const instagram = links.instagram_business_account || links.connected_instagram_account
+
+    return { page, ...(instagram && { instagram: { ...instagram, page_id: page.id, access_token: page.access_token } }) }
+}
+
+
+/**
+ * 查詢授權範圍內的 whatsapp 號碼，並訂閱它們的商業帳號訊息
+ * @param {string} access_token - 長效的 user_access_token
+ * @returns {object} whatsappAccounts 號碼列表與 failed 失敗的商業帳號
+ */
+const connectWhatsappAccounts = async(access_token) => {
+    const debug = JSON.parse(await metaClient({
+        endPoints: 'debug_token',
+        method: 'GET',
+        queryStrings: { 'input_token': access_token, 'access_token': access_token }
+    }))
+    const scope = debug.data?.granular_scopes?.find((el) => el.scope == 'whatsapp_business_management')
+    const whatsappAccounts = [], failed = []
+
+    for(const waid of scope?.target_ids || []){
+        try {
+            const numbers = JSON.parse(await metaClient({
+                endPoints: `${waid}/phone_numbers`,
+                method: 'GET',
+                queryStrings: { 'access_token': access_token }
+            }))
+            await metaClient({
+                endPoints: `${waid}/subscribed_apps`,
+                method: 'POST',
+                queryStrings: { 'access_token': access_token }
+            })
+            numbers.data.forEach((number) => whatsappAccounts.push({ ...number, waid, access_token }))
+        } catch (error) {
+            console.log('Whatsapp connect failed:', waid, error.responseBody || error.message)
+            failed.push(waid)
+        }
+    }
+
+    return { whatsappAccounts, failed }
+}
+
+
+/**
+ * 從 Meta 授權取得的 code 找出所有可串接的頻道
+ * @param {string} code - FB 登入成功回傳的字串
+ * @returns {object} facebookPages, instagramAccounts, whatsappAccounts 與 failed 串接失敗的名稱
+ */
+export const collectMetaChannels = async(code) => {
+    const shortLived = JSON.parse(await getUserAccessToken(code)).access_token
+    const access_token = await exchangeLongLivedToken(shortLived)
+
+    const pages = JSON.parse(await metaClient({
+        endPoints: 'me/accounts',
+        method: 'GET',
+        queryStrings: { 'fields': 'id,name,access_token', 'limit': '100', 'access_token': access_token }
+    })).data || []
+
+    const results = await Promise.all(pages.filter((page) => page.access_token).map(connectFacebookPage))
+    const whatsapp = await connectWhatsappAccounts(access_token)
+
+    return {
+        facebookPages: results.flatMap(({ page }) => page ? [page] : []),
+        instagramAccounts: results.flatMap(({ instagram }) => instagram ? [instagram] : []),
+        whatsappAccounts: whatsapp.whatsappAccounts,
+        failed: [...results.flatMap(({ failed }) => failed ? [failed] : []), ...whatsapp.failed],
+    }
 }
 
 
@@ -282,7 +401,6 @@ export const getFacebookPageToken = (res, user_id, access_token, whatsappAccount
                     body.instagramAccounts.push(res)
                 }                        
             })
-            sortChannelSchema(body)
         })
 
         res.send(body)
@@ -406,6 +524,22 @@ export const getAttachment = (res, message_id, access_token) => {
 }
 
 /**
+ * Messenger / Instagram 發送訊息，失敗時丟出錯誤
+ * @param {string} page_id - 粉絲頁ID
+ * @param {object} content - 訊息物件
+ * @param {string} access_token - page_access_token
+ * @returns {object} Meta 的回應，包含 message_id
+ */
+export const sendFacebookMessage = (page_id, content, access_token) => metaClient({
+    endPoints: `${page_id}/messages`,
+    method: 'POST',
+    queryStrings: { "access_token": access_token},
+    ...(content.filedata == undefined?
+        {payloads: content} : {formData: content})
+})
+
+
+/**
  * Messenger 發送訊息
  * @param {*} res - api回應起始句
  * @param {string} page_id - 粉絲頁ID
@@ -415,21 +549,12 @@ export const getAttachment = (res, message_id, access_token) => {
  * @param {string} access_token - page_access_token 
  */
 export const metaSendMessage = (res, page_id, content, platform, to_chat_room_id, access_token) => {
-    metaClient({
-        endPoints: `${page_id}/messages`,
-        method: 'POST',
-        queryStrings: { "access_token": access_token},
-        ...(content.filedata == undefined?
-            {payloads: content} : {formData: content})
-        }).then((result) => {
+    sendFacebookMessage(page_id, content, access_token).then((result) => {
         console.log('Message send:', result);
-        if(result.message_id){
-            /** Save to database  */
-
-        }
         res.send(result)
     }).catch((error) => {
         console.log(error)
+        res.status(error.statusCode || 500).send(error.responseBody || { error: { message: error.message } })
     })
 }
 

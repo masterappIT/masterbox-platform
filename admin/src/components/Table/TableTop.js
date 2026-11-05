@@ -11,13 +11,13 @@ function TableTop({ searchOnClick, addOnClick, addTitle, deleteOnClick }) {
 
 
   return (
-    <div className="flex justify-between items-center mb-[20px]">
+    <div className="flex flex-wrap justify-between items-center gap-y-[12px] mb-[20px]">
       <div className='w-[220px]'>
         <Search placeholder='搜尋' onClick={searchOnClick}/>
       </div>
-      <div className='flex space-x-2'>
-        <Button title='刪除' color='alert' startElement={<Icon name='delete' />} customStyles={{ paddingRight: '10px', paddingLeft: '10px' }} onClick={deleteOnClick}/>
-        <Button title={addTitle} startElement={<Icon name='plus' size='small' />} customStyles={{ paddingRight: '10px', paddingLeft: '10px' }} onClick={addOnClick} />
+      <div className='flex flex-wrap gap-2'>
+        <Button title='刪除' color='alert' startElement={<Icon name='delete' />} customStyles={{ paddingRight: '10px', paddingLeft: '10px', whiteSpace: 'nowrap' }} onClick={deleteOnClick}/>
+        <Button title={addTitle} startElement={<Icon name='plus' size='small' />} customStyles={{ paddingRight: '10px', paddingLeft: '10px', whiteSpace: 'nowrap' }} onClick={addOnClick} />
       </div>
     </div>
   );

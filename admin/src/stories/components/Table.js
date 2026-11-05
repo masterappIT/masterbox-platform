@@ -12,8 +12,8 @@ import Headline from './Headline';
 import Search from './Search';
 import Button from './Button';
 
-function Table({ header, row, withCheckbox, withEdit, topElms, withPagination, colsTemplate, isSearch, selectedKeys, onSelectionChange }) {
-    const getRowKey = (data, index) => data.find(cell => cell.key === 'id')?.value || index;
+function Table({ header, row, withCheckbox, withEdit, topElms, withPagination, colsTemplate, isSearch, selectedKeys, onSelectionChange, onToggle, pendingToggles, rowIds }) {
+    const getRowKey = (data, index) => rowIds?.[index] || data.find(cell => cell.key === 'id')?.value || index;
     const toggleSelection = (key) => {
         if (!onSelectionChange) return;
         const next = new Set(selectedKeys);
@@ -45,12 +45,12 @@ function Table({ header, row, withCheckbox, withEdit, topElms, withPagination, c
                             <Headline title={value} size='small' />
                         </div>)}
                     {withEdit && <div className={`table-cell `}>
-                        <Headline title='edit' size='small' />
+                        <Headline title='編輯' size='small' />
                     </div>}
 
                 </div>
-                {(row&&row.length)? row.map((data, i) => {
-                    const rowKey = getRowKey(data, i);
+                {(row&&row.length)? row.map((data, rowIndex) => {
+                    const rowKey = getRowKey(data, rowIndex);
                     return <div key={rowKey} className={`table-row ${colsTemplate}`} style={{ gridTemplateColumns: colsTemplate }}>
 
 
@@ -62,7 +62,7 @@ function Table({ header, row, withCheckbox, withEdit, topElms, withPagination, c
                                 <div key={key + i} className={`table-cell `}>
                                     {
                                         element === 'text' ? <ContentText title={value} />
-                                            : element === 'toggle' ? <Toggle status={parseInt(value)} />
+                                            : element === 'toggle' ? <Toggle status={parseInt(value)} onClick={onToggle ? (next) => onToggle(rowIndex, next) : null} disabled={pendingToggles.includes(rowIndex)} />
                                                 : element === 'icon' ? <Icon name={value} />
                                                     : element === 'label' ? <Label title={value ? '上線中' : '已離線'} color={value ? 'secondary' : 'quaternary'} />
                                                         : element === 'avatar' ? <Avatar name={value} size='small' />
@@ -98,6 +98,12 @@ Table.propTypes = {
     topElms: PropTypes.element,
     selectedKeys: PropTypes.array,
     onSelectionChange: PropTypes.func,
+    // Called with the row's index and the new value; without it a toggle only changes on screen.
+    onToggle: PropTypes.func,
+    // Row indexes whose toggle is being saved.
+    pendingToggles: PropTypes.array,
+    // Keys for selection when the rows have no visible id column.
+    rowIds: PropTypes.array,
 }
 
 Table.defaultProps = {
@@ -108,6 +114,9 @@ Table.defaultProps = {
     withEdit: false,
     selectedKeys: [],
     onSelectionChange: null,
+    onToggle: null,
+    pendingToggles: [],
+    rowIds: null,
 }
 
 export default Table

@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import PropTypes from 'prop-types'
 import Button from "../../stories/components/Button";
 import Icon from "../../stories/components/Icon";
+import ContentText from "../../stories/components/ContentText";
 
 
 function ActionIcon({ icon, size }) {
@@ -15,17 +16,30 @@ const actions = [
 function MessageInput({ handlePushMessage, isMobile }) {
 
     const [message, setMessage] = useState('');
+    const [isSending, setIsSending] = useState(false);
+    const [sendError, setSendError] = useState('');
     // function enterPressHandler(e) {
     //     if (e.key === "Enter") {
     //         handlePushMessage({ text: message })
     //     }
     //   }
-    function handleClickBtn() {
-        handlePushMessage({ text: message })
-        setMessage('')
+    async function handleClickBtn() {
+        if (!message.trim() || isSending) return
+        setIsSending(true)
+        setSendError('')
+        try {
+            await handlePushMessage({ text: message })
+            setMessage('')
+        } catch (error) {
+            setSendError(`訊息未送出：${error?.message || error}`)
+        } finally {
+            setIsSending(false)
+        }
     }
 
     return (
+        <>
+        {sendError && <ContentText title={sendError} color='alert' customStyles='px-[16px] py-[6px]' />}
         <div className={`messenger-room-send`}>
             <div className={`messenger-room-send-inputArea`}>
                 <input
@@ -46,6 +60,7 @@ function MessageInput({ handlePushMessage, isMobile }) {
             <Button title={isMobile ? '' : '發送'} rounded='large' customStyles={isMobile ? { height: '44px', padding: '0px' } : { height: '44px' }} startElement={<Icon name='send' size='small' />}
                 onClick={() => handleClickBtn()} />
         </div>
+        </>
     )
 }
 

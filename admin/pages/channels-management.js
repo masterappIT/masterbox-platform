@@ -10,7 +10,9 @@ import { useSelector } from "react-redux";
 import { fetchCompanyInfo } from '../src/redux/slices/companySlices';
 import { selectUserInfo } from '../src/redux/slices/userSlices';
 import { useDispatch } from "react-redux";
-import { addChannels, selectChannels } from "../src/redux/slices/messagesSlices";
+import { getUserSubscribedChannels, saveChannels, selectChannels } from "../src/redux/slices/messagesSlices";
+import { apolloApiHelpers } from '../src/graphQL';
+import { CREATE_META_CONNECT_URL, SET_CHANNEL_ENABLED } from '../src/graphQL/channel';
 
 
 import Table from '../src/stories/components/Table';
@@ -29,16 +31,18 @@ import PopupChannel from '../src/components/channels-management/PopupChannel';
 
 
 
-const apiUri = (process.env.NODE_ENV === 'production'
-  ? process.env.API_CONNECTION_PRODUCTION
-  : process.env.API_CONNECTION_DEV)
-
 const platformNames = {
   fb: 'Facebook',
   ig: 'Instagram',
   whatsapp: 'Whatsapp',
   line: 'Line',
   wechat: 'Wechat',
+}
+
+const headerNames = {
+  status: '狀態',
+  name: '名稱',
+  channel: '平台',
 }
 
 
@@ -55,6 +59,9 @@ function ChannelsManagementPage({ platforms, defaultValue }) {
   const [isPopup, setIsPopup] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState('');
+  const [connectionResult, setConnectionResult] = useState('');
+  const [toggleError, setToggleError] = useState('');
+  const [pendingToggles, setPendingToggles] = useState([]);
 
   const allChannels = useSelector(selectChannels);
 
@@ -62,7 +69,9 @@ function ChannelsManagementPage({ platforms, defaultValue }) {
 
     if (allChannels.length) {
 
-      return allChannels?.filter(channel => channel.platform === currentPlatform);
+      return allChannels
+        ?.filter(channel => channel.platform === currentPlatform)
+        .map(channel => ({ ...channel, status: channel.enabled ? 1 : 0, channel: platformNames[channel.platform] || channel.platform }));
     }
     return []
   }
@@ -75,14 +84,13 @@ function ChannelsManagementPage({ platforms, defaultValue }) {
     const table = new tableFactory("channelsMgmt", ChannelsFiltered)
 
     return {
-      header: table.getHeaders(),
+      header: table.getHeaders().map(col => headerNames[col] || col),
       colsTemplate: table.getGridTemplate(),
       row: table.getRowsData()
     }
 
   }, [ChannelsFiltered])
 
-  console.log('currentPlatform :>> ', currentPlatform);
 
 
 
@@ -92,31 +100,40 @@ function ChannelsManagementPage({ platforms, defaultValue }) {
   // let tableData = new tableFactory("channelsMgmt", dummyTableData.channelsMgmt)
 
 
+  // 啟用或停用頻道
+  const handleToggle = async (index, enabled) => {
+    const channel = ChannelsFiltered[index];
+    if (!channel) return;
+
+    setToggleError('');
+    setPendingToggles(pending => [...pending, index]);
+    const res = await apolloApiHelpers('mutation', SET_CHANNEL_ENABLED, { channelId: channel.channel_id, enabled });
+    setPendingToggles(pending => pending.filter(i => i !== index));
+    if (res.error) {
+      setToggleError(`無法${enabled ? '啟用' : '停用'}「${channel.name}」：${res.error}`);
+      return;
+    }
+
+    dispatch(saveChannels(allChannels.map(item => item.channel_id === channel.channel_id ? { ...item, enabled: res.enabled } : item)));
+  }
+
+
   // 點擊傳接按鈕
   const handleConnect = async () => {
     if (isConnecting) return;
 
-    const companyId = userInfo?.company_id;
-    if (!companyId) {
-      setConnectionError('找不到公司資料，無法進行串接。');
-      return;
-    }
-
     setConnectionError('');
+    setConnectionResult('');
     setIsConnecting(true);
-    const baseUri = apiUri?.replace(/\/$/, '');
-    if (!baseUri) {
-      setConnectionError('未設定 Backend API 位址，無法進行串接。');
+
+    const res = await apolloApiHelpers('mutation', CREATE_META_CONNECT_URL, { returnUrl: `${window.location.origin}/channels-management` });
+    if (res.error) {
+      setConnectionError(`無法開始串接：${res.error}`);
       setIsConnecting(false);
       return;
     }
 
-    try {
-      window.location.assign(`${baseUri}/meta/login?id=${encodeURIComponent(companyId)}`);
-    } catch (error) {
-      setConnectionError('串接頁面開啟失敗，請稍後再試。');
-      setIsConnecting(false);
-    }
+    window.location.assign(res);
   }
 
 
@@ -130,27 +147,27 @@ function ChannelsManagementPage({ platforms, defaultValue }) {
 
 
 
-  // 重新點擊按鈕重設資料
   useEffect(() => {
+    dispatch(getUserSubscribedChannels())
+  }, [dispatch])
 
-    const path = new URL(window.location.href)
-    //res from add channels
-    if (path.search) {
-      const channels = path.searchParams.getAll('channels[]').reduce((parsedChannels, value) => {
-        try {
-          const channel = JSON.parse(value)
-          if (channel && typeof channel === 'object') parsedChannels.push(channel)
-        } catch (error) {
-          setConnectionError('串接回傳資料格式錯誤，部分頻道未加入。')
-        }
-        return parsedChannels
-      }, [])
+  // 串接完成後由後端導回此頁，並帶上結果
+  useEffect(() => {
+    const { searchParams } = new URL(window.location.href)
+    const connected = searchParams.get('meta_connected')
+    const error = searchParams.get('meta_error')
+    if (connected === null && !error) return
 
-      if (channels.length) dispatch(addChannels(channels))
-      router.replace('/channels-management')
-    }
-
-  }, [dispatch, router])
+    const skipped = searchParams.get('meta_skipped')
+    const failed = searchParams.get('meta_failed')
+    setConnectionError([
+      error,
+      skipped && `已連接其他公司，未串接：${skipped}`,
+      failed && `串接失敗：${failed}`,
+    ].filter(Boolean).join('；'))
+    if (connected !== null) setConnectionResult(Number(connected) > 0 ? `已串接 ${connected} 個頻道。` : '沒有新串接的頻道。')
+    router.replace('/channels-management')
+  }, [router])
 
 
 
@@ -192,7 +209,9 @@ function ChannelsManagementPage({ platforms, defaultValue }) {
           <div className='flex flex-col justify-start w-full '>
 
             <TableTop addTitle={isConnecting ? '串接中…' : `串接${platformNames[currentPlatform] || '平台'}`} addOnClick={handleConnect} deleteOnClick={() => setIsPopup(true)} />
+            {connectionResult && <ContentText title={connectionResult} customStyles='mb-[12px]' />}
             {connectionError && <ContentText title={connectionError} color='alert' customStyles='mb-[12px]' />}
+            {toggleError && <ContentText title={toggleError} color='alert' customStyles='mb-[12px]' />}
             <div className='flex items-center space-x-2'>
               <Headline size='normal' title='選擇平台' color='black-primary' />
 
@@ -203,6 +222,8 @@ function ChannelsManagementPage({ platforms, defaultValue }) {
         }
         withCheckbox={false}
         withEdit={false}
+        onToggle={handleToggle}
+        pendingToggles={pendingToggles}
       />
 
         : ''}

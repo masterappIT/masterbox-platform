@@ -20,7 +20,7 @@ function Bubble({ contents, color, customStyles, onClick }) {
 }
 
 Bubble.propTypes = {
-    contents: PropTypes.string || PropTypes.array,
+    contents: PropTypes.node,
     variant: PropTypes.oneOf(['primary', 'secondary', 'tertiary', 'quaternary']),
     customStyles: PropTypes.oneOfType([PropTypes.string, PropTypes.object]), 
     onClick: PropTypes.func,

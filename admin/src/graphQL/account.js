@@ -8,6 +8,7 @@ export const LIST_ACCOUNTS = gql`
         email
         role
         company_id
+        enabled
         info { name avatar mobile }
       }
       total
@@ -26,7 +27,7 @@ export const CREATE_ACCOUNT = gql`
 export const UPDATE_ACCOUNT = gql`
   mutation UpdateAccount($_id: String!, $input: AccountUpdateInput!) {
     updateAccount(_id: $_id, input: $input) {
-      _id email role company_id info { name avatar mobile }
+      _id email role company_id enabled info { name avatar mobile }
     }
   }
 `;

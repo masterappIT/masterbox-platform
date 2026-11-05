@@ -146,6 +146,7 @@ type Mutation {
     registerCompany(CompanyRegisterInput: CompanyRegisterInput):Company
     registerChannel(ChannelInput: ChannelInput):Channel
     updateCompanyInfo(UpdateCompanyInput:UpdateCompanyInfoInput): String
+    createMetaConnectUrl(return_url: String!): String!
 }
 
 `

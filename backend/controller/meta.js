@@ -1,6 +1,9 @@
 import metaClient from '../api/metaClient.js';
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { sortChannelSchema, findChannelToken, saveInboundMessage } from '../utils/utils.js';
+import jwt from 'jsonwebtoken';
+import { getJwtSecret } from '../lib/auth/jwtSecret.js';
+import { prisma } from '../lib/db/prisma.js';
+import { sortChannelSchema, findChannelToken, saveInboundMessage, markMessageFailed, metaFailureReason } from '../utils/utils.js';
 
 // facebook
 import { getUserAccessToken, getDebugToken,
@@ -9,16 +12,33 @@ import { getUserAccessToken, getDebugToken,
     getPageFollowers, getMetaConversations,
     getConversationMessages, getMessage,
     getAttachment, metaSendMessage,
-    appSubscribePage } from './meta_facebook.js'
+    appSubscribePage, collectMetaChannels } from './meta_facebook.js'
 
 // whatsapp
 import { getNumberDetail, getBusinessProfile, 
     whatsappSendMessage, manage_wa_message,
     createMessageTemplate, getMessageTemplate,
     editMessageTemplate, deleteMessageTemplate,
-    whatsappWebhookMessages } from './meta_whatsapp.js';
+    whatsappWebhookMessages, whatsappFailedStatuses } from './meta_whatsapp.js';
 import fs from 'node:fs'
 
+
+// Separate from the login secret, so a connect link can never be used as an access token or vice versa.
+const connectStateSecret = () => `${getJwtSecret()}:meta-connect`
+
+/**
+ * 建立串接 Meta 頻道的網址，登入狀態由簽章過的 state 帶過 Meta 授權頁
+ * @param {object} account - 發起串接的帳號
+ * @param {string} return_url - 串接完成後回到的後台頁面
+ * @returns {string} 導向 Meta 授權的網址
+ */
+export const createConnectUrl = (account, return_url) => {
+    if(!process.env.FB_APP_ID || !process.env.FB_APP_SECRET || !process.env.BASE_URL){
+        throw new Error('尚未設定 FB_APP_ID、FB_APP_SECRET 或 BASE_URL，無法串接 Meta')
+    }
+    const state = jwt.sign({ account: account.account_id, company: account.company_id, return_url }, connectStateSecret(), { expiresIn: '15m' })
+    return `${process.env.BASE_URL}/meta/login?state=${encodeURIComponent(state)}`
+}
 
 /**
  * 檢查附件檔案大小
@@ -382,6 +402,10 @@ export default {
                 for(const { chat_room_id, content, customer, channel_id } of whatsappMessages){
                     await appendMessage(chat_room_id, 'whatsapp', content, customer, channel_id, content.id)
                 }
+
+                for(const { externalId, error } of whatsappFailedStatuses(entry)){
+                    await markMessageFailed(externalId, metaFailureReason(error))
+                }
             } catch (error) {
                 console.log('webhook_error', error)
             }
@@ -398,10 +422,6 @@ export default {
     login: (req, res, next) => {
         //https://developers.facebook.com/docs/permissions/reference
         //whatsapp_business_management whatsapp_business_messaging
-        
-        // const { account_id } = req.body
-
-        // let _ = "630c766d1c270a272c6e9528"
 
         /**
          * 給前端導向FB登入，回傳網址填masterBox
@@ -409,41 +429,60 @@ export default {
          */
 
         try {
-            const permissions =
-                'pages_messaging,business_management,whatsapp_business_management,whatsapp_business_messaging,pages_show_list,public_profile,pages_manage_metadata,instagram_basic,instagram_manage_messages,leads_retrieval'
-            
-            // whatsapp_business_management permission seems to be granted when extras is not included    
-            // const extras = { feature: 'whatsapp_embedded_signup' }
-            //&extras=${JSON.stringify(extras)}
-            res.redirect(`https://www.facebook.com/dialog/oauth?response_type=code&display=popup&client_id=${process.env.FB_APP_ID}&redirect_uri=${process.env.BASE_URL}/meta/getToken&scope=${permissions}`);
+            jwt.verify(req.query.state, connectStateSecret())
         } catch (error) {
-            return res.sendStatus(500)
+            return res.status(400).send('串接連結已失效，請回到後台重新串接。')
         }
+
+        const permissions =
+            'pages_messaging,business_management,whatsapp_business_management,whatsapp_business_messaging,pages_show_list,public_profile,pages_manage_metadata,instagram_basic,instagram_manage_messages,leads_retrieval'
+
+        // whatsapp_business_management permission seems to be granted when extras is not included
+        // const extras = { feature: 'whatsapp_embedded_signup' }
+        //&extras=${JSON.stringify(extras)}
+        res.redirect(`https://www.facebook.com/dialog/oauth?response_type=code&display=popup&client_id=${process.env.FB_APP_ID}&redirect_uri=${encodeURIComponent(`${process.env.BASE_URL}/meta/getToken`)}&scope=${permissions}&state=${encodeURIComponent(req.query.state)}`);
     },
 
     /**
-     * 取得使用者的 access_token
+     * Meta 授權完成後，把授權範圍內的頻道存到發起串接的公司，再回到後台
      * @param code string, 登入FB取得的字串，用於換取 user_access_token
+     * @param state string, 發起串接時簽章的帳號與回到的頁面
      */
-    getToken: (req, res, next) => {
-        const code = req.query.code
-        console.log('code', code)
-        // const _ = req.query._
-        /**
-         * TODO - call our graphql 
-         */
+    getToken: async (req, res, next) => {
+        let state
+        try {
+            state = jwt.verify(req.query.state, connectStateSecret())
+        } catch (error) {
+            return res.status(400).send('串接連結已失效，請回到後台重新串接。')
+        }
+
+        const backToAdmin = (result) => {
+            const url = new URL(state.return_url)
+            Object.entries(result).forEach(([key, value]) => url.searchParams.set(key, value))
+            res.redirect(url.toString())
+        }
+
+        if(!req.query.code){
+            return backToAdmin({ meta_error: '已取消 Meta 授權，沒有串接任何頻道。' })
+        }
 
         try {
-            getUserAccessToken(code)
-            .then((result) => {
-                console.log('access_token:', result)
-                let body = JSON.parse(result)
-                req.headers['authorization'] = `Bearer ${body.access_token}`  
-                next()
+            const account = await prisma.account.findFirst({ where: { id: state.account, companyId: state.company } })
+            if(!account){
+                return backToAdmin({ meta_error: '找不到發起串接的帳號，請重新登入後再試。' })
+            }
+
+            const { failed, ...channels } = await collectMetaChannels(req.query.code)
+            const { saved, skipped } = await sortChannelSchema({ companyId: account.companyId, accountId: account.id, ...channels })
+
+            backToAdmin({
+                meta_connected: saved.length,
+                ...(skipped.length > 0 && { meta_skipped: skipped.join('、') }),
+                ...(failed.length > 0 && { meta_failed: failed.join('、') }),
             })
         } catch (error) {
-            console.log(error)
-            res.status(500).send(error)
+            console.log('Meta connect failed:', error.responseBody || error.message)
+            backToAdmin({ meta_error: '串接 Meta 失敗，請稍後再試。' })
         }
     },
 

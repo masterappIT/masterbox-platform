@@ -18,6 +18,7 @@ subscription MessageEvents {
     channel_id
     sentAt
     inbound
+    delivery_error
   }
 }
 

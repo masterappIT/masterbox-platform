@@ -2,7 +2,9 @@ import { ApolloError } from 'apollo-server-errors';
 import { prisma } from '../../lib/db/prisma.js';
 import { pubsub } from '../../config/redis.js';
 import { handleSendMessage, messageView, publishMessage, SEND_MESSAGE } from '../../utils/utils.js';
-import { withAuth } from '../../middleware/auth.js';
+import { withAuth, requireAdmin } from '../../middleware/auth.js';
+
+const channelView = channel => ({ channel_id: channel.id, platform: channel.platform, name: channel.name, enabled: channel.enabled });
 
 const validateEncryption = (mode, contents, errorCode = 'SEND_FAILED') => {
   if (!['server', 'e2ee'].includes(mode)) throw new ApolloError('encryption_mode must be server or e2ee', errorCode);
@@ -28,6 +30,12 @@ const visibleMessageWhere = (companyId, target) => ({
 });
 export default {
   Mutation: {
+    async setChannelEnabled(_, { channel_id, enabled }, context) {
+      const admin = requireAdmin(context);
+      const channel = await prisma.companyChannel.findUnique({ where: { id: channel_id } });
+      if (!channel || channel.companyId !== admin.company_id) throw new ApolloError('找不到這個頻道', 'NOT_FOUND');
+      return channelView(await prisma.companyChannel.update({ where: { id: channel_id }, data: { enabled } }));
+    },
     async appSendMessage(_, { MessageInput: input }, { account, isAuth }) {
       withAuth(Boolean(isAuth || account));
       const accountId = account?.account_id;
@@ -54,7 +62,7 @@ export default {
           await publishMessage(message);
           return messageView(message, room.chatRoomId || room.id);
         }
-        const message = await handleSendMessage(account.account_id, roomId, input.contents, input.platform, input.info_Content, input.channel_id);
+        const message = await handleSendMessage(account.account_id, roomId, input.contents, input.channel_id);
         return messageView(message, roomId);
       } catch (error) {
         if (error instanceof ApolloError) throw error;
@@ -82,7 +90,7 @@ export default {
         where: { companyId: account.company_id, accounts: { some: { accountId: account.account_id } } },
         orderBy: { name: 'asc' },
       });
-      return channels.map(channel => ({ channel_id: channel.id, platform: channel.platform, name: channel.name }));
+      return channels.map(channelView);
     },
     async chatRooms(_, __, { account, isAuth }) {
       withAuth(Boolean(isAuth || account));

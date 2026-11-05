@@ -1,7 +1,8 @@
 @import '_Common.module.scss';
 
 .table {
-	@apply min-w-full h-[667px] max-w-fit overflow-x-auto overflow-y-auto bg-bg_primary;
+	// Stays inside its card and scrolls sideways when the columns don't fit.
+	@apply min-w-full h-[667px] max-w-full overflow-x-auto overflow-y-auto bg-bg_primary;
 
 	&-top {
 		@apply w-full px-[24px] pt-[24px] flex flex-col justify-center;
@@ -38,5 +39,7 @@
 
 	&-cell {
 		@apply min-w-full text-contentText_normal font-[400] flex justify-start items-center;
+		// Long names and emails wrap inside their column instead of running into the next one.
+		overflow-wrap: anywhere;
 	}
 }

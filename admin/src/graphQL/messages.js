@@ -15,6 +15,7 @@ mutation SendMessage($messageInput: MessageInput) {
     to_chat_room_id
     sentAt
     inbound
+    delivery_error
   }
 }
 
@@ -34,6 +35,7 @@ query ChatRoomMessages($roomId: ID) {
     to_chat_room_id
     sentAt
     inbound
+    delivery_error
   }
 }
  `;

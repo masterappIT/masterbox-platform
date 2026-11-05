@@ -4,6 +4,9 @@ import {masterBox_meta_Route, masterBox_Api_graphql} from '../api/masterBoxClien
 // Hold whatsapp message send by company
 var wa_messages = []
 
+// Webhook events and API responses prefix the same id differently.
+export const whatsappMessageId = (id) => id.split('.')[1] || id
+
 
 /**
  * 操作暫時存取的訊息陣列
@@ -45,7 +48,7 @@ export const whatsappWebhookMessages = async(entry) => {
 
             params.value.messages.forEach((msg) => {
                 const content = {
-                    id: msg.id.split('.')[1] || msg.id,
+                    id: whatsappMessageId(msg.id),
                     timestamp: msg.timestamp,
                 }
 
@@ -53,29 +56,15 @@ export const whatsappWebhookMessages = async(entry) => {
                     case 'text':
                         content.message = msg.text
                     break;
-                    case 'image':
-                        content.message = msg.image_url
-                    break;
-                    case 'sticker':
-                        content.message = msg.sticker
-                    break;
                     case 'button':
                         content.message = msg.button
                     break;
-                    case 'order':
-                        content.message = msg.order
+                    case 'interactive':
+                        content.message = { text: (msg.interactive?.button_reply || msg.interactive?.list_reply)?.title }
                     break;
-                    case 'unkonwn':
-                        content.message = msg.errors
-                    break;
+                    // Media needs a token to download, so the conversation shows what was sent instead.
                     default:
-                    if(msg.contacts !== undefined){
-                        content.message = msg.contacts
-                    }
-
-                    if(msg.location !== undefined){
-                        content.message = msg.location
-                    }
+                        content.attachments = [{ type: msg.type, caption: msg[msg.type]?.caption, filename: msg[msg.type]?.filename }]
                 }
 
                 results.push({
@@ -90,6 +79,20 @@ export const whatsappWebhookMessages = async(entry) => {
     })
     return results
 }
+
+/**
+ * 找出 webhook 回報發送失敗的訊息。whatsapp 接受訊息後才判斷能否送達，例如超過 24 小時回覆期限
+ * @param {array} entry - 訊息物件的陣列
+ * @returns {array} 平台訊息 ID 與失敗原因
+ */
+export const whatsappFailedStatuses = (entry) => entry.flatMap((data) => data.changes.flatMap((params) =>
+    (params.field == "messages" && params.value.statuses || [])
+        .filter(({ status }) => status == 'failed')
+        .map(({ id, errors }) => ({
+            externalId: whatsappMessageId(id),
+            error: errors?.[0],
+        }))
+))
 
 /**
  * 查詢 whatsapp 商業帳號詳情
@@ -133,6 +136,23 @@ export const getBusinessProfile = (res, phone_number_id, access_token) => {
 
 
 /**
+ * Whatsapp 發送訊息，失敗時丟出錯誤
+ * @param {object} messageData - 訊息物件
+ * @param {string} from - 公司的 whatsapp 號碼id
+ * @param {string} access_token - user_access_token
+ * @returns {object} Meta 的回應，messages[0].id 是訊息 ID
+ */
+export const sendWhatsappMessage = (messageData, from, access_token) => metaClient({
+    endPoints: `${from}/messages`,
+    method: 'POST',
+    queryStrings: {
+        'access_token': access_token,
+    },
+    payloads: messageData,
+})
+
+
+/**
  * Whatsapp 發送訊息
  * @param {*} res - 回應api呼叫的起始句
  * @param {object} messageData - 訊息物件 
@@ -140,14 +160,7 @@ export const getBusinessProfile = (res, phone_number_id, access_token) => {
  * @param {string} access_token - user_access_token
  */
 export const whatsappSendMessage = (res, messageData, from, access_token) => {
-    metaClient({
-        endPoints: `${from}/messages`,
-        method: 'POST',
-        queryStrings: {
-            'access_token': access_token,
-        },
-        payloads: messageData,
-    }).then((result) => {
+    sendWhatsappMessage(messageData, from, access_token).then((result) => {
         console.log('Whatsapp sendMessage', result)
 
         if(result.error !== undefined){
@@ -161,6 +174,9 @@ export const whatsappSendMessage = (res, messageData, from, access_token) => {
         }
 
         res.send(result) 
+    }).catch((error) => {
+        console.log(error)
+        res.status(error.statusCode || 500).send(error.responseBody || { error: { message: error.message } })
     })
 }
 

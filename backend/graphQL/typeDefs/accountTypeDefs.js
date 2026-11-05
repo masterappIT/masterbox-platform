@@ -21,6 +21,7 @@ type Account{
     role: String
     permissions: String
     info: AccountInfo
+    enabled: Boolean
     token: String
     refreshToken: String
 }
@@ -61,6 +62,7 @@ type AccountList {
       role: String
       permissions: [String]
       user_info: String
+      enabled: Boolean
   }
 
   input AccountListInput {

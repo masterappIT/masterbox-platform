@@ -15,7 +15,7 @@ router
 
     // meta_user
     .get('/login', metaController.login)
-    .get('/getToken', metaController.getToken, metaController.getDebugToken, metaController.getUserId, metaController.getPageToken)
+    .get('/getToken', metaController.getToken)
     // .get('/getUserBusinessIds', metaController.getUserBusinessIds)
     .get('/getlongliveToken', metaController.getUserLongLivedToken)
 

@@ -6,6 +6,7 @@
   "login_invalid_email": "電子信箱格式不正確",
   "login_password_required": "請輸入密碼",
   "login_invalid_credentials": "電子信箱或密碼錯誤",
+  "login_account_disabled": "此帳號已停用，請聯絡公司管理員",
   "login_failed_try_later": "目前無法登入，請稍後再試",
   "registering": "註冊中...",
   "register_chinese_name_required": "請輸入中文名稱",

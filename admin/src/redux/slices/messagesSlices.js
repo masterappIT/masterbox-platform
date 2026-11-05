@@ -15,21 +15,28 @@ import { info } from 'autoprefixer';
 const FRESH = { fetchPolicy: 'no-cache' };
 
 // The home page keys chat rooms by `account`; rooms point at their channel by its id.
-const toChannel = ({ channel_id, platform, name }) => ({ channel_id, platform, name, account: channel_id });
+const toChannel = ({ channel_id, platform, name, enabled }) => ({ channel_id, platform, name, enabled: enabled !== false, account: channel_id });
 
 const toChatRoom = ({ users, ...room }) => ({
   ...room,
   users: (users || []).map(({ name, first_name, ...user }) => ({ ...user, first_name: first_name || name })),
 });
 
+const UNSUPPORTED_MESSAGE = '[此訊息類型暫不支援顯示]';
+
 // Stored contents are plain text, a JSON message (`text`), or a Meta payload (`message.text`).
+// A customer's message may only have attachments, and some types have nothing to show at all.
 const parseContents = (contents) => {
-  if (contents && typeof contents === 'object') return contents;
-  try {
-    const parsed = JSON.parse(contents);
-    if (parsed && typeof parsed === 'object') return { ...parsed, text: parsed.text ?? parsed.message?.text ?? parsed.message?.body };
-  } catch (error) { }
-  return { text: contents };
+  let parsed = contents && typeof contents === 'object' ? contents : null;
+  if (!parsed) {
+    try {
+      const value = JSON.parse(contents);
+      if (value && typeof value === 'object') parsed = value;
+    } catch (error) { }
+  }
+  const text = parsed ? parsed.text ?? parsed.message?.text ?? parsed.message?.body : contents;
+  const attachments = parsed?.attachments || parsed?.message?.attachments || [];
+  return { ...parsed, text: (text?.body ?? text) || attachments.length ? text : UNSUPPORTED_MESSAGE, attachments };
 };
 
 // Conversations tell the two sides apart by comparing the sender with the channel.
@@ -140,7 +147,7 @@ export const handleMessagesSubscription = createAsyncThunk(
 
 export const handleSendMessage = createAsyncThunk(
   'user/sendMessage',
-  async (data, { dispatch }) => {
+  async (data, { dispatch, rejectWithValue }) => {
 
     const res = await apolloApiHelpers('mutation', SEND_MESSAGE,
       {
@@ -149,9 +156,9 @@ export const handleSendMessage = createAsyncThunk(
       }
     )
 
+    // The caller keeps the agent's text and shows why it wasn't sent.
     if (res.error) {
-      alert(res.error)
-      return res
+      return rejectWithValue(res.error)
     }
 
     dispatch(pushMessage(res))
@@ -213,8 +220,12 @@ export const messagesSlice = createSlice({
       const existingRoomData = state.messages[key] || []
       console.log('existingRoomData', state)
       const newData = [...existingRoomData, newMessages]
+      const existingIndex = existingRoomData.findIndex(message => message._id === _id)
 
-      if (existingRoomData.findIndex(message => message._id === _id) === -1) {
+      // Already in the conversation, so this is news about it, such as a failed delivery.
+      if (existingIndex !== -1) {
+        state.messages[key][existingIndex] = newMessages
+      } else {
 
         const newData = [...existingRoomData, newMessages]
 

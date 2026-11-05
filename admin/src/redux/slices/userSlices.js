@@ -54,6 +54,7 @@ export const handleLogin = createAsyncThunk(
     const res = await apolloApiHelpers('mutation', LOGIN, { email: email.trim().toLowerCase() === 'test' ? 'test@masterbox.local' : email.trim().toLowerCase(), password })
 
     if (res?.error?.includes('Incorrect email or password')) return { error: 'login_invalid_credentials' }
+    if (res?.error?.includes('This account has been disabled')) return { error: 'login_account_disabled' }
     if (!res?.token) return { error: 'login_failed_try_later' }
 
     dispatch(saveUserInfo(res))

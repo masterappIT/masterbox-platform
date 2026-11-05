@@ -298,9 +298,8 @@ export default function Messenger() {
 
     const data = new MessageFactory(to_chat_room_id, platform, account).createContents({ message: message, recipient: recipient });
 
-    const res = dispatch(handleSendMessage(data))
-
-    // console.log('handleSendMessage_RES', res)
+    // Rejects when the message wasn't sent, so the input can keep it and show why.
+    return dispatch(handleSendMessage(data)).unwrap()
 
     // dispatch(pushMessage({ channelId: currentChannel.id, chatRoomId: messages.id, message: contents }))
 

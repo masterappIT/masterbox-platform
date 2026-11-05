@@ -82,6 +82,8 @@ model CompanyChannel {
   name       String
   accessInfo Json             @map("access_info")
   info       Json
+  // A disabled channel neither takes in customer messages nor sends replies.
+  enabled    Boolean          @default(true)
   company    Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
   accounts   AccountChannel[]
   chatRooms  ChatRoom[]
@@ -108,6 +110,8 @@ model Account {
   role               AccountRole       @default(admin)
   permissions        String            @default("all")
   userInfo           Json?             @map("user_info")
+  // A disabled account can't sign in, and its existing sessions stop working.
+  enabled            Boolean           @default(true)
   companyId          String            @map("company_id") @db.Text
   createdAt          DateTime          @default(now()) @map("created_at")
   updatedAt          DateTime          @updatedAt @map("updated_at")
@@ -161,6 +165,7 @@ model Message {
   createdBy                String?            @map("created_by") @db.Text
   updatedBy                String?            @map("updated_by") @db.Text
   externalId               String?            @unique @map("external_id")
+  deliveryError            String?            @map("delivery_error")
   platform                 ChannelPlatform
   contents                 Json?
   encryptionMode           EncryptionMode     @default(server) @map("encryption_mode")

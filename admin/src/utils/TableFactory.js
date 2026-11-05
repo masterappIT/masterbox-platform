@@ -70,14 +70,27 @@ class userMgmtHeaders {
 
 
 }
+// The company's own staff accounts. Online status and last seen aren't tracked yet, so they aren't shown.
+class accountsMgmtHeaders {
+
+    cols = ["status", "img", "name", "role", "email"]
+
+    // Pairs of min/max widths: checkbox, the columns above, then the edit icon.
+    cellWidths = ["40px", "40px", "48px", "0.6fr", "44px", "0.5fr", "80px", "1.5fr", "56px", "1fr", "140px", "2.5fr", "30px", "30px"]
+
+    types = ["toggle", "avatar", "text", "text", "text"]
+
+
+}
 class channelsMgmtHeaders {
 
-    cols = ["status", "name",  "channel", "user"]
+    // Channels don't carry their assigned accounts yet, so there is no user column to fill.
+    cols = ["status", "name",  "channel"]
 
     // cellWidths = ["40px", "40px", "50px", "1fr", "50px", "1fr", "50px", "1fr", "50px", "1fr", "30px", "30px"]
-    cellWidths = ["50px", "1fr", "50px", "1fr", "50px", "1fr", "50px", "1fr"]
+    cellWidths = ["50px", "1fr", "50px", "1fr", "50px", "1fr"]
 
-    types = ["toggle", "text", "iconText",  "multipleAvatar"]
+    types = ["toggle", "text", "iconText"]
 
 
 }
@@ -97,6 +110,9 @@ export class tableFactory {
         switch (type) {
             case 'userMgmt':
                 this.headers = new userMgmtHeaders();
+                break;
+            case 'accountsMgmt':
+                this.headers = new accountsMgmtHeaders();
                 break;
             case 'channelsMgmt':
                 this.headers = new channelsMgmtHeaders();

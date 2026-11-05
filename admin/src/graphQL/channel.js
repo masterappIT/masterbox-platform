@@ -12,7 +12,28 @@ query GetUserSubscribedChannels {
     platform
     name
     channel_id
+    enabled
   }
+}
+ `;
+
+// Switches a channel on or off for the whole company.
+export const SET_CHANNEL_ENABLED = gql`
+
+mutation SetChannelEnabled($channelId: ID!, $enabled: Boolean!) {
+  setChannelEnabled(channel_id: $channelId, enabled: $enabled) {
+    channel_id
+    enabled
+  }
+}
+ `;
+
+
+// Where to send the browser to connect Meta channels to the signed-in account's company.
+export const CREATE_META_CONNECT_URL = gql`
+
+mutation CreateMetaConnectUrl($returnUrl: String!) {
+  createMetaConnectUrl(return_url: $returnUrl)
 }
  `;
 

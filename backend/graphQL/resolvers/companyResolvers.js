@@ -1,9 +1,23 @@
 import { ApolloError } from 'apollo-server-errors'
 import request from 'request';
-import '../../controller/meta.js'
+import { createConnectUrl } from '../../controller/meta.js'
 import { prisma } from '../../lib/db/prisma.js';
 import { errorGenerator } from "../../utils/errorHandler.js";
 import { requireAdmin } from '../../middleware/auth.js';
+
+// Channel tokens are only for the server's calls to the platforms.
+const publicAccessInfo = ({ access_token, user_access_token, ...accessInfo } = {}) => accessInfo;
+
+// Same origins the backend accepts browser requests from, so a connect link can only return to the admin.
+const isAdminOrigin = (url) => {
+    try {
+        const { origin } = new URL(url);
+        const allowed = (process.env.CORS_ALLOWED_ORIGINS || '').split(',').map((value) => value.trim());
+        return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) || allowed.includes(origin);
+    } catch {
+        return false;
+    }
+};
 
 const companyView = (company) => company && ({
     _id: company.id,
@@ -22,7 +36,7 @@ const companyView = (company) => company && ({
     channels: company.channels?.map(channel => ({
         platform: channel.platform,
         name: channel.name,
-        access_info: JSON.stringify(channel.accessInfo),
+        access_info: JSON.stringify(publicAccessInfo(channel.accessInfo || {})),
         info: JSON.stringify(channel.info),
     })),
     labels: company.labels?.map(label => label.value),
@@ -31,6 +45,16 @@ const companyView = (company) => company && ({
 
 export default {
     Mutation: {
+        createMetaConnectUrl(_, { return_url }, context) {
+            const account = requireAdmin(context);
+            if (!isAdminOrigin(return_url)) throw new ApolloError('Invalid return_url', 'BAD_USER_INPUT');
+            try {
+                return createConnectUrl(account, return_url);
+            } catch (error) {
+                throw new ApolloError(error.message, 'META_NOT_CONFIGURED');
+            }
+        },
+
         async registerCompany(_, { CompanyRegisterInput: { chinese_name, english_name, email, country, mobile } }) {
             try {
                 const newCompany = await prisma.company.create({

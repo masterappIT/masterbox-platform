@@ -22,6 +22,7 @@ const accountView = (account, tokens = {}) => account && ({
     role: account.role,
     permissions: account.permissions,
     info: account.userInfo,
+    enabled: account.enabled,
     token: tokens.token,
     refreshToken: tokens.refreshToken,
 });
@@ -123,12 +124,14 @@ export default {
             const admin = scopedAccountId(context);
             const existing = await prisma.account.findUnique({ where: { id: _id } });
             if (!existing || existing.companyId !== admin.company_id) throw new ApolloError('Account not found', 'NOT_FOUND');
+            if (input.enabled === false && existing.id === admin.account_id) throw new ApolloError('不能停用自己的帳號', 'BAD_USER_INPUT');
             const data = Object.fromEntries(Object.entries({
                 email: input.email?.toLowerCase(),
                 password: input.password ? await bcrypt.hash(input.password, 10) : undefined,
                 role: input.role,
                 permissions: input.permissions ? permissionsValue(input.permissions) : undefined,
                 userInfo: input.user_info !== undefined ? parseJsonInput(input.user_info, 'user_info') : undefined,
+                enabled: input.enabled ?? undefined,
             }).filter(([, value]) => value !== undefined));
             try {
                 return accountView(await prisma.account.update({ where: { id: _id }, data }));
@@ -153,6 +156,7 @@ export default {
             if (!existAccount || !(await bcrypt.compare(password, existAccount.password))) {
                 throw new ApolloError('Incorrect email or password', 'INVALID_CREDENTIALS');
             }
+            if (!existAccount.enabled) throw new ApolloError('This account has been disabled', 'ACCOUNT_DISABLED');
             return accountView(existAccount, issueTokens(existAccount));
         },
 
@@ -164,6 +168,7 @@ export default {
             }
             const account = await prisma.account.findUnique({ where: { id: account_id } });
             if (!account || account.companyId !== company_id) throw new ApolloError('Account not found', 'UNAUTHENTICATED');
+            if (!account.enabled) throw new ApolloError('This account has been disabled', 'UNAUTHENTICATED');
             return accountView(account, issueTokens(account));
         },
 

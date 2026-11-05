@@ -22,6 +22,7 @@ export default async (context) => {
         // rather than a client-controlled or stale JWT claim.
         const accountRecord = await prisma.account.findUnique({ where: { id: accountId } });
         if (!accountRecord) throw new AuthenticationError('Invalid account');
+        if (!accountRecord.enabled) throw new AuthenticationError('Account disabled');
 
         return {
             isAuth: true,

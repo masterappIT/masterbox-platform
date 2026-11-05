@@ -18,6 +18,7 @@ export default gql`
     sentAt: DateTime
     isMine: Boolean
     inbound: Boolean
+    delivery_error: String
   }
   type ChatRoomUser {
     id: String
@@ -40,6 +41,7 @@ export default gql`
     channel_id: ID!
     platform: String!
     name: String!
+    enabled: Boolean!
   }
   input MessageInput {
     to_chat_room_id: String
@@ -53,6 +55,7 @@ export default gql`
   type Mutation {
     appSendMessage(MessageInput: MessageInput): Message
     markMessageRead(messageId: ID!): Message
+    setChannelEnabled(channel_id: ID!, enabled: Boolean!): SubscribedChannel!
   }
   type Query {
     Message: Message
