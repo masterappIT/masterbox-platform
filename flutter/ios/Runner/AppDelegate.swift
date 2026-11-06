@@ -128,7 +128,7 @@ final class PushBridge {
   private func handle(_ call: FlutterMethodCall, _ reply: @escaping FlutterResult) {
     switch call.method {
     case "requestPermission":
-      UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in
+      UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
         DispatchQueue.main.async { reply(granted) }
       }
     case "getToken":
@@ -138,6 +138,14 @@ final class PushBridge {
       dartListening = true
       reply(waitingTap)
       waitingTap = nil
+    case "setBadge":
+      let count = max(call.arguments as? Int ?? 0, 0)
+      if #available(iOS 16.0, *) {
+        UNUserNotificationCenter.current().setBadgeCount(count) { _ in DispatchQueue.main.async { reply(nil) } }
+      } else {
+        UIApplication.shared.applicationIconBadgeNumber = count
+        reply(nil)
+      }
     case "stop":
       UIApplication.shared.unregisterForRemoteNotifications()
       lastToken = nil

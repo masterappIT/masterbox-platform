@@ -178,6 +178,24 @@ describe('conversations in the database', { skip: !testDatabase && 'set TEST_DAT
     assert.ok(unreadForB.rooms.some(({ id }) => id === room.id));
   });
 
+  test('the unread total counts conversations, for each account in its own channels', async () => {
+    const room = await roomOf(`unread-${run}`);
+    const totalB = await conversations.countUnreadRooms(agentB);
+    // A has read this one; otherwise both see the same conversations.
+    assert.equal(await conversations.countUnreadRooms(agentA), totalB - 1);
+    assert.equal(await conversations.countUnreadRooms(outsider), 0);
+
+    await conversations.markRoomRead(agentB, room);
+    assert.equal(await conversations.countUnreadRooms(agentB), totalB - 1);
+
+    // Two messages in one conversation count it once.
+    const customer = { id: 'wa-customer', name: '陳小姐' };
+    for (const text of ['還在嗎', '急件']) await inbound(`wa-${run}`, 'whatsapp', `unread-${run}`, { id: randomUUID(), message: { body: text } }, customer);
+    assert.equal(await conversations.countUnreadRooms(agentB), totalB);
+    await conversations.markRoomRead(agentA, room);
+    await conversations.markRoomRead(agentB, room);
+  });
+
   test('messages page back to the oldest without gaps or repeats', async () => {
     const room = await prisma.chatRoom.create({ data: { companyId: ids.company, platform: 'fb', channelId: ids.fb, chatRoomId: `history-${run}`, users: [] } });
     const at = nextTime();

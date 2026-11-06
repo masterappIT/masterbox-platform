@@ -5,7 +5,7 @@ import { handleSendMessage, messageView, publishMessage, SEND_MESSAGE, listWhats
 import { withAuth, requireAdmin } from '../../middleware/auth.js';
 import {
   findAccountRoom, roomViews, listRooms, listMessages, markRoomRead, companyTags, addRoomTag, removeRoomTag,
-  assignRoom, assignableAgents, publishRoom, CHAT_ROOM_UPDATED,
+  assignRoom, assignableAgents, publishRoom, countUnreadRooms, CHAT_ROOM_UPDATED,
 } from '../../lib/messaging/conversations.js';
 import { visibleChannelIds, visibleChannels } from '../../lib/messaging/access.js';
 
@@ -174,6 +174,9 @@ export default {
     },
     async chatRoomPage(_, { first, after, filter }, context) {
       return listRooms(signedIn(context), { first, after, filter: filter || {} });
+    },
+    async unreadChatRoomCount(_, __, context) {
+      return countUnreadRooms(signedIn(context));
     },
     async chatRoom(_, { id, chat_room_id, channel_id }, context) {
       const account = signedIn(context);

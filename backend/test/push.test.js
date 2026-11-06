@@ -361,6 +361,31 @@ describe('device tokens and notifications', { skip: !testDatabase && 'set TEST_D
     assert.equal(await resolvers.Query.messageNotifiesMe(null, { chat_room_id: key.chatRoomId, channel_id: key.channelId }, ctx(signedIn(ids.agent))), true);
   });
 
+  test("each phone's icon shows its account's unread conversations, or keeps its number when that can't be counted", async () => {
+    const payloads = new Map();
+    const recording = { send: async (token, payload) => { payloads.set(token, payload); return { ok: true }; } };
+    const unreadFor = async ({ account_id: accountId }) => {
+      if (accountId === ids.admin) throw new Error('database busy');
+      return 4;
+    };
+    const message = { ...customerMessage, companyId: ids.company, recipients: [{ channelId: ids.channel, chatRoomIds: [`psid-${run}`] }] };
+    assert.equal(await notifyCustomerMessage(message, { sender: recording, unreadFor }), 2);
+    assert.equal(payloads.get(phones.phone).aps.badge, 4);
+    assert.equal(payloads.get(phones.phone).aps.alert.body, '請問有貨嗎');
+    assert.equal('badge' in payloads.get(phones.admin).aps, false);
+
+    // Counted for real: the agent hasn't read this conversation's message.
+    const { countUnreadRooms } = await import('../lib/messaging/conversations.js');
+    const stored = await prisma.message.create({
+      data: { companyId: ids.company, platform: 'fb', contents: '請問有貨嗎', recipients: { create: [{ channelId: ids.channel, chatRoomIds: [`psid-${run}`] }] } },
+    });
+    assert.equal(await countUnreadRooms(signedIn(ids.agent)), 1);
+    payloads.clear();
+    await notifyCustomerMessage({ ...message, id: stored.id }, { sender: recording });
+    assert.equal(payloads.get(phones.phone).aps.badge, 1);
+    await prisma.message.delete({ where: { id: stored.id } });
+  });
+
   test("agents' own replies notify nobody", async () => {
     sent.length = 0;
     assert.equal(await notifyCustomerMessage({ ...customerMessage, createdBy: ids.agent, companyId: ids.company, recipients: [{ channelId: ids.channel, chatRoomIds: [`psid-${run}`] }] }, { sender }), 0);
