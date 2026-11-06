@@ -680,12 +680,16 @@ class MainShell extends StatefulWidget {
 }
 
 class _MainShellState extends State<MainShell> {
+  /// A notice can't wait as long as a page can for its data.
+  static const _noticeCheckTimeout = Duration(seconds: 5);
+
   int index = 0;
 
   StreamSubscription<ChatMessage>? _newMessages;
   StreamSubscription<String>? _tappedNotifications;
   StreamSubscription<ForegroundPush>? _foregroundPushes;
   final _announced = <String>{};
+  final _checkedForNotice = <String>{};
 
   bool get _isAdmin => widget.graphQL.account?.isAdmin == true;
 
@@ -716,20 +720,45 @@ class _MainShellState extends State<MainShell> {
   }
 
   /// A new message while the app is open, unless the settings page's in-app
-  /// switch is off. The live connection usually brings it first.
+  /// switch is off. The live connection usually brings it first, and brings it
+  /// to everyone in the channel, so the server says whether it's for this
+  /// account. The conversation list and unread counts don't depend on that.
   Future<void> _announce(ChatMessage message) async {
     if (message.isMine || message.roomId == widget.graphQL.openRoomId) return;
     // A message is sent again whenever it changes, such as being read.
-    if (!_announced.add(message.id)) return;
+    if (_announced.contains(message.id) || !_checkedForNotice.add(message.id)) {
+      return;
+    }
+    if (!await _isForMe(message) || !mounted) return;
+    // While asking, it may have been opened, or shown as a notification.
+    if (message.roomId == widget.graphQL.openRoomId ||
+        !_announced.add(message.id)) {
+      return;
+    }
     await _showNotice(
       message.text.isEmpty ? '傳來一則附件' : message.text,
       () => _openRoom(chatRoomId: message.roomId, channelId: message.channelId),
     );
   }
 
+  /// When the server can't say, the notice shows: telling someone too many
+  /// beats the agent of the conversation missing it.
+  Future<bool> _isForMe(ChatMessage message) async {
+    final (chatRoomId, channelId) = (message.roomId, message.channelId);
+    if (chatRoomId == null || channelId == null) return true;
+    try {
+      return await widget.graphQL
+          .messageNotifiesMe(chatRoomId: chatRoomId, channelId: channelId)
+          .timeout(_noticeCheckTimeout);
+    } catch (_) {
+      return true;
+    }
+  }
+
   /// The same message as a notification. Phones don't show notifications while
   /// the app is open, and this one still arrives when the live connection is
-  /// down. The message id keeps the two from showing twice.
+  /// down. The server only sends it to the accounts it's for. The message id
+  /// keeps the two from showing twice.
   Future<void> _announcePush(ForegroundPush push) async {
     if (push.chatRoomId != null &&
         push.chatRoomId == widget.graphQL.openRoomId) {

@@ -118,6 +118,7 @@ Map<String, Object?> _backend({
     },
     'Ping': {'__typename': 'Query'},
     'PushNotificationsAvailable': {'pushNotificationsAvailable': false},
+    'MessageNotifiesMe': {'messageNotifiesMe': true},
   };
 }
 
@@ -960,6 +961,241 @@ void main() {
         client.foreground.add(push);
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
+        expect(find.byType(SnackBar), findsNothing);
+      });
+    });
+
+    group('a message over the live connection', () {
+      final message = _message('m9', '還有貨嗎', ago: Duration.zero);
+      const notice = '新訊息：還有貨嗎';
+
+      Future<void> settleNotice(WidgetTester tester) async {
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+
+      testWidgets('tells the account the server says it is for', (
+        tester,
+      ) async {
+        final app = await _open(tester, _backend(), openChat: false);
+        app.sockets.last.receiveMessage(message);
+        await settleNotice(tester);
+        expect(find.text(notice), findsOneWidget);
+        expect(app.backend.named('MessageNotifiesMe').single.variables, {
+          'chatRoomId': 'psid-1',
+          'channelId': 'channel-1',
+        });
+      });
+
+      testWidgets('stays quiet for someone else, but the list still updates', (
+        tester,
+      ) async {
+        final app = await _open(tester, {
+          ..._backend(),
+          'MessageNotifiesMe': {'messageNotifiesMe': false},
+        });
+        app.sockets.last.receiveMessage(message);
+        await settleNotice(tester);
+        expect(find.byType(SnackBar), findsNothing);
+        expect(find.text('還有貨嗎'), findsOneWidget);
+        expect(find.text('1'), findsOneWidget);
+      });
+
+      testWidgets(
+        'asks again for each message, as the agent may have changed',
+        (tester) async {
+          var forMe = true;
+          final app = await _open(tester, {
+            ..._backend(),
+            'MessageNotifiesMe': (Map<String, dynamic> _) => {
+              'messageNotifiesMe': forMe,
+            },
+          }, openChat: false);
+
+          app.sockets.last.receiveMessage(message);
+          await settleNotice(tester);
+          expect(find.text(notice), findsOneWidget);
+
+          forMe = false;
+          app.sockets.last.receiveMessage(
+            _message('m10', '第二則', ago: Duration.zero),
+          );
+          await settleNotice(tester);
+          expect(find.text('新訊息：第二則'), findsNothing);
+
+          forMe = true;
+          app.sockets.last.receiveMessage(
+            _message('m11', '第三則', ago: Duration.zero),
+          );
+          // It replaces the first notice, which has to get out of the way.
+          await tester.pumpAndSettle();
+          expect(find.text('新訊息：第三則'), findsOneWidget);
+        },
+      );
+
+      testWidgets('goes by the server, not the agent the app last saw', (
+        tester,
+      ) async {
+        final someoneElses = _room()
+          ..['assignee'] = {'id': 'someone-else', 'name': '別人'};
+        final app = await _open(
+          tester,
+          _backend(rooms: [someoneElses]),
+          openChat: false,
+        );
+        app.sockets.last.receiveMessage(message);
+        await settleNotice(tester);
+        expect(find.text(notice), findsOneWidget);
+      });
+
+      testWidgets('asks once for a message that is sent again', (tester) async {
+        final app = await _open(tester, {
+          ..._backend(),
+          'MessageNotifiesMe': {'messageNotifiesMe': false},
+        }, openChat: false);
+        app.sockets.last.receiveMessage(message);
+        await settleNotice(tester);
+        app.sockets.last.receiveMessage(message);
+        await settleNotice(tester);
+        expect(app.backend.named('MessageNotifiesMe'), hasLength(1));
+      });
+
+      testWidgets('tells the account when the server can\'t say', (
+        tester,
+      ) async {
+        final app = await _open(tester, {
+          ..._backend(),
+          'MessageNotifiesMe': const FakeError('down', status: 500),
+        }, openChat: false);
+        app.sockets.last.receiveMessage(message);
+        await settleNotice(tester);
+        expect(find.text(notice), findsOneWidget);
+      });
+
+      testWidgets('tells the account when the server is too slow to answer', (
+        tester,
+      ) async {
+        final answer = Completer<Map<String, Object?>>();
+        final app = await _open(tester, {
+          ..._backend(),
+          'MessageNotifiesMe': (Map<String, dynamic> _) => answer.future,
+        }, openChat: false);
+        app.sockets.last.receiveMessage(message);
+        await settleNotice(tester);
+        expect(find.text(notice), findsNothing);
+        await tester.pump(const Duration(seconds: 5));
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(find.text(notice), findsOneWidget);
+        answer.complete({'messageNotifiesMe': true});
+        await tester.pump();
+      });
+
+      testWidgets('tells the account when the message names no channel', (
+        tester,
+      ) async {
+        final app = await _open(tester, _backend(), openChat: false);
+        app.sockets.last.receiveMessage({...message}..remove('channel_id'));
+        await settleNotice(tester);
+        expect(find.text(notice), findsOneWidget);
+        expect(app.backend.named('MessageNotifiesMe'), isEmpty);
+      });
+
+      testWidgets('a notification shows without asking the server', (
+        tester,
+      ) async {
+        final client = _FakePush();
+        final app = await _open(
+          tester,
+          withPush(_backend()),
+          push: client,
+          openChat: false,
+        );
+        client.foreground.add(
+          const ForegroundPush(
+            messageId: 'm9',
+            roomId: 'room-row-1',
+            body: '嗨',
+          ),
+        );
+        await settleNotice(tester);
+        expect(find.text('新訊息：嗨'), findsOneWidget);
+        expect(app.backend.named('MessageNotifiesMe'), isEmpty);
+      });
+
+      testWidgets(
+        'a notification still shows if the conversation changed hands first',
+        (tester) async {
+          final client = _FakePush();
+          final app = await _open(
+            tester,
+            {
+              ...withPush(_backend()),
+              'MessageNotifiesMe': {'messageNotifiesMe': false},
+            },
+            push: client,
+            openChat: false,
+          );
+          app.sockets.last.receiveMessage(message);
+          await settleNotice(tester);
+          expect(find.byType(SnackBar), findsNothing);
+          // The server sent it while the conversation was still this account's.
+          client.foreground.add(
+            const ForegroundPush(
+              messageId: 'm9',
+              roomId: 'room-row-1',
+              body: '還有貨嗎',
+            ),
+          );
+          await settleNotice(tester);
+          expect(find.text(notice), findsOneWidget);
+        },
+      );
+
+      testWidgets('shows once when a notification lands while asking', (
+        tester,
+      ) async {
+        final answer = Completer<Map<String, Object?>>();
+        final client = _FakePush();
+        final app = await _open(
+          tester,
+          {
+            ...withPush(_backend()),
+            'MessageNotifiesMe': (Map<String, dynamic> _) => answer.future,
+          },
+          push: client,
+          openChat: false,
+        );
+        app.sockets.last.receiveMessage(message);
+        await settleNotice(tester);
+        client.foreground.add(
+          const ForegroundPush(
+            messageId: 'm9',
+            roomId: 'room-row-1',
+            body: '從通知來',
+          ),
+        );
+        await settleNotice(tester);
+        expect(find.text('新訊息：從通知來'), findsOneWidget);
+        answer.complete({'messageNotifiesMe': true});
+        await settleNotice(tester);
+        expect(find.text(notice), findsNothing);
+        expect(find.text('新訊息：從通知來'), findsOneWidget);
+      });
+
+      testWidgets('stays quiet if the conversation was opened while asking', (
+        tester,
+      ) async {
+        final answer = Completer<Map<String, Object?>>();
+        final app = await _open(tester, {
+          ..._backend(),
+          'MessageNotifiesMe': (Map<String, dynamic> _) => answer.future,
+        });
+        app.sockets.last.receiveMessage(message);
+        await settleNotice(tester);
+        await tester.tap(find.text('小美'));
+        await tester.pumpAndSettle();
+        answer.complete({'messageNotifiesMe': true});
+        await settleNotice(tester);
         expect(find.byType(SnackBar), findsNothing);
       });
     });

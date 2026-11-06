@@ -317,6 +317,50 @@ describe('device tokens and notifications', { skip: !testDatabase && 'set TEST_D
     await prisma.chatRoom.update({ where: { id: ids.room }, data: { assigneeId: null, assignedAt: null } });
   });
 
+  test('an open app tells the same accounts a notification reaches, as the conversation changes hands', async () => {
+    const { messageNotifiesAccount } = await import('../lib/push/notifications.js');
+    const key = { chatRoomId: `psid-${run}`, channelId: ids.channel };
+    const told = async () => {
+      const entries = await Promise.all(['admin', 'agent', 'outsider'].map(async name => [name, await messageNotifiesAccount(signedIn(ids[name]), key)]));
+      return entries.filter(([, yes]) => yes).map(([name]) => name);
+    };
+    const assignTo = assigneeId => prisma.chatRoom.update({ where: { id: ids.room }, data: { assigneeId, assignedAt: assigneeId && new Date() } });
+    const phoneOf = { admin: phones.admin, agent: phones.phone };
+    const notified = async () => {
+      sent.length = 0;
+      await notify();
+      return [...sent].sort();
+    };
+    const expectBoth = async (names) => {
+      assert.deepEqual(await told(), names);
+      assert.deepEqual(await notified(), names.map(name => phoneOf[name]).sort());
+    };
+
+    await expectBoth(['admin', 'agent']);
+    await assignTo(ids.agent);
+    await expectBoth(['agent']);
+    await assignTo(ids.admin);
+    await expectBoth(['admin']);
+    await assignTo(null);
+    await expectBoth(['admin', 'agent']);
+
+    // An agent who lost the channel no longer holds the conversation back from everyone else.
+    await assignTo(ids.agent);
+    await prisma.accountChannel.deleteMany({ where: { accountId: ids.agent, channelId: ids.channel } });
+    await expectBoth(['admin']);
+    await prisma.accountChannel.create({ data: { accountId: ids.agent, channelId: ids.channel } });
+    await assignTo(null);
+  });
+
+  test('a conversation not stored yet tells the channel, and asking takes a signed-in account', async () => {
+    const { messageNotifiesAccount } = await import('../lib/push/notifications.js');
+    const key = { chatRoomId: `new-${run}`, channelId: ids.channel };
+    assert.equal(await messageNotifiesAccount(signedIn(ids.agent), key), true);
+    assert.equal(await messageNotifiesAccount(signedIn(ids.outsider), key), false);
+    assert.throws(() => resolvers.Query.messageNotifiesMe(null, { chat_room_id: key.chatRoomId, channel_id: key.channelId }, {}));
+    assert.equal(await resolvers.Query.messageNotifiesMe(null, { chat_room_id: key.chatRoomId, channel_id: key.channelId }, ctx(signedIn(ids.agent))), true);
+  });
+
   test("agents' own replies notify nobody", async () => {
     sent.length = 0;
     assert.equal(await notifyCustomerMessage({ ...customerMessage, createdBy: ids.agent, companyId: ids.company, recipients: [{ channelId: ids.channel, chatRoomIds: [`psid-${run}`] }] }, { sender }), 0);

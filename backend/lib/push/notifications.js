@@ -49,6 +49,22 @@ export const unregisterDevice = async (account, { token }) => {
   await prisma.deviceToken.deleteMany({ where: { token: cleanToken(token), accountId: account.account_id } });
 };
 
+/** The conversation a customer's message belongs to, in the channel it came through. */
+const findMessageRoom = (companyId, channelId, roomKey) => prisma.chatRoom.findFirst({
+  where: { companyId, channelId, OR: [{ chatRoomId: roomKey }, { id: roomKey }] },
+  include: { channel: { select: { name: true } } },
+});
+
+/**
+ * Whether a customer's message in the conversation is for this account right now, by the same rule as its
+ * notifications, so an open app tells the same people a closed one does. A conversation not stored yet has no agent.
+ * @param {{ accountIdsFor?: typeof channelAccountIds }} [deps] - for tests
+ */
+export const messageNotifiesAccount = async (account, { chatRoomId, channelId }, { accountIdsFor = channelAccountIds } = {}) => {
+  const room = await findMessageRoom(account.company_id, channelId, chatRoomId);
+  return notificationRecipients(room ?? {}, await accountIdsFor(account.company_id, channelId)).includes(account.account_id);
+};
+
 /**
  * Tells the phones of the accounts that work in the conversation about a customer's message.
  * Never throws: a notification that can't go out mustn't lose the message.
@@ -61,10 +77,7 @@ export const notifyCustomerMessage = async (message, { sender, accountIdsFor = c
     const recipient = message?.recipients?.[0];
     const roomKey = recipient?.chatRoomIds?.[0];
     if (!push || message?.createdBy || !roomKey || !recipient.channelId) return 0;
-    const room = await prisma.chatRoom.findFirst({
-      where: { companyId: message.companyId, channelId: recipient.channelId, OR: [{ chatRoomId: roomKey }, { id: roomKey }] },
-      include: { channel: { select: { name: true } } },
-    });
+    const room = await findMessageRoom(message.companyId, recipient.channelId, roomKey);
     if (!room) return 0;
     const accountIds = notificationRecipients(room, await accountIdsFor(room.companyId, room.channelId));
     if (!accountIds.length) return 0;

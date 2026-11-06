@@ -1,6 +1,6 @@
 import { ApolloError } from 'apollo-server-errors';
 import { withAuth } from '../../middleware/auth.js';
-import { registerDevice, unregisterDevice, pushConfigured } from '../../lib/push/notifications.js';
+import { registerDevice, unregisterDevice, pushConfigured, messageNotifiesAccount } from '../../lib/push/notifications.js';
 
 const signedIn = ({ account, isAuth }) => {
   withAuth(Boolean(isAuth || account));
@@ -14,6 +14,9 @@ export default {
       signedIn(context);
       return pushConfigured();
     },
+    messageNotifiesMe: (_, { chat_room_id, channel_id }, context) => (
+      messageNotifiesAccount(signedIn(context), { chatRoomId: chat_room_id, channelId: channel_id })
+    ),
   },
   Mutation: {
     async registerPushDevice(_, { token, platform }, context) {

@@ -33,7 +33,7 @@ flutter test
 
 The iPhone gets a notification when a customer writes in a conversation the signed-in account works in: its agent when it is assigned, otherwise everyone with access to the channel. Tapping it opens the conversation. Signing out, or switching push off in Settings, stops them on that phone.
 
-While the app is open the phone shows nothing itself, so the app shows a notice with a link to the conversation, unless that conversation is on screen or the in-app switch in Settings is off. In the background or closed, the phone shows the notification and tapping it opens the conversation.
+While the app is open the phone shows nothing itself, so the app shows a notice with a link to the conversation, unless that conversation is on screen or the in-app switch in Settings is off. It goes to the same people as a notification: the app asks the backend (`messageNotifiesMe`) and shows the notice if the backend can't answer. In the background or closed, the phone shows the notification and tapping it opens the conversation.
 
 Notifications go straight to Apple (APNs). The app registers its device token with the backend, which signs in with the APNs key, a `.p8` file mounted into the API container (`APNS_KEY_FILE`, see `backend/.env.example`). The key is never in this repository, which is public, or in the image. Without it the API logs `Push notifications are off` and the app says the server has no push set up.
 

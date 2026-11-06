@@ -55,6 +55,7 @@ class FakeBackend {
     );
     var answer = responses[operation];
     if (answer is Function) answer = answer(variables);
+    if (answer is Future) answer = await answer;
     if (answer is FakeError) {
       return http.Response(
         jsonEncode({

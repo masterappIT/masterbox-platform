@@ -669,6 +669,22 @@ class GraphQLService {
     return data is Map && data['pushNotificationsAvailable'] == true;
   }
 
+  /// Whether a customer's message in this conversation is for this account
+  /// right now, by the rule the server picks who gets a notification with.
+  Future<bool> messageNotifiesMe({
+    required String chatRoomId,
+    required String channelId,
+  }) async {
+    final result = await _request(
+      r'''query MessageNotifiesMe($chatRoomId: String!, $channelId: ID!) {
+      messageNotifiesMe(chat_room_id: $chatRoomId, channel_id: $channelId)
+    }''',
+      {'chatRoomId': chatRoomId, 'channelId': channelId},
+    );
+    final data = result['data'];
+    return !(data is Map && data['messageNotifiesMe'] == false);
+  }
+
   /// [platform] is ios or android.
   Future<void> registerPushDevice(String deviceToken, String platform) async {
     await _request(
