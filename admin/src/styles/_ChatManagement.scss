@@ -46,32 +46,3 @@
 .chat-management-security small { @apply rounded-full bg-bg_secondary px-2 py-1 text-black_secondary; }
 .chat-management-sync { @apply ml-auto; }
 @media (max-width: 640px) { .chat-management-conversation-header { @apply items-start px-4; } .chat-management-actions { @apply flex-wrap justify-end; } .chat-management-status { @apply w-full text-right; } .chat-management-security { @apply flex-wrap gap-2 px-4; } .chat-management-sync { @apply ml-0; } }
-
-// Live inbox
-.chat-management-header-side { @apply flex items-center gap-3 flex-wrap justify-end; }
-.chat-management-status.is-connecting { @apply text-black_secondary; }
-.chat-management-status.is-disconnected { @apply text-red-600; }
-.chat-management-refresh { @apply rounded-lg border border-black_quaternary bg-white px-3 py-1 disabled:opacity-50; font-size: 13px; }
-.chat-management-sidebar { min-height: 0; }
-.chat-management-list { @apply flex-1 min-h-0; max-height: calc(var(--app-height) - 290px); }
-.chat-management-room { @apply relative; }
-.chat-management-room-text { @apply flex-1 min-w-0; }
-.chat-management-room-text strong { @apply block truncate; }
-.chat-management-room-last { @apply truncate; }
-.chat-management-avatar { @apply overflow-hidden; }
-.chat-management-avatar img { @apply h-full w-full object-cover; }
-.chat-management-unread { @apply shrink-0 min-w-[20px] h-[20px] px-[6px] rounded-full bg-primary text-white flex items-center justify-center; font-size: 11px; }
-.chat-management-more { @apply w-full py-2 text-primary; font-size: 13px; }
-.chat-management-conversation { height: calc(var(--app-height) - 220px); min-height: 520px; }
-.chat-management-room-view { @apply h-full; }
-.chat-management-room-view .messenger-room { @apply sm:px-[16px]; }
-.chat-management-header .chat-management-status { @apply font-bold; font-size: 13px; }
-.chat-management-header .chat-management-status.is-connected { @apply text-green-600; }
-.chat-management-header .chat-management-status.is-connecting { @apply text-black_secondary; }
-.chat-management-header .chat-management-status.is-disconnected { @apply text-red-600; }
-
-// Whose conversations the list shows, and who handles each.
-.chat-management-sidebar-head { @apply flex items-center justify-between gap-2 mb-2; }
-.chat-management-sidebar-head label { @apply mb-0; }
-.chat-management-sidebar .chat-management-filter { @apply w-auto max-w-[60%] py-1; font-size: 13px; }
-.chat-management-room-assignee { @apply truncate text-black_tertiary; font-size: 11px; }
