@@ -100,6 +100,46 @@ String pushStateLabel(PushState state) => switch (state) {
   PushState.failed => '推播註冊失敗，稍後會自動重試',
 };
 
+/// A notification that arrived while the app was open. Phones don't show these
+/// themselves then, so the app does.
+class ForegroundPush {
+  const ForegroundPush({
+    this.messageId,
+    this.roomId,
+    this.chatRoomId,
+    this.title,
+    this.body,
+  });
+  final String? messageId;
+
+  /// The conversation's id, for opening it.
+  final String? roomId;
+
+  /// The room id its messages carry, for telling whether it is on screen.
+  final String? chatRoomId;
+  final String? title;
+  final String? body;
+
+  factory ForegroundPush.fromData(
+    Map<String, dynamic> data, {
+    String? title,
+    String? body,
+  }) {
+    String? text(String key) {
+      final value = data[key];
+      return value is String && value.isNotEmpty ? value : null;
+    }
+
+    return ForegroundPush(
+      messageId: text('messageId'),
+      roomId: text('roomId'),
+      chatRoomId: text('chatRoomId'),
+      title: title,
+      body: body,
+    );
+  }
+}
+
 /// What the app needs from the phone's push service; tests pass their own.
 abstract class PushClient {
   /// False on platforms or builds without push.
@@ -113,6 +153,9 @@ abstract class PushClient {
 
   /// The data of notifications tapped while the app was running.
   Stream<Map<String, dynamic>> get onOpened;
+
+  /// Notifications that arrive while the app is open.
+  Stream<ForegroundPush> get onForeground;
 
   /// The data of the notification that launched the app, if one did.
   Future<Map<String, dynamic>?> launchedFrom();
@@ -179,6 +222,15 @@ class FirebasePushClient implements PushClient {
       FirebaseMessaging.onMessageOpenedApp.map((message) => message.data);
 
   @override
+  Stream<ForegroundPush> get onForeground => FirebaseMessaging.onMessage.map(
+    (message) => ForegroundPush.fromData(
+      message.data,
+      title: message.notification?.title,
+      body: message.notification?.body,
+    ),
+  );
+
+  @override
   Future<Map<String, dynamic>?> launchedFrom() async =>
       (await _messaging.getInitialMessage())?.data;
 
@@ -198,12 +250,17 @@ class PushService {
   final _openRoom = StreamController<String>.broadcast();
   StreamSubscription<String>? _tokenRefresh;
   StreamSubscription<Map<String, dynamic>>? _opened;
+  StreamSubscription<ForegroundPush>? _foreground;
+  final _foregroundMessages = StreamController<ForegroundPush>.broadcast();
   String? _registeredToken;
 
   ValueListenable<PushState> get state => _state;
 
   /// Ids of conversations whose notification was tapped.
   Stream<String> get openRoomRequests => _openRoom.stream;
+
+  /// Notifications that arrived while the app was open.
+  Stream<ForegroundPush> get foregroundMessages => _foregroundMessages.stream;
 
   /// Starts with the settings switch's value: registers when it is on, and
   /// opens the conversation of the notification that launched the app.
@@ -221,6 +278,7 @@ class PushService {
       return;
     }
     _opened ??= _client.onOpened.listen(_handleOpened);
+    _foreground ??= _client.onForeground.listen(_foregroundMessages.add);
     final launched = await _client.launchedFrom().catchError(
       (Object _) => null,
     );
@@ -332,6 +390,8 @@ class PushService {
   void dispose() {
     _tokenRefresh?.cancel();
     _opened?.cancel();
+    _foreground?.cancel();
+    _foregroundMessages.close();
     _openRoom.close();
   }
 }

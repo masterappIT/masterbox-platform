@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.masterbox_flutter"
+    namespace = "com.masterbox.masterappinc"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -15,8 +15,8 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.masterbox_flutter"
+        // The same name as the iOS bundle id; Firebase registers the Android app under it.
+        applicationId = "com.masterbox.masterappinc"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

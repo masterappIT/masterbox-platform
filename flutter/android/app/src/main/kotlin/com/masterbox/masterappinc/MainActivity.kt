@@ -1,4 +1,4 @@
-package com.example.masterbox_flutter
+package com.masterbox.masterappinc
 
 import android.app.NotificationChannel
 import android.app.NotificationManager

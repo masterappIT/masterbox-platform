@@ -684,6 +684,7 @@ class _MainShellState extends State<MainShell> {
 
   StreamSubscription<ChatMessage>? _newMessages;
   StreamSubscription<String>? _tappedNotifications;
+  StreamSubscription<ForegroundPush>? _foregroundPushes;
   final _announced = <String>{};
 
   bool get _isAdmin => widget.graphQL.account?.isAdmin == true;
@@ -695,6 +696,7 @@ class _MainShellState extends State<MainShell> {
     _tappedNotifications = widget.push.openRoomRequests.listen(
       (id) => _openRoom(id: id),
     );
+    _foregroundPushes = widget.push.foregroundMessages.listen(_announcePush);
     // The notification that launched the app, tapped before this was showing.
     final launched = widget.push.takePendingRoom();
     if (launched != null) {
@@ -709,34 +711,56 @@ class _MainShellState extends State<MainShell> {
   void dispose() {
     _newMessages?.cancel();
     _tappedNotifications?.cancel();
+    _foregroundPushes?.cancel();
     super.dispose();
   }
 
-  /// The settings page's in-app notification switch, for new messages while
-  /// the app is open; push notifications cover the time it isn't.
+  /// A new message while the app is open, unless the settings page's in-app
+  /// switch is off. The live connection usually brings it first.
   Future<void> _announce(ChatMessage message) async {
     if (message.isMine || message.roomId == widget.graphQL.openRoomId) return;
     // A message is sent again whenever it changes, such as being read.
     if (!_announced.add(message.id)) return;
+    await _showNotice(
+      message.text.isEmpty ? '傳來一則附件' : message.text,
+      () => _openRoom(chatRoomId: message.roomId, channelId: message.channelId),
+    );
+  }
+
+  /// The same message as a notification. Phones don't show notifications while
+  /// the app is open, and this one still arrives when the live connection is
+  /// down. The message id keeps the two from showing twice.
+  Future<void> _announcePush(ForegroundPush push) async {
+    if (push.chatRoomId != null &&
+        push.chatRoomId == widget.graphQL.openRoomId) {
+      return;
+    }
+    final id = push.messageId;
+    if (id != null && !_announced.add(id)) return;
+    await _showNotice(
+      [?push.title, ?push.body].join('：'),
+      () => _openRoom(id: push.roomId),
+    );
+  }
+
+  Future<void> _showNotice(String text, VoidCallback onOpen) async {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted || prefs.getBool('notifications') == false) return;
-    final text = message.text.isEmpty ? '傳來一則附件' : message.text;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          '新訊息：$text',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        action: SnackBarAction(
-          label: '查看',
-          onPressed: () => _openRoom(
-            chatRoomId: message.roomId,
-            channelId: message.channelId,
+    // The newest message replaces the last. A notice with an action otherwise
+    // stays until tapped, and later ones would wait unseen behind it.
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          persist: false,
+          content: Text(
+            '新訊息：$text',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
+          action: SnackBarAction(label: '查看', onPressed: onOpen),
         ),
-      ),
-    );
+      );
   }
 
   /// Opens a conversation by its id (from a notification) or by the room and

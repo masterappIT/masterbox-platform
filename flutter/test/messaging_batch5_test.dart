@@ -190,6 +190,7 @@ class _FakePush implements PushClient {
   Map<String, dynamic>? launched;
   final opened = StreamController<Map<String, dynamic>>.broadcast();
   final refreshed = StreamController<String>.broadcast();
+  final foreground = StreamController<ForegroundPush>.broadcast();
   var token = 'fcm-1';
   var deleted = 0;
 
@@ -207,6 +208,8 @@ class _FakePush implements PushClient {
   Stream<String> get onTokenRefresh => refreshed.stream;
   @override
   Stream<Map<String, dynamic>> get onOpened => opened.stream;
+  @override
+  Stream<ForegroundPush> get onForeground => foreground.stream;
   @override
   Future<Map<String, dynamic>?> launchedFrom() async => launched;
   @override
@@ -841,6 +844,124 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(ConversationPage), findsNothing);
       expect(find.text('找不到這個對話，或你已沒有這個頻道的權限'), findsOneWidget);
+    });
+
+    group('while the app is open', () {
+      const push = ForegroundPush(
+        messageId: 'm9',
+        roomId: 'room-row-1',
+        chatRoomId: 'psid-1',
+        title: '小美 · 官方粉專',
+        body: '還有貨嗎',
+      );
+      const notice = '新訊息：小美 · 官方粉專：還有貨嗎';
+
+      testWidgets('a notification shows even with the live connection down', (
+        tester,
+      ) async {
+        final client = _FakePush();
+        await _open(
+          tester,
+          withPush(_backend()),
+          push: client,
+          openChat: false,
+        );
+        client.foreground.add(push);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(find.text(notice), findsOneWidget);
+
+        await tester.pump(const Duration(seconds: 1));
+        await tester.tap(find.text('查看'));
+        await tester.pumpAndSettle();
+        expect(find.widgetWithText(AppBar, '小美'), findsOneWidget);
+      });
+
+      testWidgets('a message that also came over the socket shows once', (
+        tester,
+      ) async {
+        final client = _FakePush();
+        final app = await _open(
+          tester,
+          withPush(_backend()),
+          push: client,
+          openChat: false,
+        );
+        app.sockets.last.receiveMessage(
+          _message('m9', '還有貨嗎', ago: Duration.zero),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        client.foreground.add(push);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(find.text('新訊息：還有貨嗎'), findsOneWidget);
+        expect(find.text(notice), findsNothing);
+        // Nothing else is waiting to show after it.
+        await tester.pumpAndSettle(const Duration(seconds: 1));
+        await tester.pump(const Duration(seconds: 5));
+        await tester.pumpAndSettle();
+        expect(find.byType(SnackBar), findsNothing);
+      });
+
+      testWidgets(
+        'the newest message replaces the last notice, which goes away',
+        (tester) async {
+          final client = _FakePush();
+          await _open(
+            tester,
+            withPush(_backend()),
+            push: client,
+            openChat: false,
+          );
+          client.foreground.add(push);
+          await tester.pump();
+          await tester.pump(const Duration(seconds: 1));
+          client.foreground.add(
+            const ForegroundPush(
+              messageId: 'm10',
+              roomId: 'room-row-1',
+              body: '再問一次',
+            ),
+          );
+          await tester.pump();
+          await tester.pumpAndSettle();
+          expect(find.text('新訊息：再問一次'), findsOneWidget);
+          expect(find.text(notice), findsNothing);
+          await tester.pump(const Duration(seconds: 5));
+          await tester.pumpAndSettle();
+          expect(find.byType(SnackBar), findsNothing);
+        },
+      );
+
+      testWidgets('the conversation on screen stays quiet', (tester) async {
+        final client = _FakePush();
+        await _open(tester, withPush(_backend()), push: client);
+        await tester.tap(find.text('小美'));
+        await tester.pumpAndSettle();
+        client.foreground.add(push);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(find.byType(SnackBar), findsNothing);
+      });
+
+      testWidgets('the in-app switch in settings turns them off', (
+        tester,
+      ) async {
+        final client = _FakePush();
+        await _open(
+          tester,
+          withPush(_backend()),
+          push: client,
+          openChat: false,
+        );
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('notifications', false);
+        client.foreground.add(push);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(find.byType(SnackBar), findsNothing);
+      });
     });
 
     testWidgets('signing out stops this phone getting notifications', (

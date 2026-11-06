@@ -46,4 +46,6 @@ flutter build ipa --build-number 17 \
   --dart-define-from-file=firebase-defines.json
 ```
 
+While the app is open the phone shows nothing itself, so the app shows a notice with a link to the conversation, unless that conversation is on screen or the in-app switch in Settings is off. In the background or closed, the phone shows the notification and tapping it opens the conversation. An Android app the user force-stopped gets nothing until it is opened again; that is Android's rule.
+
 The MasterBox Push APNs key only covers production, so iOS notifications arrive in TestFlight and App Store builds, not in builds run from Xcode onto a phone.
