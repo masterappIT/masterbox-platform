@@ -646,7 +646,7 @@
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = YU6GT6HQ8J;
+				DEVELOPMENT_TEAM = YU6GT6HQJ8;
 				INFOPLIST_FILE = MasterBoxLiveActivity/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.masterboxFlutter.MasterBoxLiveActivity;
@@ -662,7 +662,7 @@
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = YU6GT6HQ8J;
+				DEVELOPMENT_TEAM = YU6GT6HQJ8;
 				INFOPLIST_FILE = MasterBoxLiveActivity/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.masterboxFlutter.MasterBoxLiveActivity;
@@ -679,7 +679,7 @@
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = YU6GT6HQ8J;
+				DEVELOPMENT_TEAM = YU6GT6HQJ8;
 				INFOPLIST_FILE = MasterBoxLiveActivity/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.masterboxFlutter.MasterBoxLiveActivity;
