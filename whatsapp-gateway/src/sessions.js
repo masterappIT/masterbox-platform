@@ -40,6 +40,9 @@ export const status = (channelId) => {
 };
 
 const setState = async (session, state, fields = {}) => {
+  // Each step is logged with the seconds since the client started, to see where a slow login waits.
+  const seconds = session.startedAt ? Math.round((Date.now() - session.startedAt) / 1000) : 0;
+  console.info(`[${session.channelId}] ${state} after ${seconds}s${fields.error ? `: ${fields.error}` : ''}`);
   Object.assign(session, { state, updatedAt: now() }, fields);
   const answer = await report(session.channelId, { type: 'status', status: view(session) }).catch((error) => {
     console.error(`[${session.channelId}] status not reported:`, error.message);
@@ -88,7 +91,7 @@ export const start = async (channelId) => {
   if (existing?.client) await destroyClient(existing);
 
   const session = existing || { channelId };
-  Object.assign(session, { client: createClient(channelId), state: 'starting', qr: null, error: null, progress: null, updatedAt: now(), sentIds: new Set() });
+  Object.assign(session, { client: createClient(channelId), state: 'starting', qr: null, error: null, progress: null, updatedAt: now(), startedAt: Date.now(), sentIds: new Set() });
   sessions.set(channelId, session);
   wire(session);
   session.client.initialize().catch(async (error) => {
@@ -128,7 +131,7 @@ const wire = (session) => {
     const answer = await setState(session, 'syncing', { progress: { chats_total: 0, chats_done: 0, messages: 0 } });
     if (answer?.gone || answer?.action) return;
     syncHistory(session).catch(async (error) => {
-      console.error(`[${channelId}] history sync failed:`, error.message);
+      console.error(`[${channelId}] history sync failed:`, error.stack || error.message);
       if (session.state === 'syncing') await setState(session, 'ready', { error: '部分聊天記錄未能同步' });
     });
   });
