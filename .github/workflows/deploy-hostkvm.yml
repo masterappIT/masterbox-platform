@@ -97,6 +97,7 @@ jobs:
             super-admin
           build customer --file flutter/Dockerfile flutter
           build landing --file landing-page/Dockerfile landing-page
+          build whatsapp-gateway --file whatsapp-gateway/Dockerfile whatsapp-gateway
           printf 'DIGESTS=%s\n' "${digests[*]}" >> "$GITHUB_ENV"
 
       - name: Deploy to HostKVM
@@ -125,14 +126,3 @@ jobs:
             https://masterboxapp.masterappinc.com/; do
             curl --fail --silent --show-error --location --max-time 30 "$url" >/dev/null
           done
-
-      # whatsapp-gateway is published but not yet started by the server's deploy script (MasterApp-infra apps/masterbox/),
-      # so it is built after the release and never holds it up. See whatsapp-gateway/README.md for the server setup.
-      - name: Publish whatsapp-gateway image
-        continue-on-error: true
-        run: |
-          set -euo pipefail
-          docker buildx build --platform linux/amd64 --push --provenance=false \
-            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
-            --tag "${IMAGE}:${GITHUB_SHA}-whatsapp-gateway" \
-            --file whatsapp-gateway/Dockerfile whatsapp-gateway

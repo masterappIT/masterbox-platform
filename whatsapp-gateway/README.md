@@ -63,13 +63,12 @@ and start the backend with `WHATSAPP_GATEWAY_URL=http://localhost:4100` and the 
 
 ## Production (HostKVM)
 
-The deploy workflow publishes `ghcr.io/masterappit/masterbox:<sha>-whatsapp-gateway` after each release.
-The server's deploy script (MasterApp-infra, `apps/masterbox/`) still has to run it:
+The deploy workflow builds `ghcr.io/masterappit/masterbox:<sha>-whatsapp-gateway` with the other images and
+passes its digest to the server's deploy script, which runs it as `masterbox-whatsapp-gateway`. The server side is
+in MasterApp-infra: `apps/masterbox/compose.yaml` and `docs/masterbox-deploy.md`.
 
-- one container, on the same internal network as the API, with **no published port**;
-- a persistent volume at `/data/wwebjs` (losing it means every number scans again);
-- about 300–500 MB of memory per connected number, for its Chromium;
-- `WHATSAPP_GATEWAY_SECRET` and `BACKEND_URL` set, and the API given `WHATSAPP_GATEWAY_URL` and the secret;
-- `--shm-size=1g` or `--disable-dev-shm-usage` (already passed) so Chromium doesn't crash.
-
-Until then the admin shows 「尚未設定 WhatsApp 掃碼服務」 when someone tries to connect a number.
+- It is only on the `masterbox-whatsapp` network with the API: no published port, not reachable through Caddy.
+- `WHATSAPP_GATEWAY_SECRET` is in `/srv/apps/masterbox/whatsapp-gateway.env`, read by both the gateway and the API.
+- Logins are kept in `/srv/apps/masterbox/wwebjs`, mounted at `/data/wwebjs`, and survive deploys.
+- Memory is limited to 1.5 GB, about 3 connected numbers at 300–500 MB each; raise `mem_limit` for more.
+- A deploy waits for the gateway's `/health`, and rolls back with the rest of the release if it never answers.
