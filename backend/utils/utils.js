@@ -7,6 +7,7 @@ import { replyContentsOf, replyParts, metaPayload, partContents, storedAttachmen
 import { checkAttachment } from '../lib/storage/attachmentRules.js';
 import { describeUrl } from '../lib/storage/index.js';
 import { storeInboundAttachments } from '../lib/messaging/inbound.js';
+import { messagePreview, encodeCursor } from '../lib/messaging/conversationText.js';
 
 export const errorTypes = {
   MISS_REQUEUED_PRAMS: 'MISS_REQUEUED_PRAMS',
@@ -37,6 +38,8 @@ export const messageView = (message, requestedRoom) => {
     isMine: undefined,
     inbound: !message.createdBy,
     delivery_error: message.deliveryError || null,
+    preview: messagePreview(message.contents, message.encryptionMode),
+    cursor: message.id && message.createdAt ? encodeCursor(message.createdAt, message.id) : null,
   };
 };
 
@@ -223,7 +226,9 @@ export const saveConversationHistory = async (channel, conversations, accountId)
     const room = await findCustomerRoom(channel, chatRoomId, customer);
     const users = usersWithCustomer(room?.users, customer);
     const lastAt = new Date(Math.max(...messages.map(({ sentAt }) => new Date(sentAt).getTime())));
-    if (room && users) await prisma.chatRoom.update({ where: { id: room.id }, data: { users, updatedAt: room.updatedAt } });
+    // A conversation keeps its place unless the import has newer messages.
+    const updatedAt = room && lastAt > room.updatedAt ? lastAt : room?.updatedAt;
+    if (room && (users || updatedAt !== room.updatedAt)) await prisma.chatRoom.update({ where: { id: room.id }, data: { ...(users ? { users } : {}), updatedAt } });
     // A new conversation sorts by its last message, not by when it was imported.
     if (!room) await prisma.chatRoom.create({ data: { companyId: channel.companyId, platform: channel.platform, channelId: channel.id, chatRoomId, users: users || [], createdAt: lastAt, updatedAt: lastAt } });
     const roomId = room?.chatRoomId || room?.id || chatRoomId;

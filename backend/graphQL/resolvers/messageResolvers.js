@@ -3,6 +3,7 @@ import { prisma } from '../../lib/db/prisma.js';
 import { pubsub } from '../../config/redis.js';
 import { handleSendMessage, messageView, publishMessage, SEND_MESSAGE } from '../../utils/utils.js';
 import { withAuth, requireAdmin } from '../../middleware/auth.js';
+import { findAccountRoom, roomViews, listRooms, listMessages, markRoomRead, companyTags, addRoomTag, removeRoomTag } from '../../lib/messaging/conversations.js';
 
 const channelView = channel => ({ channel_id: channel.id, platform: channel.platform, name: channel.name, enabled: channel.enabled });
 
@@ -20,6 +21,28 @@ const validateEncryption = (mode, contents, errorCode = 'SEND_FAILED') => {
 const validateDisappearing = (seconds, errorCode = 'SEND_FAILED') => {
   if (seconds != null && (!Number.isInteger(seconds) || seconds < 1 || seconds > 2592000)) {
     throw new ApolloError('disappearing_after_seconds must be between 1 and 2592000', errorCode);
+  }
+};
+
+// The signed-in account, for the conversation list and everything in it.
+const signedIn = ({ account, isAuth }) => {
+  withAuth(Boolean(isAuth || account));
+  if (!account?.company_id || !account?.account_id) throw new ApolloError('Invalid account', 'UNAUTHENTICATED');
+  return account;
+};
+
+const oneRoomView = async (account, room) => (await roomViews(account, [room.id]))[0];
+
+// Whoever replies has read the conversation. A failure here mustn't make a sent message look unsent.
+const markReadAfterSending = async (account, message) => {
+  const roomKey = message?.recipients?.[0]?.chatRoomIds?.[0];
+  const channelId = message?.recipients?.[0]?.channelId;
+  if (!roomKey || !channelId) return;
+  try {
+    const room = await prisma.chatRoom.findFirst({ where: { companyId: account.company_id, channelId, OR: [{ chatRoomId: roomKey }, { id: roomKey }] } });
+    if (room) await markRoomRead(account, room);
+  } catch (error) {
+    console.log('Read position not saved after sending:', error.message);
   }
 };
 
@@ -59,10 +82,13 @@ export default {
               contents: input.contents, encryptionMode, disappearingAfterSeconds, expiresAt: null, recipients: { create: [{ channelId: room.channelId, chatRoomIds: [room.chatRoomId || room.id] }] } },
             include: { recipients: true },
           });
+          await prisma.chatRoom.update({ where: { id: room.id }, data: { updatedAt: new Date() } });
           await publishMessage(message);
+          await markReadAfterSending(account, message);
           return messageView(message, room.chatRoomId || room.id);
         }
         const message = await handleSendMessage(account.account_id, roomId, input.contents, input.channel_id);
+        await markReadAfterSending(account, message);
         return messageView(message, roomId);
       } catch (error) {
         if (error instanceof ApolloError) throw error;
@@ -78,6 +104,24 @@ export default {
       const updated = await prisma.message.update({ where: { id: message.id }, data: { readAt: message.readAt || readAt, expiresAt: message.readAt || !message.disappearingAfterSeconds ? message.expiresAt : new Date(readAt.getTime() + message.disappearingAfterSeconds * 1000) }, include: { recipients: true } });
       await publishMessage(updated);
       return messageView(updated);
+    },
+    async markChatRoomRead(_, { id, messageId }, context) {
+      const account = signedIn(context);
+      const room = await findAccountRoom(account, { id });
+      await markRoomRead(account, room, messageId);
+      return oneRoomView(account, room);
+    },
+    async addChatRoomTag(_, { id, name }, context) {
+      const account = signedIn(context);
+      const room = await findAccountRoom(account, { id });
+      await addRoomTag(account, room, name);
+      return oneRoomView(account, room);
+    },
+    async removeChatRoomTag(_, { id, tagId }, context) {
+      const account = signedIn(context);
+      const room = await findAccountRoom(account, { id });
+      await removeRoomTag(account, room, tagId);
+      return oneRoomView(account, room);
     },
   },
   Query: {
@@ -95,8 +139,30 @@ export default {
     async chatRooms(_, __, { account, isAuth }) {
       withAuth(Boolean(isAuth || account));
       if (!account?.company_id) return [];
-      const rooms = await prisma.chatRoom.findMany({ where: { companyId: account.company_id }, orderBy: { updatedAt: 'desc' } });
-      return rooms.map(room => ({ id: room.id, title: room.chatRoomId || room.id, platform: room.platform, channel_id: room.channelId, chat_room_id: room.chatRoomId || room.id, users: Array.isArray(room.users) ? room.users : [], updatedAt: room.updatedAt }));
+      const rooms = await prisma.chatRoom.findMany({ where: { companyId: account.company_id }, orderBy: { updatedAt: 'desc' }, select: { id: true } });
+      // Older clients read the platform id as the title.
+      return (await roomViews(account, rooms.map(({ id }) => id))).map(room => ({ ...room, title: room.chat_room_id }));
+    },
+    async chatRoomPage(_, { first, after, filter }, context) {
+      return listRooms(signedIn(context), { first, after, filter: filter || {} });
+    },
+    async chatRoom(_, { id, chat_room_id, channel_id }, context) {
+      const account = signedIn(context);
+      try {
+        return await oneRoomView(account, await findAccountRoom(account, { id, chatRoomId: chat_room_id, channelId: channel_id }));
+      } catch (error) {
+        if (error.extensions?.code === 'NOT_FOUND') return null;
+        throw error;
+      }
+    },
+    async messagePage(_, { id, first, before, after }, context) {
+      const account = signedIn(context);
+      const room = await findAccountRoom(account, { id });
+      const page = await listMessages(account, room, { first, before, after });
+      return { ...page, messages: page.messages.map(message => messageView(message, room.chatRoomId || room.id)) };
+    },
+    async customerTags(_, __, context) {
+      return companyTags(signedIn(context));
     },
     async messages(_, { conversationId, roomId }, { account, isAuth }) {
       withAuth(Boolean(isAuth || account));

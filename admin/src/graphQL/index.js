@@ -39,6 +39,17 @@ const httpLink = createHttpLink({
 //     ) : null;
 
 
+// Live messages only arrive while the socket is up. Each time it connects again, listeners
+// fetch what was sent in between.
+const reconnectListeners = new Set();
+let socketConnections = 0;
+
+/** Calls listener after every reconnect of the live connection, not the first connect. @returns a function that stops it */
+export const onSocketReconnected = (listener) => {
+    reconnectListeners.add(listener);
+    return () => reconnectListeners.delete(listener);
+};
+
 const wsLink =
     typeof window !== "undefined"
         ? new GraphQLWsLink(
@@ -48,7 +59,16 @@ const wsLink =
                     const token = getAccessToken();
                     return token ? { authorization: "Bearer " + token } : {};
                 },
-
+                // The library reconnects on its own after a dropped connection; keep trying, at most 10 seconds apart.
+                // A rejected sign-in still ends the subscription, so the session can be refreshed first.
+                retryAttempts: Infinity,
+                retryWait: (retries) => new Promise((resolve) => setTimeout(resolve, Math.min(1000 * 2 ** retries, 10000) + Math.random() * 1000)),
+                on: {
+                    connected: () => {
+                        socketConnections += 1;
+                        if (socketConnections > 1) reconnectListeners.forEach((listener) => listener());
+                    },
+                },
             })
         )
         : wsUri;

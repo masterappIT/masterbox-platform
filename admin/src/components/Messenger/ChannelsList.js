@@ -6,9 +6,12 @@ import ContentText from '../../stories/components/ContentText';
 import ListItem from '../../stories/components/ListItem';
 import Icon from '../../stories/components/Icon';
 import Headline from '../../stories/components/Headline';
+import { useTranslation } from 'react-i18next';
 
 
-function ChannelsList({ setChannelData, channelList, setChannelListVisitable, channelListVisitable, isMobile,setSelectedChatroomID }) {
+// allChannels adds a first choice for every channel, chosen as -1.
+function ChannelsList({ setChannelData, channelList, setChannelListVisitable, channelListVisitable, isMobile,setSelectedChatroomID, allChannels }) {
+  const { t } = useTranslation()
 
   const handleOnClick = (i) => {
     setChannelListVisitable(false);
@@ -17,10 +20,16 @@ function ChannelsList({ setChannelData, channelList, setChannelListVisitable, ch
   }
   let channelListHeight = ''
   // let channelListHeight= `calc(${84 * (channelList.length) + 20}px)` 
-  isMobile ? (channelListHeight = `calc(${64 * (channelList.length) + 20}px)`) : (channelListHeight = `calc(${64 * (channelList.length) + 20}px)`)
+  const choices = channelList.length + (allChannels ? 1 : 0)
+  channelListHeight = `calc(${64 * choices + 20}px)`
 
   return (
     <div className={`messenger-list-channel-others ${channelListVisitable ? '' : 'messenger-list-hidden'} ${isMobile ? 'messenger-list-channel-others-mobile' : ''}`} style={channelListVisitable ? { height: channelListHeight } : { height: '0px' }}>
+      {allChannels && channelList.length > 0 && (
+        <div onClick={() => handleOnClick(-1)}>
+          <ChatroomItem title={t('all_channels')} isMobile={isMobile} name={t('all_channels')} contentShow={false} />
+        </div>
+      )}
       {(channelList&&channelList.length) ?channelList.map(({  channel_id, platform, name }, i) => (
         <div key={i} onClick={() => handleOnClick(i)} >
           <ChatroomItem title={name}

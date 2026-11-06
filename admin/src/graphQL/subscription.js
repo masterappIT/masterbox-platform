@@ -1,4 +1,5 @@
 import { gql, } from '@apollo/client';
+import { MESSAGE_FIELDS } from './messages';
 
 
 
@@ -11,14 +12,7 @@ const SUBSCRIBE_MESSAGE = gql`
 
 subscription MessageEvents {
   sendMessage {
-    _id
-    contents
-    platform
-    to_chat_room_id
-    channel_id
-    sentAt
-    inbound
-    delivery_error
+    ${MESSAGE_FIELDS}
   }
 }
 

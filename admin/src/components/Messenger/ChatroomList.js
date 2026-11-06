@@ -1,92 +1,118 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useRef } from 'react'
 import PropTypes from 'prop-types'
-import List from '../../stories/components/List';
 import ChatroomItem from '../../stories/components/ChatroomItem';
 import ContentText from '../../stories/components/ContentText';
-import ListItem from '../../stories/components/ListItem';
 import Icon from '../../stories/components/Icon';
-import Headline from '../../stories/components/Headline';
 import Checkbox from '../../stories/components/Checkbox';
 import { useTranslation } from "react-i18next";
+import { listTimeLabel } from '../../utils/messageTime';
 
+// Within this distance of the end of the list, the next page starts loading.
+const LOAD_MORE_THRESHOLD_PX = 200;
 
-function ChatroomList({ isMobile, chatRoomsList, componentHandler, setCurrentComponent, selectChatroom, setSelectedConversations, unClick, emptyContent }) {
+export const customerOfRoom = ({ customer, users, channel_id }) => {
+  const user = (users || []).find(({ id }) => id !== channel_id)
+  const name = customer?.name || `${user?.first_name || ''}${user?.last_name || ''}`.trim()
+  return { id: customer?.id || user?.id, name, avatar: customer?.avatar || user?.avatar }
+}
+
+function ChatroomList({ isMobile, chatRoomsList, componentHandler, setCurrentComponent, selectChatroom, emptyContent, filterBar, onLoadMore, hasMore, loadingMore, loadMoreFailed, showUnread, selectedId }) {
   const currentComponent = componentHandler.current;
+  const listRef = useRef(null);
+  const { t, i18n } = useTranslation();
 
-  const { t } = useTranslation();
-
-  const handleOnClick = (id) => {
-    // if (!unClick) {
+  const handleOnClick = (room) => {
     setCurrentComponent('conversations')
-    selectChatroom(id)
-    // }
-
+    selectChatroom(room.chat_room_id, room)
   }
 
+  const loadMoreIfNearEnd = () => {
+    const list = listRef.current;
+    if (!list || !onLoadMore || !hasMore || loadingMore || loadMoreFailed) return;
+    if (list.scrollHeight - list.scrollTop - list.clientHeight <= LOAD_MORE_THRESHOLD_PX) onLoadMore();
+  }
+
+  // A first page shorter than the list area can't be scrolled, so keep loading until it fills.
+  useEffect(() => { loadMoreIfNearEnd() }, [chatRoomsList, hasMore, loadingMore]);
 
   return (
     <>
-      <label className={`${isMobile && currentComponent === 'messenger' ? 'mt-[45px]' : ''} container  flex py-[14px] px-[24px] space-x-[8px] bg-bg_secondary`}>
-        <Checkbox content={t('show_unread_only')} labelColor='black-primary' />
-      </label>
-      {/* <ListItem endElement={<Icon
-        customStyles={`${arrowRotate ? 'rotate-180 transition-all duration-250' : 'rotate-0 transition-all duration-250'}`}
-        title='uparrow'
-        size='small'
-        onClick={chatRoomsList.andler}
-      />}
-        customStyles='h-[55px] '
-      >
-        <Headline title='用戶' customStyles='flex-1' />
-      </ListItem> */}
+      <div className={`${isMobile && currentComponent === 'messenger' ? 'mt-[45px]' : ''}`}>
+        {filterBar || (
+          <label className='container flex py-[14px] px-[24px] space-x-[8px] bg-bg_secondary'>
+            <Checkbox content={t('show_unread_only')} labelColor='black-primary' />
+          </label>
+        )}
+      </div>
 
-
-
-
-
-      <List customStyles='messenger-list-chatroom'>
-        {(chatRoomsList && chatRoomsList.length) ? chatRoomsList.map(({ channel_id, chat_room_id, platform, users }, i) => {
-
-          let customer = users.find(user => user.id !== channel_id)
-          let userName = `${customer?.first_name || ''}${customer?.last_name || ''}`.trim()
+      <div ref={listRef} className='list messenger-list-chatroom' role='list' onScroll={loadMoreIfNearEnd}>
+        {(chatRoomsList && chatRoomsList.length) ? chatRoomsList.map((room) => {
+          const { id, channel_id, chat_room_id, platform, lastMessage, lastMessageAt, updatedAt, unreadCount } = room
+          const customer = customerOfRoom(room)
+          const unread = showUnread ? unreadCount || 0 : 0
+          const isSelected = selectedId && (selectedId === id || selectedId === chat_room_id)
+          const time = listTimeLabel(lastMessageAt || updatedAt, { t, language: i18n.language })
 
           return (
             <div
-              key={i}
-              onClick={() => handleOnClick(chat_room_id)}
+              key={id || `${channel_id}-${chat_room_id}`}
+              role='listitem'
+              className={`messenger-list-room ${isSelected ? 'messenger-list-room-selected' : ''} ${unread ? 'messenger-list-room-unread' : ''}`}
+              onClick={() => handleOnClick(room)}
             >
-              <ChatroomItem key={i} isMobile={isMobile} title={userName || '沒有名字'} name={customer?.avatar || userName} contentIcon={null} content={`ID : ${customer?.id || chat_room_id}`} notice={null} customStyles={{ padding: '10px 16px', cursor: 'pointer' }} />
+              <ChatroomItem
+                isMobile={isMobile}
+                title={customer.name || t('no_name')}
+                name={customer.avatar || customer.name}
+                contentIcon={platform ? <Icon name={platform} size='small' customStyles='mr-[6px] mt-[1px] shrink-0' /> : null}
+                content={lastMessage || `ID : ${customer.id || chat_room_id}`}
+                endElement={
+                  <div className='messenger-list-room-meta'>
+                    <span className='messenger-list-room-time'>{time}</span>
+                    {unread > 0 && <span className='messenger-unread' aria-label={t('unread_count', { count: unread })}>{unread > 99 ? '99+' : unread}</span>}
+                  </div>
+                }
+                customStyles={{ padding: '10px 16px', cursor: 'pointer' }}
+              />
             </div>
           )
         }) :
-          <div className='w-full flex items-center justify-center mt-[70px]'>
+          <div className='w-full flex items-center justify-center mt-[70px] px-[16px] text-center'>
             {emptyContent || <ContentText size='large' title={t('no_user_found')} />}
           </div>
         }
-
-
-      </List>
-
-
-
-
+        {chatRoomsList?.length > 0 && (loadingMore || loadMoreFailed) && (
+          <button type='button' className='messenger-list-more' disabled={loadingMore} onClick={onLoadMore}>
+            {loadingMore ? t('loading_more') : t('load_more_failed')}
+          </button>
+        )}
+      </div>
     </>
   );
-
 }
 
 ChatroomList.propTypes = {
-  // title: PropTypes.string,
-  // variant: PropTypes.oneOf(['primary', 'secondary', 'tertiary', 'quaternary']),
-  // customStyles: PropTypes.oneOfType([PropTypes.string, PropTypes.object]),
-  // onClick: PropTypes.func,
+  chatRoomsList: PropTypes.array,
+  selectChatroom: PropTypes.func,
+  emptyContent: PropTypes.node,
+  // Search and filters above the list; without it the list shows the old unread checkbox.
+  filterBar: PropTypes.node,
+  onLoadMore: PropTypes.func,
+  hasMore: PropTypes.bool,
+  loadingMore: PropTypes.bool,
+  loadMoreFailed: PropTypes.bool,
+  showUnread: PropTypes.bool,
+  selectedId: PropTypes.string,
 }
 
 ChatroomList.defaultProps = {
-  // title: 'Input',
-  // color: 'primary',
-  // customStyles: null,
-  // onClick: null,
+  filterBar: null,
+  onLoadMore: null,
+  hasMore: false,
+  loadingMore: false,
+  loadMoreFailed: false,
+  showUnread: false,
+  selectedId: null,
 }
 
 export default ChatroomList

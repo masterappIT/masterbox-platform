@@ -60,7 +60,8 @@ function Attachment({ type, payload, caption, filename }) {
 
 function ChatBubble({ contents, attachments, deliveryError, name, time, showAvatar, justifyItem }) {
 
-    const newTime = new Date(time).toLocaleTimeString('en-US', {
+    // The conversation passes the time already formatted in the admin's language.
+    const newTime = typeof time === 'string' && Number.isNaN(Date.parse(time)) ? time : new Date(time).toLocaleTimeString('en-US', {
         hour: 'numeric',
         minute: 'numeric',
         hour12: true

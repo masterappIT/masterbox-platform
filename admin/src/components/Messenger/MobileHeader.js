@@ -6,6 +6,7 @@ import ContentText from '../../stories/components/ContentText';
 import ListItem from '../../stories/components/ListItem';
 import Icon from '../../stories/components/Icon';
 import Headline from '../../stories/components/Headline';
+import { customerOfRoom } from './ChatroomList';
 
 export const checkTitle = (currentComponent,currentChatroom) => {
 
@@ -13,11 +14,7 @@ export const checkTitle = (currentComponent,currentChatroom) => {
       case 'messenger':
         return '聊天'
       case 'conversations':
-        let customer =  currentChatroom.users.find(user => user.id !== currentChatroom.channel_id)
-          
-        let userName=`${(customer.first_name && customer.first_name) + (customer.last_name && customer.last_name)}`
-        
-        return userName
+        return currentChatroom ? customerOfRoom(currentChatroom).name || '沒有名字' : ''
 
       case 'setting':
         return '設定'
@@ -27,7 +24,8 @@ export const checkTitle = (currentComponent,currentChatroom) => {
 
 }
 
-function MobileHeader({  componentHandler,setCurrentComponent,currentChatroom }) {
+// onShowInfo adds a button that opens the customer's details in a conversation.
+function MobileHeader({  componentHandler,setCurrentComponent,currentChatroom, onShowInfo }) {
   
   const currentComponent = componentHandler.current;
 
@@ -54,6 +52,7 @@ function MobileHeader({  componentHandler,setCurrentComponent,currentChatroom })
         <Icon name='back' customStyles={{width:'7px',height:'14px',margin:'2px 0 0 4px' }}
         onClick={()=>setCurrentComponent(componentHandler.history)}
         />}
+        endElement={onShowInfo && currentComponent === 'conversations' && currentChatroom ? <button type='button' className='messenger-mobile-info' aria-label='客戶資訊' onClick={onShowInfo}>i</button> : null}
       >
         <Headline title={title} size='medium' color='white' />
       </ListItem>}

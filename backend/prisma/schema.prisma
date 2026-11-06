@@ -71,6 +71,7 @@ model Company {
   callSessions             CallSession[]
   embedTokens              EmbedToken[]
   auditLogs                AuditLog[]
+  customerTags             CustomerTag[]
 
   @@map("companies")
 }
@@ -126,6 +127,7 @@ model Account {
   callSignalEvents    CallSignalEvent[] @relation("CallSignalSender")
   platformAdminProfile PlatformAdminProfile?
   refreshSessions     PlatformAdminRefreshSession[]
+  chatRoomReads       ChatRoomRead[]
 
   @@index([companyId])
   @@map("accounts")
@@ -153,10 +155,54 @@ model ChatRoom {
   company      Company         @relation(fields: [companyId], references: [id])
   callSessions CallSession[]
   channel      CompanyChannel  @relation(fields: [channelId], references: [id])
+  reads        ChatRoomRead[]
+  tags         ChatRoomTag[]
 
   @@index([companyId])
   @@index([platform, chatRoomId])
+  // The conversation list, newest first, one page at a time.
+  @@index([companyId, updatedAt(sort: Desc), id(sort: Desc)])
   @@map("chat_rooms")
+}
+
+// How far each account has read a conversation; customer messages after lastReadAt are unread for that account.
+model ChatRoomRead {
+  accountId  String   @map("account_id") @db.Text
+  roomId     String   @map("room_id") @db.Text
+  lastReadAt DateTime @map("last_read_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  account    Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  room       ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@id([accountId, roomId])
+  @@index([roomId])
+  @@map("chat_room_reads")
+}
+
+// A company's own labels for its customers, such as 首購 or VIP.
+model CustomerTag {
+  id        String        @id @default(cuid()) @db.Text
+  companyId String        @map("company_id") @db.Text
+  name      String
+  createdAt DateTime      @default(now()) @map("created_at")
+  company   Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  rooms     ChatRoomTag[]
+
+  @@unique([companyId, name])
+  @@map("customer_tags")
+}
+
+// A tag on the customer of a conversation.
+model ChatRoomTag {
+  roomId    String      @map("room_id") @db.Text
+  tagId     String      @map("tag_id") @db.Text
+  createdAt DateTime    @default(now()) @map("created_at")
+  room      ChatRoom    @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  tag       CustomerTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([roomId, tagId])
+  @@index([tagId])
+  @@map("chat_room_tags")
 }
 
 model Message {
@@ -180,6 +226,8 @@ model Message {
   recipients               MessageRecipient[]
 
   @@index([companyId])
+  // A conversation's messages in order, one page at a time.
+  @@index([companyId, createdAt, id])
   @@map("messages")
 }
 
@@ -191,6 +239,8 @@ model MessageRecipient {
   message     Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
 
   @@index([messageId])
+  // Finds a conversation's messages by its room id.
+  @@index([chatRoomIds], type: Gin)
   @@map("message_recipients")
 }
 

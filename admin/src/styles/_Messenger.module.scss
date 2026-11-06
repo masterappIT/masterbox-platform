@@ -154,6 +154,12 @@
 
 	&-sideInfo {
 		@apply z-[3] absolute right-0 translate-x-[0] bg-black_white flex-none w-[360px] min-w-[320px] max-w-full max-h-full overflow-y-auto overscroll-contain flex flex-col shadow-[-2px_0px_10px_0_rgba(0,0,0,0.15)] transition-all duration-[500ms];
+		// On a phone it opens under the fixed header, which would otherwise cover its close button.
+		@media (max-width: 639px) {
+			top: 45px;
+			min-width: 0;
+			max-height: calc(100% - 45px);
+		}
 		&-icon {
 			@apply self-end mr-[10px];
 		}
@@ -194,3 +200,98 @@
 //     filter: brightness(0.5) invert(1);
 //     }
 // }
+
+// The conversation list on `/`: search and filters, last message, time and unread count.
+.messenger-list-filters {
+	@apply px-[16px] py-[10px] bg-bg_secondary space-y-[8px];
+
+	&-search {
+		@apply flex items-center gap-[8px] h-[36px] px-[10px] rounded-[8px] bg-white border border-[#D9D9D9];
+		input {
+			@apply flex-1 min-w-0 h-full bg-transparent outline-none border-none text-[14px];
+			&:focus { @apply shadow-none; }
+		}
+		&:focus-within { @apply border-primary; }
+	}
+	&-row {
+		@apply flex items-center flex-wrap gap-x-[12px] gap-y-[6px];
+	}
+	&-platform {
+		@apply h-[30px] px-[8px] rounded-[6px] border border-[#D9D9D9] bg-white text-[13px] max-w-full;
+	}
+}
+
+.messenger-list-room {
+	@apply relative;
+	&:hover { background: rgba(0, 0, 0, 0.03); }
+	&-selected {
+		background: rgba(255, 171, 55, 0.14);
+		&:hover { background: rgba(255, 171, 55, 0.2); }
+	}
+	&-unread .contentText { @apply font-medium; }
+	&-meta {
+		@apply flex flex-col items-end justify-between gap-[6px] min-w-[44px] self-stretch py-[2px];
+	}
+	&-time {
+		@apply text-[12px] leading-[16px] text-black_tertiary whitespace-nowrap;
+	}
+}
+
+.messenger-unread {
+	@apply inline-flex items-center justify-center min-w-[20px] h-[20px] px-[6px] rounded-full bg-primary text-white text-[12px] leading-none font-medium;
+}
+
+.messenger-list-more {
+	@apply w-full py-[14px] text-[13px] text-black_secondary;
+	&:disabled { @apply cursor-default; }
+}
+
+// A day's divider among the messages: 今天, 昨天 or the date.
+.messenger-room-day {
+	@apply flex justify-center;
+	span {
+		@apply px-[12px] py-[2px] rounded-full text-[12px] leading-[18px] text-black_secondary bg-white;
+		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+	}
+}
+
+.messenger-room-older {
+	@apply text-center text-[12px] text-black_tertiary;
+}
+
+.messenger-mobile-info {
+	@apply ml-auto mr-[4px] w-[26px] h-[26px] rounded-full border border-white text-white text-[14px] font-semibold leading-none flex items-center justify-center;
+	font-family: Georgia, serif;
+}
+
+// What we know about a conversation's customer.
+.messenger-customer {
+	@apply flex flex-col items-center px-[20px] pb-[20px] border-b border-[#D9D9D9];
+
+	&-rows {
+		@apply w-full mt-[16px] space-y-[8px];
+	}
+	&-row {
+		@apply flex gap-[12px] text-[14px] leading-[20px];
+		dt { @apply shrink-0 w-[72px] text-black_tertiary; }
+		dd { @apply flex-1 min-w-0 break-all text-black_primary; }
+	}
+
+	&-tags {
+		@apply px-[20px] py-[20px];
+		&-list {
+			@apply flex flex-wrap gap-[6px] my-[10px];
+		}
+		&-input {
+			@apply w-full h-[36px] px-[10px] rounded-[8px] border border-[#D9D9D9] text-[14px] outline-none;
+			&:focus { @apply border-primary shadow-none; }
+		}
+	}
+	&-tag {
+		@apply inline-flex items-center gap-[4px] h-[26px] pl-[10px] pr-[4px] rounded-full bg-[#FFF1E4] text-[13px] text-black_primary;
+		button {
+			@apply w-[18px] h-[18px] rounded-full leading-none text-black_secondary;
+			&:hover:not(:disabled) { background: rgba(0, 0, 0, 0.08); }
+		}
+	}
+}

@@ -2,6 +2,7 @@ import { configureStore } from '@reduxjs/toolkit';
 import storage from 'redux-persist/lib/storage'
 import { combineReducers } from "redux";
 import { persistReducer, persistStore } from 'redux-persist'
+import autoMergeLevel2 from 'redux-persist/lib/stateReconciler/autoMergeLevel2'
 import logger from 'redux-logger'
 import thunk from "redux-thunk"
 import userSlices from './slices/userSlices';
@@ -19,7 +20,9 @@ const reducers = combineReducers({
 
 const persistConfig = {
   key: 'root',
-  storage
+  storage,
+  // A slice saved by an earlier version keeps its stored values and gets the defaults of anything added since.
+  stateReconciler: autoMergeLevel2,
 };
 
 
