@@ -116,7 +116,7 @@ jobs:
           for url in \
             https://masterbox.masterappinc.com/ \
             https://admin.masterbox.masterappinc.com/ \
-            https://superadmin.masterappinc.com/ \
+            https://superadmin.masterbox.masterappinc.com/ \
             https://masterboxapp.masterappinc.com/; do
             curl --fail --silent --show-error --location --max-time 30 "$url" >/dev/null
           done

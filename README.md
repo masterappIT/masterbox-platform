@@ -51,7 +51,7 @@ Copy the relevant `.env.example` files to untracked `.env` files. Never commit c
 - `https://masterbox.masterappinc.com/`：Landing page
 - `https://api.masterbox.masterappinc.com/graphql`：GraphQL API
 - `https://admin.masterbox.masterappinc.com/`：Admin
-- `https://superadmin.masterappinc.com/`：Super Admin
+- `https://superadmin.masterbox.masterappinc.com/`：Super Admin
 - `https://masterboxapp.masterappinc.com/`：Customer app
 
 請勿將 production credentials 或 database URL 提交至 Git。`backend/docker-compose.yml` 僅供本機開發，不能用於正式環境。
