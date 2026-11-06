@@ -11,21 +11,19 @@ export const masterBox_meta_Route = async({endPoints='', method='',queryStrings=
             ...(Object.keys(formData).length > 0 && {"formData": formData})
         }, (err, _res, _body) => {
             if(!err){
-                // console.log('result:', _res.body)
                 resolve(_res.body)
             }else{
-                console.log('masterBox_meta_error', err)
+                console.error('masterBox_meta_error', err)
                 reject(err)
             }
         })        
     }).catch((err) => {
-        console.log('masterBox_meta_error', err)
+        console.error('masterBox_meta_error', err)
         reject(err)
     })
 }
 
 export const masterBox_Api_graphql = ({endPoints='', method='',queryStrings='', body =''}) => {
-    // console.log(body)
 
     return new Promise((resolve, reject) => {
         request({
@@ -38,7 +36,6 @@ export const masterBox_Api_graphql = ({endPoints='', method='',queryStrings='', 
             ...(body.length > 0  && {"body": body}),
         }, (err, _res, _body) => {
             if(!err){
-                console.log('result:', _res.body)
                 resolve(_res.body)
             }else{
                 reject(err)

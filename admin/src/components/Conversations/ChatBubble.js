@@ -67,7 +67,6 @@ function ChatBubble({ contents, attachments, deliveryError, note, name, time, sh
         hour12: true
     })
 
-    // console.log('ChatBubble',newTime)
     return (
         <div className={`flex items-start justify-${justifyItem} w-full`}>
 

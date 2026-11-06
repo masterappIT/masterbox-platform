@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '../lib/db/prisma.js';
 import { pubsub } from '../config/redis.js';
 import { getJwtSecret } from '../lib/auth/jwtSecret.js';
+import { visibleChannelIds } from '../lib/messaging/access.js';
 
 const router = express.Router();
 
@@ -67,7 +68,9 @@ router.post('/calls', async (req, res, next) => {
   try {
     const { roomId, kind = 'voice', participantIds = [], metadata } = req.body || {};
     if (!roomId || !['voice', 'video'].includes(kind)) return res.status(400).json({ error: 'roomId and valid kind are required' });
-    const room = await prisma.chatRoom.findFirst({ where: { id: roomId, companyId: req.account.companyId } });
+    // Only a conversation in a channel the caller works in.
+    const channelIds = await visibleChannelIds({ account_id: req.account.id, company_id: req.account.companyId });
+    const room = await prisma.chatRoom.findFirst({ where: { id: roomId, companyId: req.account.companyId, channelId: { in: channelIds } } });
     if (!room) return res.status(404).json({ error: 'Chat room not found' });
     const ids = [...new Set([req.account.id, ...participantIds])];
     const valid = await prisma.account.count({ where: { id: { in: ids }, companyId: req.account.companyId } });

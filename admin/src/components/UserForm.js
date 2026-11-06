@@ -10,8 +10,10 @@ import useAlerts from '../utils/useAlerts';
 import { selectUserInfo } from '../redux/slices/userSlices';
 import { apolloApiHelpers } from '../graphQL';
 import { CREATE_ACCOUNT, UPDATE_ACCOUNT, LIST_ACCOUNTS } from '../graphQL/account';
+import { GET_USER_SUBSCRIBED_CHANNELS } from '../graphQL/channel';
 
-const EMPTY_FORM = { email: '', password: '', name: '', role: 'admin' };
+const EMPTY_FORM = { email: '', password: '', name: '', role: 'admin', channelIds: [] };
+const PLATFORM_NAMES = { fb: 'Facebook', ig: 'Instagram', whatsapp: 'WhatsApp', line: 'LINE', wechat: 'WeChat' };
 const MIN_PASSWORD_LENGTH = 6;
 
 export default function UserForm({ mode }) {
@@ -26,6 +28,16 @@ export default function UserForm({ mode }) {
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [loadState, setLoadState] = useState(mode === 'edit' ? 'loading' : 'ready');
+  // The company's channels: an admin sees them all.
+  const [channels, setChannels] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    apolloApiHelpers('query', GET_USER_SUBSCRIBED_CHANNELS, undefined, { fetchPolicy: 'no-cache' }).then((result) => {
+      if (active) setChannels(Array.isArray(result) ? result : []);
+    });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     if (!editingId || !companyId) return undefined;
@@ -36,7 +48,7 @@ export default function UserForm({ mode }) {
       if (!account) return setLoadState(result?.error ? 'error' : 'missing');
       const { __typename, ...info } = account.info || {};
       setSavedInfo(info);
-      setForm({ ...EMPTY_FORM, email: account.email || '', name: info.name || '', role: account.role || 'user' });
+      setForm({ ...EMPTY_FORM, email: account.email || '', name: info.name || '', role: account.role || 'user', channelIds: account.channel_ids || [] });
       setLoadState('ready');
     });
     return () => { active = false; };
@@ -61,6 +73,8 @@ export default function UserForm({ mode }) {
     if (saving || !companyId || !validate()) return;
     setSaving(true);
     const input = { email: form.email.trim(), role: form.role, user_info: JSON.stringify({ ...savedInfo, name: form.name.trim() }) };
+    // Admins work in every channel, so only a user's channels are saved.
+    if (form.role === 'user') input.channel_ids = form.channelIds;
     if (!editingId) input.password = form.password;
     const result = await apolloApiHelpers('mutation', editingId ? UPDATE_ACCOUNT : CREATE_ACCOUNT, editingId ? { _id: editingId, input } : { company_id: companyId, input });
     if (result?.error) {
@@ -81,6 +95,10 @@ export default function UserForm({ mode }) {
   }
 
   const isSelf = editingId && editingId === userInfo?._id;
+  const toggleChannel = (channelId, checked) => setForm((previous) => ({
+    ...previous,
+    channelIds: checked ? [...new Set([...previous.channelIds, channelId])] : previous.channelIds.filter((id) => id !== channelId),
+  }));
   return (
     <div className='flex justify-center'>
       <Card rounded customStyles='user-form'>
@@ -109,6 +127,30 @@ export default function UserForm({ mode }) {
               </select>
             </label>
           </div>
+          <fieldset className='user-form-channels'>
+            <legend>可處理的頻道</legend>
+            {form.role === 'admin' ? (
+              <p className='user-form-hint'>管理者可以看到並回覆所有頻道的對話。</p>
+            ) : channels === null ? (
+              <p className='user-form-hint'>正在讀取頻道…</p>
+            ) : channels.length === 0 ? (
+              <p className='user-form-hint'>公司還沒有串接任何頻道。到「社群平台管理」串接後，再回來勾選。</p>
+            ) : (
+              <>
+                <p className='user-form-hint'>使用者只會看到勾選頻道的對話，也只能被指派這些頻道的對話。</p>
+                <div className='user-form-channels-list'>
+                  {channels.map(({ channel_id: channelId, name, platform }) => (
+                    <label key={channelId} className='user-form-channel'>
+                      <input type='checkbox' checked={form.channelIds.includes(channelId)} onChange={(event) => toggleChannel(channelId, event.target.checked)} />
+                      <span>{name}</span>
+                      <small>{PLATFORM_NAMES[platform] || platform}</small>
+                    </label>
+                  ))}
+                </div>
+                {!form.channelIds.length && <p className='user-form-warning'>沒有勾選任何頻道時，這位使用者看不到任何對話。</p>}
+              </>
+            )}
+          </fieldset>
           {/* Lets Enter submit the form; the visible save button is a div. */}
           <button type='submit' className='hidden' aria-hidden='true' tabIndex={-1} />
         </form>

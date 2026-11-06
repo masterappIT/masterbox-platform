@@ -1,18 +1,3 @@
-export const hashMapDataExtractor = (hastMapData) => {
-
-    if (hastMapData) {
-
-        const keys = Object.keys(hastMapData);
-
-        const data = keys.map(key => hastMapData[key]);
-
-        return data;
-    }
-
-    return []
-}
-
-
 export const timeGenerator = () => new Date().toLocaleString('en-US', {
     hour: 'numeric',
     minute: 'numeric',
@@ -101,7 +86,6 @@ export const searchTree = (element, matchingName) => {
 export const handleSelect = (item, selectedItems, setSelectedItems, multiple) => {
 
     const newSelected = [...selectedItems];
-    console.log('selectedItems', selectedItems)
     const isSelected = newSelected.findIndex(selectedItems => selectedItems.value === item.value);
 
 

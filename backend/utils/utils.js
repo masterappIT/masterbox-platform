@@ -11,6 +11,7 @@ import { messagePreview, encodeCursor } from '../lib/messaging/conversationText.
 import { replyWindow, freeformBlockReason } from '../lib/messaging/replyWindow.js';
 import { templateView, templateMessage } from '../lib/messaging/whatsappTemplates.js';
 import { lastCustomerMessageAt } from '../lib/messaging/conversations.js';
+import { channelAccountIds } from '../lib/messaging/access.js';
 
 export const errorTypes = {
   MISS_REQUEUED_PRAMS: 'MISS_REQUEUED_PRAMS',
@@ -51,19 +52,19 @@ export const messageView = (message, requestedRoom, viewerId) => {
   };
 };
 
-// Everyone assigned to the channel follows its conversations, not just whoever sent the message.
+// Everyone who works in the channel follows its conversations, not just whoever sent the message.
 export const publishMessage = async (message) => {
   const channelId = message.recipients?.[0]?.channelId;
   if (!channelId) return;
-  const accounts = await prisma.accountChannel.findMany({ where: { channelId }, select: { accountId: true } });
+  const accountIds = await channelAccountIds(message.companyId, channelId);
   // Each account gets its own copy, so isMine is right for whoever reads it.
-  await Promise.all(accounts.map(({ accountId }) => pubsub.publish(`${SEND_MESSAGE}-${accountId}`, { sendMessage: messageView(message, undefined, accountId) })));
+  await Promise.all(accountIds.map(accountId => pubsub.publish(`${SEND_MESSAGE}-${accountId}`, { sendMessage: messageView(message, undefined, accountId) })));
 };
 
 const sendFailed = (error) => {
   let body = error.responseBody;
   if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = undefined; } }
-  console.log('Meta send failed:', body?.error || error.message);
+  console.error('Meta send failed:', body?.error || error.message);
   return metaFailureReason(body?.error || { message: error.message });
 };
 
@@ -387,7 +388,7 @@ const channelRecords = ({ facebookPages = [], instagramAccounts = [], whatsappAc
 
 // Saves the channels from a Meta authorization. Authorizing again refreshes their tokens instead of adding copies.
 // An external account can only belong to one company, because webhooks find their channel by its external id.
-export const sortChannelSchema = async ({ companyId, accountId, ...accounts }) => {
+export const saveMetaChannels = async ({ companyId, accountId, ...accounts }) => {
   const records = channelRecords(accounts);
   const existing = await prisma.companyChannel.findMany({ where: { platform: { in: ['fb', 'ig', 'whatsapp'] } } });
   const saved = [], skipped = [];

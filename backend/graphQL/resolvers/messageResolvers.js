@@ -3,7 +3,11 @@ import { prisma } from '../../lib/db/prisma.js';
 import { pubsub } from '../../config/redis.js';
 import { handleSendMessage, messageView, publishMessage, SEND_MESSAGE, listWhatsappTemplates, sendWhatsappTemplate } from '../../utils/utils.js';
 import { withAuth, requireAdmin } from '../../middleware/auth.js';
-import { findAccountRoom, roomViews, listRooms, listMessages, markRoomRead, companyTags, addRoomTag, removeRoomTag } from '../../lib/messaging/conversations.js';
+import {
+  findAccountRoom, roomViews, listRooms, listMessages, markRoomRead, companyTags, addRoomTag, removeRoomTag,
+  assignRoom, assignableAgents, publishRoom, CHAT_ROOM_UPDATED,
+} from '../../lib/messaging/conversations.js';
+import { visibleChannelIds, visibleChannels } from '../../lib/messaging/access.js';
 
 const channelView = channel => ({ channel_id: channel.id, platform: channel.platform, name: channel.name, enabled: channel.enabled });
 
@@ -42,15 +46,26 @@ const markReadAfterSending = async (account, message) => {
     const room = await prisma.chatRoom.findFirst({ where: { companyId: account.company_id, channelId, OR: [{ chatRoomId: roomKey }, { id: roomKey }] } });
     if (room) await markRoomRead(account, room);
   } catch (error) {
-    console.log('Read position not saved after sending:', error.message);
+    console.error('Read position not saved after sending:', error.message);
   }
 };
 
-const visibleMessageWhere = (companyId, target) => ({
+// Messages the account may read: in its channels, and not yet expired.
+const visibleMessageWhere = (companyId, channelIds, target) => ({
   companyId,
   OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-  ...(target ? { recipients: { some: { chatRoomIds: { has: target } } } } : {}),
+  recipients: { some: { channelId: { in: channelIds }, ...(target ? { chatRoomIds: { has: target } } : {}) } },
 });
+
+// The app shows its own error for a send that failed, so a conversation it may not use fails the same way.
+const roomToSendIn = async (account, key, channelId) => {
+  try {
+    return await findAccountRoom(account, { key, channelId });
+  } catch (error) {
+    if (error.extensions?.code === 'NOT_FOUND') throw new ApolloError('找不到這段對話，或你沒有這個頻道的權限', 'SEND_FAILED');
+    throw error;
+  }
+};
 export default {
   Mutation: {
     async setChannelEnabled(_, { channel_id, enabled }, context) {
@@ -67,6 +82,7 @@ export default {
       const companyId = accountRecord?.companyId;
       if (!companyId) throw new ApolloError('Invalid account', 'SEND_FAILED');
       const roomId = input.to_chat_room_id;
+      const sender = { ...account, company_id: companyId };
       try {
         const encryptionMode = input.encryption_mode || 'server';
         const disappearingAfterSeconds = input.disappearing_after_seconds;
@@ -75,8 +91,7 @@ export default {
         if (encryptionMode === 'e2ee' && typeof input.contents !== 'string') throw new ApolloError('e2ee messages require serialized ciphertext', 'SEND_FAILED');
         // The app client uses the Prisma-backed account/company data and may not have a channel id.
         if ((input.platform || '').toLowerCase() === 'app') {
-          const room = await prisma.chatRoom.findFirst({ where: { companyId, OR: [{ id: roomId }, { chatRoomId: roomId }] } });
-          if (!room) throw new ApolloError('Chat room not found', 'SEND_FAILED');
+          const room = await roomToSendIn(sender, roomId);
           const message = await prisma.message.create({
             data: { companyId, createdBy: accountId, platform: room.platform,
               contents: input.contents, encryptionMode, disappearingAfterSeconds, expiresAt: null, recipients: { create: [{ channelId: room.channelId, chatRoomIds: [room.chatRoomId || room.id] }] } },
@@ -87,7 +102,8 @@ export default {
           await markReadAfterSending(account, message);
           return messageView(message, room.chatRoomId || room.id, accountId);
         }
-        const message = await handleSendMessage(account.account_id, roomId, input.contents, input.channel_id);
+        const room = await roomToSendIn(sender, roomId, input.channel_id);
+        const message = await handleSendMessage(account.account_id, room.id, input.contents, room.channelId);
         await markReadAfterSending(account, message);
         return messageView(message, roomId, accountId);
       } catch (error) {
@@ -98,7 +114,8 @@ export default {
     async markMessageRead(_, { messageId }, { account, isAuth }) {
       withAuth(Boolean(isAuth || account));
       if (!account?.company_id) throw new ApolloError('Invalid account', 'READ_FAILED');
-      const message = await prisma.message.findFirst({ where: { id: messageId, companyId: account.company_id, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] }, include: { recipients: true } });
+      const channelIds = await visibleChannelIds(account);
+      const message = await prisma.message.findFirst({ where: { id: messageId, ...visibleMessageWhere(account.company_id, channelIds) }, include: { recipients: true } });
       if (!message) throw new ApolloError('Message not found', 'READ_FAILED');
       const readAt = new Date();
       const updated = await prisma.message.update({ where: { id: message.id }, data: { readAt: message.readAt || readAt, expiresAt: message.readAt || !message.disappearingAfterSeconds ? message.expiresAt : new Date(readAt.getTime() + message.disappearingAfterSeconds * 1000) }, include: { recipients: true } });
@@ -115,12 +132,20 @@ export default {
       const account = signedIn(context);
       const room = await findAccountRoom(account, { id });
       await addRoomTag(account, room, name);
+      await publishRoom(room.id);
       return oneRoomView(account, room);
     },
     async removeChatRoomTag(_, { id, tagId }, context) {
       const account = signedIn(context);
       const room = await findAccountRoom(account, { id });
       await removeRoomTag(account, room, tagId);
+      await publishRoom(room.id);
+      return oneRoomView(account, room);
+    },
+    async assignChatRoom(_, { id, assigneeId }, context) {
+      const account = signedIn(context);
+      const room = await findAccountRoom(account, { id });
+      await assignRoom(account, room, assigneeId);
       return oneRoomView(account, room);
     },
     async sendWhatsappTemplate(_, { id, templateId, values, header_media_url }, context) {
@@ -136,17 +161,14 @@ export default {
     async getUserSubscribedChannels(_, __, { account, isAuth }) {
       withAuth(Boolean(isAuth || account));
       if (!account?.company_id) return [];
-      // account_channels has no company check of its own, so scope by the company as well.
-      const channels = await prisma.companyChannel.findMany({
-        where: { companyId: account.company_id, accounts: { some: { accountId: account.account_id } } },
-        orderBy: { name: 'asc' },
-      });
-      return channels.map(channelView);
+      // Admins work in every channel of the company; others in the channels assigned to them.
+      return (await visibleChannels(account)).map(channelView);
     },
     async chatRooms(_, __, { account, isAuth }) {
       withAuth(Boolean(isAuth || account));
       if (!account?.company_id) return [];
-      const rooms = await prisma.chatRoom.findMany({ where: { companyId: account.company_id }, orderBy: { updatedAt: 'desc' }, select: { id: true } });
+      const channelIds = await visibleChannelIds(account);
+      const rooms = await prisma.chatRoom.findMany({ where: { companyId: account.company_id, channelId: { in: channelIds } }, orderBy: { updatedAt: 'desc' }, select: { id: true } });
       // Older clients read the platform id as the title.
       return (await roomViews(account, rooms.map(({ id }) => id))).map(room => ({ ...room, title: room.chat_room_id }));
     },
@@ -171,6 +193,10 @@ export default {
     async customerTags(_, __, context) {
       return companyTags(signedIn(context));
     },
+    async chatRoomAssignees(_, { id }, context) {
+      const account = signedIn(context);
+      return assignableAgents(account, id ? await findAccountRoom(account, { id }) : null);
+    },
     async whatsappTemplates(_, { id }, context) {
       const account = signedIn(context);
       return listWhatsappTemplates(await findAccountRoom(account, { id }));
@@ -179,7 +205,8 @@ export default {
       withAuth(Boolean(isAuth || account));
       if (!account?.company_id) return [];
       const target = conversationId || roomId;
-      const messages = await prisma.message.findMany({ where: visibleMessageWhere(account.company_id, target), include: { recipients: true }, orderBy: { createdAt: 'asc' } });
+      const channelIds = await visibleChannelIds(account);
+      const messages = await prisma.message.findMany({ where: visibleMessageWhere(account.company_id, channelIds, target), include: { recipients: true }, orderBy: { createdAt: 'asc' } });
       return messages.map(message => messageView(message, target, account.account_id));
     },
   },
@@ -189,6 +216,10 @@ export default {
         withAuth(Boolean(isAuth || account));
         return pubsub.asyncIterator(`${SEND_MESSAGE}-${account.account_id}`);
       },
+    },
+    // A conversation changed for everyone in its channel, such as its agent or its tags.
+    chatRoomUpdated: {
+      subscribe: (_, __, context) => pubsub.asyncIterator(`${CHAT_ROOM_UPDATED}-${signedIn(context).account_id}`),
     },
   },
 };

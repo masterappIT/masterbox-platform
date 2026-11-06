@@ -5,11 +5,14 @@ import Conversations from '../Conversations/Conversations';
 import CustomerPanel from '../Messenger/CustomerPanel';
 import StatusMessage from '../Messenger/StatusMessage';
 import { customerOfRoom } from '../Messenger/ChatroomList';
+import AssignmentFilter, { assignmentFilter } from '../Messenger/AssignmentFilter';
+import useRoomAssignment from '../../utils/useRoomAssignment';
+import { selectUserInfo } from '../../redux/slices/userSlices';
 import {
   getUserSubscribedChannels, selectChannels, selectChannelsStatus, loadInbox, loadMoreInbox, selectInbox,
   openConversation, loadOlderMessages, selectMessages, selectMessagePaging, messagesKey, setOpenRoom,
   markConversationRead, loadCustomerTags, selectCustomerTags, addConversationTag, removeConversationTag,
-  handleSendMessage, catchUpAfterReconnect,
+  handleSendMessage, catchUpAfterReconnect, loadAgents, selectAgents, selectRoomDetails,
 } from '../../redux/slices/messagesSlices';
 import { MessageFactory } from '../../utils/MessageFactory';
 import useSocketStatus from '../../utils/useSocketStatus';
@@ -32,6 +35,13 @@ export default function ChatManagement() {
   const messages = useSelector(selectMessages, shallowEqual);
   const messagePaging = useSelector(selectMessagePaging);
   const customerTags = useSelector(selectCustomerTags);
+  const agents = useSelector(selectAgents);
+  const roomDetails = useSelector(selectRoomDetails);
+  const userInfo = useSelector(selectUserInfo);
+  // '' for every conversation, 'mine', 'unassigned', or 'agent:<id>'.
+  const [assignment, setAssignment] = useState('');
+  const filter = useMemo(() => assignmentFilter(assignment, userInfo?._id), [assignment, userInfo?._id]);
+  const filterKey = JSON.stringify(filter);
   const connection = useSocketStatus();
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [isPanelShown, setIsPanelShown] = useState(false);
@@ -45,20 +55,27 @@ export default function ChatManagement() {
   };
   const fetchInbox = () => {
     setRequested((value) => ({ ...value, inbox: true }));
-    dispatch(loadInbox({}));
+    dispatch(loadInbox(filter));
   };
 
   useEffect(() => {
     fetchChannels();
     dispatch(loadCustomerTags());
+    dispatch(loadAgents());
     return () => { dispatch(setOpenRoom(null)); };
   }, []);
 
-  useEffect(() => { if (hasChannels) fetchInbox(); }, [hasChannels]);
+  useEffect(() => { if (hasChannels) fetchInbox(); }, [hasChannels, filterKey]);
 
-  // The home page may have left a filter on the shared list; this page shows every conversation.
-  const rooms = Object.keys(inbox.filter || {}).length ? [] : inbox.rooms;
-  const currentRoom = useMemo(() => (selectedRoom && (rooms.find(({ id }) => id === selectedRoom.id) || selectedRoom)) || null, [selectedRoom, rooms]);
+  // A colleague who left the company can't be filtered on any more.
+  useEffect(() => {
+    if (assignment.startsWith('agent:') && agents.length && !agents.some(({ id }) => `agent:${id}` === assignment)) setAssignment('');
+  }, [agents, assignment]);
+
+  // The home page shares this list and may have left its own filter on it.
+  const rooms = JSON.stringify(inbox.filter || {}) === filterKey ? inbox.rooms : [];
+  const currentRoom = useMemo(() => (selectedRoom && (rooms.find(({ id }) => id === selectedRoom.id) || { ...selectedRoom, ...roomDetails[selectedRoom.id] })) || null, [selectedRoom, rooms, roomDetails]);
+  const roomAssignment = useRoomAssignment(currentRoom);
   const currentChannel = currentRoom ? (channels.find(({ account }) => account === currentRoom.channel_id) || { account: currentRoom.channel_id, platform: currentRoom.platform }) : null;
 
   const selectRoom = (room) => {
@@ -107,7 +124,9 @@ export default function ChatManagement() {
     loading: { title: '正在讀取對話…' },
     failed: { title: '無法載入對話', description: '請檢查網路連線後重試。', action: { title: '重試', onClick: hasChannels ? fetchInbox : fetchChannels } },
     no_channels: { title: '還沒有串接任何頻道', description: '串接 Facebook、Instagram 或 WhatsApp 後，客戶的訊息會出現在這裡。', action: { title: '前往社群平台管理', onClick: () => router.push('/channels-management') } },
-    no_rooms: { title: '目前沒有對話', description: '客戶傳訊息給你的頻道後，對話會立即出現在這裡。' },
+    no_rooms: assignment
+      ? { title: '沒有符合篩選的對話', description: '換個負責人篩選，或選「全部對話」。' }
+      : { title: '目前沒有對話', description: '客戶傳訊息給你的頻道後，對話會立即出現在這裡。' },
   }[status];
 
   const live = CONNECTION[connection] || CONNECTION.connecting;
@@ -128,7 +147,10 @@ export default function ChatManagement() {
       </header>
       <div className="chat-management-grid">
         <aside className="chat-management-sidebar">
-          <label>對話</label>
+          <div className="chat-management-sidebar-head">
+            <label>對話</label>
+            <AssignmentFilter value={assignment} onChange={setAssignment} agents={agents} myId={userInfo?._id} className="chat-management-filter" />
+          </div>
           <div className="chat-management-list" onScroll={(event) => {
             const list = event.currentTarget;
             if (inbox.hasMore && !inbox.loadingMore && list.scrollHeight - list.scrollTop - list.clientHeight < 120) dispatch(loadMoreInbox());
@@ -143,6 +165,7 @@ export default function ChatManagement() {
                     <strong>{name}</strong>
                     <small>{PLATFORM_NAMES[room.platform] || room.platform}{room.channel_name ? ` · ${room.channel_name}` : ''}</small>
                     {room.lastMessage && <small className="chat-management-room-last">{room.lastMessageInbound === false ? '回覆：' : ''}{room.lastMessage}</small>}
+                    <small className="chat-management-room-assignee">{room.assignee ? `負責人：${room.assignee.name}` : '未指派'}</small>
                   </span>
                   {room.unreadCount > 0 && <span className="chat-management-unread" aria-label={`${room.unreadCount} 則未讀`}>{room.unreadCount > 99 ? '99+' : room.unreadCount}</span>}
                 </button>
@@ -179,6 +202,7 @@ export default function ChatManagement() {
                 tagSuggestions={customerTags}
                 onAddTag={(name) => changeTags(addConversationTag({ id: currentRoom.id, name }))}
                 onRemoveTag={(tagId) => changeTags(removeConversationTag({ id: currentRoom.id, tagId }))}
+                assignment={roomAssignment}
               />
             </div>
           ) : <div className="chat-management-empty"><h2>選擇一個對話</h2><p>從左側選擇客戶，即可查看訊息並回覆。</p></div>}

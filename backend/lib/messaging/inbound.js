@@ -46,7 +46,7 @@ export const storeInboundAttachments = async (contents, channel) => {
   if (!attachments.length || !isStorageReady()) return contents;
   const accessToken = channel?.accessInfo?.access_token;
   const stored = await Promise.all(attachments.map(attachment => storeAttachment(attachment, accessToken).catch((error) => {
-    console.log(`Attachment not saved (${attachment?.type}):`, error.message);
+    console.error(`Attachment not saved (${attachment?.type}):`, error.message);
     return attachment;
   })));
   return { ...contents, attachments: stored };

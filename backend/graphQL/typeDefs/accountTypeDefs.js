@@ -22,6 +22,8 @@ type Account{
     permissions: String
     info: AccountInfo
     enabled: Boolean
+    "The channels this account works in. Admins work in every channel whatever this says."
+    channel_ids: [ID!]
     token: String
     refreshToken: String
 }
@@ -54,6 +56,7 @@ type AccountList {
       role: String
       permissions: [String]
       user_info: String
+      channel_ids: [ID!]
   }
 
   input AccountUpdateInput {
@@ -63,6 +66,8 @@ type AccountList {
       permissions: [String]
       user_info: String
       enabled: Boolean
+      "Replaces the account's channels."
+      channel_ids: [ID!]
   }
 
   input AccountListInput {

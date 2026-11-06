@@ -47,7 +47,7 @@ function ChatroomList({ isMobile, chatRoomsList, componentHandler, setCurrentCom
 
       <div ref={listRef} className='list messenger-list-chatroom' role='list' onScroll={loadMoreIfNearEnd}>
         {(chatRoomsList && chatRoomsList.length) ? chatRoomsList.map((room) => {
-          const { id, channel_id, chat_room_id, platform, lastMessage, lastMessageAt, updatedAt, unreadCount } = room
+          const { id, channel_id, chat_room_id, platform, lastMessage, lastMessageAt, updatedAt, unreadCount, assignee } = room
           const customer = customerOfRoom(room)
           const unread = showUnread ? unreadCount || 0 : 0
           const isSelected = selectedId && (selectedId === id || selectedId === chat_room_id)
@@ -69,6 +69,7 @@ function ChatroomList({ isMobile, chatRoomsList, componentHandler, setCurrentCom
                 endElement={
                   <div className='messenger-list-room-meta'>
                     <span className='messenger-list-room-time'>{time}</span>
+                    {assignee && <span className='messenger-list-room-assignee' title={t('assignee_label', { name: assignee.name })}>{assignee.name}</span>}
                     {unread > 0 && <span className='messenger-unread' aria-label={t('unread_count', { count: unread })}>{unread > 99 ? '99+' : unread}</span>}
                   </div>
                 }

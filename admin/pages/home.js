@@ -137,10 +137,8 @@ export default function HomePage() {
     refresh()
   }, [])
 
-  // chatRooms returns the whole company, so keep to the channels this account can use.
-  const conversations = useMemo(() => chatrooms
-    .filter(({ channel_id }) => channels.some(({ account }) => account === channel_id))
-    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)), [chatrooms, channels])
+  // chatRooms only returns the account's channels, newest first, and new messages move theirs to the top.
+  const conversations = Array.isArray(chatrooms) ? chatrooms : []
   const platforms = useMemo(() => [...new Set(channels.map(({ platform }) => platform))], [channels])
 
   const isPending = (status) => !requested || status === 'loading' || status === 'idle'

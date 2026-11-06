@@ -3,26 +3,22 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { getJwtSecret } from '../lib/auth/jwtSecret.js';
 import { prisma } from '../lib/db/prisma.js';
-import { sortChannelSchema, findChannelToken, saveInboundMessage, saveConversationHistory, markMessageFailed, metaFailureReason } from '../utils/utils.js';
+import { saveMetaChannels, findChannelToken, saveInboundMessage, saveConversationHistory, markMessageFailed, metaFailureReason } from '../utils/utils.js';
 
 // facebook
 import { getUserAccessToken, getDebugToken,
     getUserLongLivedToken, getFacebookUserId,
     getMetaSenderInfo, getFacebookPageToken,
-    getPageFollowers, getMetaConversations,
-    getConversationMessages, getMessage,
-    getAttachment, metaSendMessage,
+    getPageFollowers,
     appSubscribePage, collectMetaChannels,
     getInstagramSenderInfo, messengerCustomer, instagramCustomer,
     getRecentConversations, historyAttachments } from './meta_facebook.js'
 
 // whatsapp
 import { getNumberDetail, getBusinessProfile, 
-    whatsappSendMessage, manage_wa_message,
     createMessageTemplate, getMessageTemplate,
     editMessageTemplate, deleteMessageTemplate,
     whatsappWebhookMessages, whatsappFailedStatuses } from './meta_whatsapp.js';
-import fs from 'node:fs'
 
 
 // Separate from the login secret, so a connect link can never be used as an access token or vice versa.
@@ -63,131 +59,6 @@ const connectOnce = (code, connect) => {
 }
 
 /**
- * 檢查附件檔案大小
- * @param {string} file - 檔案名稱 
- * @returns {boolean} true or false
- */
-const checkFileSize = (file) => {
-    let fileStatus = fs.statSync(file)
-    if((fileStatus / (1024 * 1000)) > 25){
-        return true
-    }else{
-        return false
-    }
-}
-
-/**
- * 根據收到訊息決定回復方式
- * @param receivedMessage object, 顧客的訊息物件
- */
-const handleMessage = (receivedMessage) => {
-    let response;
-    console.log(receivedMessage)
-    // Checks if the message contains text
-    if (receivedMessage.text) {
-        // Create the payload for a basic text message, which
-        // will be added to the body of your request to the Send API
-        response = {
-            'text': `You sent the message: '${receivedMessage.text}'. Now send me an attachment!`
-        };
-    } else if (receivedMessage.attachments) {
-
-        // Get the URL of the message attachment
-        let attachmentUrl = receivedMessage.attachments[0].payload.url;
-        console.log('attachmentUrl', attachmentUrl)
-        response = {
-            'attachment': {
-                'type': 'template',
-                'payload': {
-                    'template_type': 'generic',
-                    'elements': [{
-                        'title': 'Is this the right picture?',
-                        'subtitle': 'Tap a button to answer.',
-                        'image_url': attachmentUrl,
-                        'buttons': [
-                            {
-                                'type': 'postback',
-                                'title': 'Yes!',
-                                'payload': 'yes',
-                            },
-                            {
-                                'type': 'postback',
-                                'title': 'No!',
-                                'payload': 'no',
-                            }
-                        ],
-                    }]
-                }
-            }
-        };
-    }
-
-    // Send the response message
-    return response;
-}
-
-/**
- * 處理顧客回應
- * @param receivedPostback object, 顧客回應的訊息物件
- */
-const handlePostback = (receivedPostback) => {
-    let response;
-    console.log(receivedPostback)
-    // Get the payload for the postback
-    let payload = receivedPostback.payload;
-
-    // Set the response based on the postback payload
-    if (payload === 'yes') {
-        response = { 'text': 'Thanks!' };
-    } else if (payload === 'no') {
-        response = { 'text': 'Oops, try sending another image.' };
-    }
-    // Send the message to acknowledge the postback
-    return response;
-}
-
-
-/** 呼叫聊天機器人
- * @param recipient_id string, 收件人id，這裡做為發送方
- * @param messageRes object 用於回應的訊息物件
- * @param access_token string, 該粉絲頁的access_token 
- */
-const chatBotResponse = (recipient_id, messageRes, access_token) => {
-
-    metaClient({
-        endPoints: `${recipient_id}/messages`,
-        method: "POST",
-        queryStrings: { "access_token": access_token },
-        payloads: messageRes
-    }).then((result) => {
-        console.log('message sent!', result)
-    })
-}
-
-// Check if property exist then call chatbot
-/** 過濾訊息類型
- * @param webhookEvent object, 訊息物件
- * @param recipient_id string, 收件人id，這裡做為發送方
- * @param senderPsid string 寄件人id, 這裡做為接收方
- * @param access_token string, 該粉絲頁的access_token 
- */
-const filterMessage = (webhookEvent, recipient_id, senderPsid, access_token) => {
-    let messageRes = {};
-    if (webhookEvent.message) {
-        messageRes = handleMessage(senderPsid, webhookEvent.message);
-        chatBotResponse(messageRes, recipient_id, senderPsid, access_token) 
-    }
-    
-    if (webhookEvent.postback) {
-        messageRes = handlePostback(senderPsid, webhookEvent.postback);
-        chatBotResponse(messageRes, recipient_id, senderPsid, access_token) 
-    }
-
-    //... more rules here
-}
-
-
-/**
  * 尋找該訊息的聊天室id
  * @param page_id 粉絲頁id, string
  * @param object 訊息物件類型， string
@@ -196,7 +67,6 @@ const filterMessage = (webhookEvent, recipient_id, senderPsid, access_token) => 
  */
 
 const chat_room_id = async(page_id, object, message_id, access_token) => {
-    // console.log(page_id, object, message_id, access_token)
 
     return new Promise((resolve, reject) => {
         metaClient({
@@ -208,7 +78,6 @@ const chat_room_id = async(page_id, object, message_id, access_token) => {
                 "access_token": access_token
             }
         }).then((r) => {
-            // console.log('return from route', JSON.parse(r))
             let result = JSON.parse(r)
             
             if(result.data !== undefined){
@@ -221,15 +90,13 @@ const chat_room_id = async(page_id, object, message_id, access_token) => {
                 })                
                 resolve(undefined)
             }else{
-                // console.log('return from route', result.error)
                 reject(result)
             }
         }).catch((err) => {
-            // console.log('request_error', err)
             reject(err)
         })      
     }).catch((err) => {
-        console.log('promise_error', err)
+        console.error('promise_error', err)
     })  
 
 }
@@ -270,7 +137,7 @@ const appendMessage = async (to_chat_room_id, platform, contents, customer, chan
         externalId: message_id,
     })
     if(!message){
-        console.log('Inbound message not stored:', message_id)
+        console.warn('Inbound message not stored:', message_id)
     }
 }
 
@@ -306,9 +173,9 @@ export const importRecentHistory = async (channels, accountId) => {
                 }
             })
             const stored = await saveConversationHistory(channel, history.filter(Boolean), accountId)
-            console.log(`History import for ${channel.platform} channel ${channel.id}: ${stored} messages from ${conversations.length} conversations`)
+            console.info(`History import for ${channel.platform} channel ${channel.id}: ${stored} messages from ${conversations.length} conversations`)
         } catch (error) {
-            console.log(`History import failed for ${channel.platform} channel ${channel.id}:`, error.responseBody || error.message)
+            console.error(`History import failed for ${channel.platform} channel ${channel.id}:`, error.responseBody || error.message)
         }
     }
 }
@@ -370,18 +237,12 @@ const webhookMessage = (res, body) => {
             }
 
             if(!access_token){
-                console.log('Webhook message for an unknown channel:', message_id)
+                console.warn('Webhook message for an unknown channel:', message_id)
                 return
             }
 
             // Without a conversation id from Meta, the customer's id still identifies the conversation.
             let cid = await chat_room_id(page_id, body.object, message_id, access_token) || customer.id
-
-            //Check if sender followed the page or not
-
-
-            // if chatbot is set
-            //filterMessage(webhookEvent, recipient_id, senderPsid, access_token)
 
             //Save infomations to database
             await appendMessage(
@@ -392,7 +253,7 @@ const webhookMessage = (res, body) => {
                 message_id
             )
         } catch (error) {
-            console.log('webhook_error', error)
+            console.error('webhook_error', error)
         }
     });
 }
@@ -403,7 +264,6 @@ export default {
      */
     webhookConnect: async (req, res, next) => {
         const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
-        console.log('req.body', req.body)
         // Parse the query params
         let mode = req.query['hub.mode'];
         let token = req.query['hub.verify_token'];
@@ -416,7 +276,6 @@ export default {
             if (mode === 'subscribe' && token === VERIFY_TOKEN) {
 
                 // Responds with the challenge token from the request
-                console.log('WEBHOOK_VERIFIED');
                 res.status(200).send(challenge);
 
             } else {
@@ -436,7 +295,6 @@ export default {
         }
         let body = req.body;
         const { entry, object } = body
-        // console.log('entry', object)
         // Checks if this is an event from a page subscription
         if (object === 'page' || object == 'instagram') {
             webhookMessage(res, body)    
@@ -472,7 +330,7 @@ export default {
                     await markMessageFailed(externalId, metaFailureReason(error))
                 }
             } catch (error) {
-                console.log('webhook_error', error)
+                console.error('webhook_error', error)
             }
         }else {
 
@@ -539,7 +397,7 @@ export default {
                 }
 
                 const { failed, ...channels } = await collectMetaChannels(req.query.code)
-                const { saved, skipped } = await sortChannelSchema({ companyId: account.companyId, accountId: account.id, ...channels })
+                const { saved, skipped } = await saveMetaChannels({ companyId: account.companyId, accountId: account.id, ...channels })
                 // The inbox fills in by itself; connecting shouldn't wait for it.
                 importRecentHistory(saved, account.id)
 
@@ -549,7 +407,7 @@ export default {
                     ...(failed.length > 0 && { meta_failed: failed.join('、') }),
                 }
             } catch (error) {
-                console.log('Meta connect failed:', error.responseBody || error.message)
+                console.error('Meta connect failed:', error.responseBody || error.message)
                 return { meta_error: '串接 Meta 失敗，請稍後再試。' }
             }
         }))
@@ -560,14 +418,12 @@ export default {
      * @param {string} access_token - Facebook 登入換取的 user_access_token
      */
     getDebugToken: (req, res, next) => {
-        // console.log(req.headers.authorization)
         const access_token = req.headers.authorization?.split('Bearer ')[1]
-        // console.log(access_token)
 
         try {
             getDebugToken(req, access_token, next)
         } catch (error) {
-            console.log(error)
+            console.error(error)
             res.status(500).send(error)
         }
     },
@@ -584,7 +440,6 @@ export default {
                 "access_token": access_token
             }
         }).then((r) => {
-            console.log('account infomation:', JSON.parse(r))
             res.send(JSON.parse(r))
         })
     },
@@ -595,7 +450,7 @@ export default {
         try {
             getUserLongLivedToken(res, access_token)
         } catch (error) {
-            console.log(error)
+            console.error(error)
             res.status(500).send(error)
         }
     },
@@ -611,7 +466,7 @@ export default {
         try {
             getFacebookUserId(req, access_token, whatsappAccounts, next)
         } catch (error) {
-            console.log(error)
+            console.error(error)
             res.status(500).send(error)
         }
     },
@@ -623,7 +478,6 @@ export default {
      */
     getInstagramBusinessAccount: (req, res, next) => {
         const page_id = req.body.page_id
-        // console.log('getInstagramBusinessAccount:', req.headers)
         const access_token = req.headers['authorization']?.split('Bearer ')[1]
         metaClient({
             endPoints: `${page_id}`,
@@ -633,7 +487,6 @@ export default {
                 "access_token": access_token // FB pageToken
             }
         }).then((result) => {
-            console.log('Connected Instagram account:', JSON.parse(result));
             const body = JSON.parse(result)
             if(body.connected_instagram_account !== undefined){
                 req.body.instagram_id = body.connected_instagram_account.id
@@ -662,7 +515,6 @@ export default {
                 "access_token": access_token // FB pageToken
             }
         }).then((result) => {
-            console.log('Instagram account profile:', JSON.parse(result))
 
             res.send(JSON.parse(result))
         })
@@ -681,7 +533,7 @@ export default {
         try {
             getFacebookPageToken(res, user_id, access_token, whatsappAccounts)
         } catch (error) {
-            console.log(error)
+            console.error(error)
             res.status(500).send(error)
         }
     },
@@ -698,132 +550,11 @@ export default {
         try{
             getPageFollowers(res, page_id, access_token)
         }catch(error){
-            console.log(error)
+            console.error(error)
             res.status(500).send(error)
         }
     },
     
-    //List of Conversations
-    /**
-     * 查詢粉絲頁的聊天訊息
-     * @param page_id string, 粉絲頁id
-     * @param platform string, 訊息收發平台
-     * @param access_token string, 粉絲頁的 access_token
-     * @param user_id stirng, 粉絲頁讀者id, 非必填
-     */
-    getConversationsList: async(req, res, next) => {
-        //from getUserLongLivedToken function
-        const { page_id, platform, user_id } = req.query;
-        const access_token = req.headers['authorization']?.split('Bearer ')[1]
-
-        try {
-            getMetaConversations(res, page_id, platform, access_token)
-        } catch (error) {
-            console.log(error)
-            res.status(500).send(error)
-        }
-    },
-
-    //recent 20 messages of a conversation
-    /**
-     * 查詢聊天室的對話訊息
-     * @param conversation_id string, 聊天室id 
-     * @param access_token string, 粉絲頁的 access_token
-     */
-    getConversationMessages: (req, res, next) => {
-        const conversation_id = req.query.conversation_id;
-        const access_token = req.headers['authorization'].split('Bearer ')[1]
-        try {
-            getConversationMessages(res, conversation_id, access_token)
-        } catch (error) {
-            console.log(error)
-            res.status(500).send(error)
-        }
-    },
-
-    /**
-     * 查詢訊息內容
-     * @param message_id string, 訊息id
-     * @param access_token string, 粉絲頁的 access_token
-     */
-    getMessage: (req, res, next) => {
-        const message_id = req.query.message_id;
-        const access_token = req.headers['authorization']?.split('Bearer ')[1]
-        // /shares 分享的項目，包含連結、相片、影片、貼圖和產品。
-        // /attachments 訊息附加的檔案。
-        // 'fields': 'id,created_time,from,to,message,file_url'
-        try {
-            getMessage(res, message_id, access_token)
-        } catch (error) {
-            console.log(error)
-            res.status(500).send(error)
-        }
-    },
-
-    /**
-     * 取得訊息附件
-     * @param message_id string, 訊息id
-     * @param access_token string, 粉絲頁的 access_token
-     */
-    getAttachment: (req, res, next) => {
-        const message_id = req.query.message_id
-        const access_token = req.headers['authorization']?.split('Bearer ')[1]
-        
-        try{
-            getAttachment(res, message_id, access_token)
-        }catch(error){
-            console.log(error)
-            res.status(500).send(error)
-        }
-    },
-
-    // Send text/template message or attachment
-    /**
-     * Messenger 發送訊息
-     * @param content - object, 要發送的訊息物件
-     * @param page_id - string, channel_id / 公司粉絲頁id
-     * @param platform - string, 平台名稱，由masterBox紀錄
-     * @param to_chat_room_id - string, 平台生成的聊天室id
-     * @param access_token - string, 粉絲頁的 access_token
-     */
-    messenger: (req, res, next) => {
-        const { content, page_id, platform, to_chat_room_id } = req.body
-        const access_token = req.headers['authorization']?.split('Bearer ')[1]
-        
-        try{
-            metaSendMessage(res, page_id, content, platform, to_chat_room_id, access_token)
-        }catch(error){
-            console.log(error)
-            res.status(500).send(error)
-        }
-    },
-
-    // subScribeButtonMessage: (req, res, next) => {
-    //     const { page_id, access_token } = req.body
-
-    //     const subscribeButton = {
-    //         "recipient":{
-    //           "id":"<PSID>"
-    //         },
-    //         "message":{
-    //           "attachment":{
-    //             "type":"template",
-    //             "payload":{
-    //               "template_type":"button",
-    //               "text":"點我開始訂閱",
-    //               "buttons":[
-    //                 {
-    //                   "type":"postback",
-    //                   "title":"Visit Messenger",
-    //                   "payload": 
-    //                 }
-    //               ]
-    //             }
-    //           }
-    //         }
-    //       }
-    // },
-
     /**
      * 取得 whatsapp 號碼
      * @param {string} whatsapp_business_account_id - 公司的 whatsapp 帳號 id
@@ -832,7 +563,6 @@ export default {
     getWhatsappNumberDetails: (req, res, next) => {
         const { whatsapp_business_account_id } = req.query;
         const access_token = req.headers['authorization'].split('Bearer ')[1]
-        console.log('whatsapp_business_account_id', whatsapp_business_account_id)
         /**
          * access_token=system-user-access-token
          * data"data": [{
@@ -844,24 +574,7 @@ export default {
         try {
             getNumberDetail(res, whatsapp_business_account_id, access_token)
         } catch (error) {
-            console.log(error)
-            res.status(500).send(error)
-        }
-    },
-
-    /**
-     * Whatsapp 發送訊息
-     * @param {object} messageData - 欲發送的訊息物件
-     * @param {string} from - 公司的 whatsapp 號碼id
-     * @param {string} access_token - user_access_token
-     */
-    sendMessage: (req, res, next) => {
-        const { messageData, from } = req.body;
-        const access_token = req.headers?.['authorization'].split('Bearer ')[1]
-        try {
-            whatsappSendMessage(res, messageData, from, access_token)
-        } catch (error) {
-            console.log(error)
+            console.error(error)
             res.status(500).send(error)
         }
     },
@@ -877,7 +590,7 @@ export default {
         try{
             createMessageTemplate(res, whatsapp_business_account_ID, templateData)
         }catch(error) {
-            console.log(error)
+            console.error(error)
             res.status(500).send(error)
         }
     },
@@ -893,7 +606,7 @@ export default {
         try{
             getMessageTemplate(res, whatsapp_business_account_ID, params)
         }catch (error){
-            console.log(error)
+            console.error(error)
             res.status(500).send(error)
         }
     },
@@ -910,7 +623,7 @@ export default {
         try{
             editMessageTemplate(res, message_template_ID, templateData)
         }catch (error){
-            console.log(error)
+            console.error(error)
             res.status(500).send(error)
         }
     },
@@ -943,7 +656,7 @@ export default {
         try{
             appSubscribePage(page_id, access_token, res)
         }catch(error){
-            console.log(error)
+            console.error(error)
             res.status(500).send(error)
         }
     },
@@ -961,7 +674,6 @@ export default {
             method: "DELETE",
             queryStrings: { "access_token": access_token }
         }).then((result) => {
-            console.log('Page unsubscripted:', result)
 
             res.send(JSON.parse(result))
         })

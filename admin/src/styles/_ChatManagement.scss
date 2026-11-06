@@ -69,3 +69,9 @@
 .chat-management-header .chat-management-status.is-connected { @apply text-green-600; }
 .chat-management-header .chat-management-status.is-connecting { @apply text-black_secondary; }
 .chat-management-header .chat-management-status.is-disconnected { @apply text-red-600; }
+
+// Whose conversations the list shows, and who handles each.
+.chat-management-sidebar-head { @apply flex items-center justify-between gap-2 mb-2; }
+.chat-management-sidebar-head label { @apply mb-0; }
+.chat-management-sidebar .chat-management-filter { @apply w-auto max-w-[60%] py-1; font-size: 13px; }
+.chat-management-room-assignee { @apply truncate text-black_tertiary; font-size: 11px; }

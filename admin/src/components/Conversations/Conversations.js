@@ -1,27 +1,13 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
 import ChatroomItem from "../../stories/components/ChatroomItem";
-import Bubble from "../../stories/components/Bubble";
-import Button from "../../stories/components/Button";
 import Icon from "../../stories/components/Icon";
-// import ChatList from "../../stories/components/ChatList";
-import Avatar from "../../stories/components/Avatar";
-import MobileHeader from "../Messenger/MobileHeader";
 import ContentText from "../../stories/components/ContentText";
 import ChatBubble from "./ChatBubble";
 import MessageInput from "./MessageInput ";
-import { useDispatch } from "react-redux";
-import { handleSendMessage, pushMessage } from "../../redux/slices/messagesSlices";
-import { MessageFactory } from '../../utils/MessageFactory';
 
 import { useTranslation } from "react-i18next";
 import { dayKey, dayLabel, timeLabel } from '../../utils/messageTime';
 import { customerOfRoom } from '../Messenger/ChatroomList';
-
-//RFCP 快速建立component
-const imgList = [
-  { img: "emoji", action: "" },
-  { img: "attach", action: "" },
-];
 
 // Who on the company's side sent a reply, when it wasn't the agent looking at it, and whether it was a template.
 const senderNote = ({ isMine, template }) => [isMine === false ? '同事回覆' : null, template?.name ? `WhatsApp 範本：${template.name}` : null].filter(Boolean).join('・') || null;
@@ -30,10 +16,6 @@ const senderNote = ({ isMine, template }) => [isMine === false ? '同事回覆' 
 const AT_BOTTOM_THRESHOLD_PX = 48;
 // Within this distance of the top, earlier messages start loading.
 const LOAD_OLDER_THRESHOLD_PX = 120;
-
-function ActionIcon({ icon }) {
-  return <Icon name={icon} customStyles='messenger-room-send-inputArea-iconArea-icon' />;
-}
 
 // onLoadOlder, hasOlder and loadingOlder page back through the conversation; without them every message is already here.
 export default function Conversations({ isCustomerSideInfo, setIsCustomerSideInfo, currentComponent, isMobile, messages, currentChatroom, currentChannel, selectedChannel, channels, chatrooms, handlePushMessage, emptyContent, onLoadOlder, hasOlder, loadingOlder }) {
@@ -95,7 +77,7 @@ export default function Conversations({ isCustomerSideInfo, setIsCustomerSideInf
     loadOlderIfNearTop();
   }
 
-  function handleSendMessage(message) {
+  function sendReply(message) {
     return handlePushMessage(currentChatroom.chat_room_id, message, customerInfo?.id).then((result) => {
       scrollToLatest();
       return result;
@@ -147,8 +129,6 @@ export default function Conversations({ isCustomerSideInfo, setIsCustomerSideInf
   const customerName = customerInfo?.name || ''
   const language = i18n.language
 
-  // console.log('currentChatroom', currentChatroom)
-
 
 
   return (
@@ -161,11 +141,16 @@ export default function Conversations({ isCustomerSideInfo, setIsCustomerSideInf
               name={customerInfo?.avatar || (customerName !== 'null' ? customerName : '')}
               customStyles={`messenger-room-client ${isMobile ? 'bg-primary' : ''}`}
               endElement={isMobile ? '' :
-                <Icon name='moreinfo'
-                  size='medium'
-                  onClick={moreInfoHandler}
-                  customStyles='cursor-pointer'
-                />}
+                <div className='flex items-center min-w-0'>
+                  <span className='messenger-room-assignee' title={t('assignee')}>
+                    {currentChatroom.assignee ? t('assignee_label', { name: currentChatroom.assignee.name }) : t('assignment_unassigned')}
+                  </span>
+                  <Icon name='moreinfo'
+                    size='medium'
+                    onClick={moreInfoHandler}
+                    customStyles='cursor-pointer'
+                  />
+                </div>}
               contentShow={false}
             />}
 
@@ -193,7 +178,7 @@ export default function Conversations({ isCustomerSideInfo, setIsCustomerSideInf
               {hasNewMessages && <button type='button' className='messenger-room-newMessages' onClick={scrollToLatest}>{t('new_messages')}</button>}
             </div>
 
-            <MessageInput handlePushMessage={handleSendMessage} isMobile={isMobile} platform={currentChatroom.platform || currentChannel?.platform} room={currentChatroom} />
+            <MessageInput handlePushMessage={sendReply} isMobile={isMobile} platform={currentChatroom.platform || currentChannel?.platform} room={currentChatroom} />
           </>
         ) : (
           <div className="messenger-room-messages-null">

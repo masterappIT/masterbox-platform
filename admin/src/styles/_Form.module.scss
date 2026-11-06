@@ -50,3 +50,17 @@
 		}
 	}
 }
+
+// Which channels a user works in.
+.user-form-channels {
+	@apply mt-[20px] p-0 border-0;
+	legend { @apply mb-[4px] text-[14px] leading-[20px] font-medium text-black_secondary; }
+	&-list { @apply flex flex-wrap gap-[8px] mt-[8px]; }
+}
+.user-form-channel {
+	@apply inline-flex items-center gap-[8px] h-[36px] px-[12px] rounded-[8px] border border-[#D9D9D9] bg-white cursor-pointer text-[14px];
+	input { @apply w-[16px] h-[16px]; accent-color: theme('colors.primary'); }
+	small { @apply text-[12px] text-black_tertiary; }
+	&:has(input:checked) { @apply border-primary; background: rgba(255, 171, 55, 0.08); }
+}
+.user-form-warning { @apply mt-[8px] text-[13px] text-alert_dark; }

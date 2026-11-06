@@ -63,15 +63,6 @@ mutation SendWhatsappTemplate($id: ID!, $templateId: ID!, $values: [WhatsappTemp
 }
 `;
 
-// Every message of a conversation, for pages that don't page through them yet.
-export const CHATROOMS_MESSAGES = gql`
-query ChatRoomMessages($roomId: ID) {
-  messages(roomId: $roomId) {
-    ${MESSAGE_FIELDS}
-  }
-}
-`;
-
 // A page of a conversation: the newest messages, older ones with before, or newer ones with after.
 export const MESSAGE_PAGE = gql`
 query MessagePage($id: ID!, $first: Int, $before: String, $after: String) {

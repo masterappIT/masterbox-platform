@@ -44,6 +44,14 @@ export default gql`
     id: ID!
     name: String!
   }
+  "An agent of the company, as colleagues see them."
+  type Agent {
+    id: ID!
+    "The name they set, or their email."
+    name: String!
+    email: String!
+    role: String
+  }
   "Whether a conversation can still be answered, by Meta's rules for its platform."
   type ReplyWindow {
     "open: any reply. human_agent: Messenger and Instagram within 7 days, sent with the HUMAN_AGENT tag. closed: the window has passed. no_customer_message: the customer hasn't written. unsupported: the platform can't be answered here."
@@ -74,6 +82,9 @@ export default gql`
     "The customer's last message, which Meta's reply windows count from."
     lastCustomerMessageAt: DateTime
     replyWindow: ReplyWindow!
+    "The agent handling the conversation; null while it is unassigned."
+    assignee: Agent
+    assignedAt: DateTime
     createdAt: DateTime
     updatedAt: DateTime
   }
@@ -95,6 +106,10 @@ export default gql`
     platform: String
     channel_id: ID
     unread_only: Boolean
+    "all (the default), mine: assigned to the signed-in account, or unassigned."
+    assignment: String
+    "Only the conversations this agent handles."
+    assignee_id: ID
   }
   type SubscribedChannel {
     channel_id: ID!
@@ -155,6 +170,8 @@ export default gql`
     markChatRoomRead(id: ID!, messageId: ID): ChatRoom!
     addChatRoomTag(id: ID!, name: String!): ChatRoom!
     removeChatRoomTag(id: ID!, tagId: ID!): ChatRoom!
+    "Hands the conversation to an agent who works in its channel, or leaves it unassigned when assigneeId is null."
+    assignChatRoom(id: ID!, assigneeId: ID): ChatRoom!
     "Sends an approved WhatsApp template in the conversation; header_media_url is an uploaded file for an image, video or document header."
     sendWhatsappTemplate(id: ID!, templateId: ID!, values: [WhatsappTemplateValue!], header_media_url: String): Message!
   }
@@ -170,8 +187,14 @@ export default gql`
     "A conversation's messages: the newest by default, older ones with before, newer ones with after."
     messagePage(id: ID!, first: Int, before: String, after: String): MessagePage!
     customerTags: [CustomerTag!]!
+    "The agents a conversation can be assigned to; without id, every enabled agent of the company."
+    chatRoomAssignees(id: ID): [Agent!]!
     "The approved templates of a WhatsApp conversation's number, read from Meta."
     whatsappTemplates(id: ID!): [WhatsappTemplate!]!
   }
-  type Subscription { sendMessage: Message }
+  type Subscription {
+    sendMessage: Message
+    "A conversation in the signed-in account's channels changed, such as its agent or its tags."
+    chatRoomUpdated: ChatRoom
+  }
 `;

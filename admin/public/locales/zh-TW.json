@@ -153,5 +153,22 @@
   "platform_ig": "Instagram",
   "platform_whatsapp": "WhatsApp",
   "platform_line": "LINE",
-  "platform_wechat": "WeChat"
+  "platform_wechat": "WeChat",
+  "assignee": "負責人",
+  "assignee_me": "{{name}}（你）",
+  "assigned_at": "{{time}} 指派",
+  "assignment_filter": "依負責人篩選",
+  "assignment_all": "全部對話",
+  "assignment_mine": "指派給我",
+  "assignment_unassigned": "未指派",
+  "assignment_by_agent": "負責人",
+  "assign_to_me": "指派給我",
+  "take_over": "改由我負責",
+  "assign_to": "指派給…",
+  "transfer_to": "轉交給…",
+  "unassign": "取消指派",
+  "assign_failed": "負責人沒有變更：{{reason}}",
+  "assignee_only_hint": "由 {{name}} 負責。只有負責人或管理者可以轉交或取消指派。",
+  "assignees_load_failed": "無法讀取可指派的客服，請重新整理",
+  "assignee_label": "負責人：{{name}}"
 }

@@ -235,6 +235,15 @@
 	&-time {
 		@apply text-[12px] leading-[16px] text-black_tertiary whitespace-nowrap;
 	}
+	// Who handles the conversation, in a few characters.
+	&-assignee {
+		@apply max-w-[80px] truncate text-[11px] leading-[16px] px-[6px] rounded-full bg-[#F0F0F0] text-black_secondary;
+	}
+}
+
+// Who handles the open conversation, above its messages.
+.messenger-room-assignee {
+	@apply mr-[12px] text-[13px] text-black_secondary whitespace-nowrap truncate max-w-[200px];
 }
 
 .messenger-unread {
@@ -275,6 +284,24 @@
 		@apply flex gap-[12px] text-[14px] leading-[20px];
 		dt { @apply shrink-0 w-[72px] text-black_tertiary; }
 		dd { @apply flex-1 min-w-0 break-all text-black_primary; }
+	}
+
+	&-assignee {
+		@apply px-[20px] pt-[20px] pb-[4px];
+		&-current {
+			@apply flex flex-col mt-[8px] mb-[10px] text-[14px] leading-[20px] text-black_primary;
+			span { @apply text-[12px] text-black_tertiary; }
+		}
+		&-actions {
+			@apply flex flex-wrap gap-[8px];
+			button, select {
+				@apply h-[32px] px-[12px] rounded-[6px] text-[13px] max-w-full;
+			}
+			button { @apply bg-primary text-white; }
+			button.is-secondary { @apply bg-white text-black_secondary border border-[#D9D9D9]; }
+			button:disabled, select:disabled { @apply opacity-60 cursor-default; }
+			select { @apply border border-[#D9D9D9] bg-white; }
+		}
 	}
 
 	&-tags {

@@ -1,8 +1,11 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit'
 import { apolloApiHelpers, client, refreshSession, onSocketReconnected } from '../../graphQL';
 import { SUBSCRIBE_MESSAGE } from '../../graphQL/subscription'
-import { GET_USER_SUBSCRIBED_CHANNELS, CHATROOMS, CHAT_ROOM_PAGE, CHAT_ROOM, MARK_CHAT_ROOM_READ, CUSTOMER_TAGS, ADD_CHAT_ROOM_TAG, REMOVE_CHAT_ROOM_TAG } from '../../graphQL/channel'
-import { SEND_MESSAGE, CHATROOMS_MESSAGES, MESSAGE_PAGE, WHATSAPP_TEMPLATES, SEND_WHATSAPP_TEMPLATE } from '../../graphQL/messages'
+import {
+  GET_USER_SUBSCRIBED_CHANNELS, CHATROOMS, CHAT_ROOM_PAGE, CHAT_ROOM, MARK_CHAT_ROOM_READ, CUSTOMER_TAGS, ADD_CHAT_ROOM_TAG, REMOVE_CHAT_ROOM_TAG,
+  ASSIGN_CHAT_ROOM, CHAT_ROOM_ASSIGNEES, SUBSCRIBE_CHAT_ROOM_UPDATES,
+} from '../../graphQL/channel'
+import { SEND_MESSAGE, MESSAGE_PAGE, WHATSAPP_TEMPLATES, SEND_WHATSAPP_TEMPLATE } from '../../graphQL/messages'
 import { QUICK_REPLIES } from '../../graphQL/messageTemplate'
 
 // These lists change on the server, so always read them fresh instead of from Apollo's cache.
@@ -65,12 +68,17 @@ const byActivity = (a, b) => (new Date(b.updatedAt) - new Date(a.updatedAt)) || 
 
 const sameRoom = (room, { channel_id, to_chat_room_id }) => room.channel_id === channel_id && room.chat_room_id === to_chat_room_id;
 
+// Whether a conversation's agent is the one the list is filtered on: someone in particular, or nobody.
+const fitsAssignment = (room, filter = {}) => (!filter.assignee_id || room.assignee?.id === filter.assignee_id)
+  && (filter.assignment !== 'unassigned' || !room.assignee);
+
 // Whether a conversation the server just sent belongs in the list under its filter.
 // A search is only matched on the server, so new conversations wait for the next search.
 const fitsFilter = (room, filter = {}) => !filter.search
   && (!filter.channel_id || room.channel_id === filter.channel_id)
   && (!filter.platform || room.platform === filter.platform)
-  && (!filter.unread_only || room.unreadCount > 0);
+  && (!filter.unread_only || room.unreadCount > 0)
+  && fitsAssignment(room, filter);
 
 const isPageVisible = () => typeof document === 'undefined' || document.visibilityState === 'visible';
 
@@ -90,16 +98,6 @@ export const findChatsRooms = createAsyncThunk(
     const res = await apolloApiHelpers('query', CHATROOMS, undefined, FRESH)
     if (res.error) return rejectWithValue(res.error)
     return dispatch(saveChatrooms(res.map(toChatRoom)))
-  }
-)
-
-// Every message of a conversation, for /messenger.
-export const getChatRoomsMessages = createAsyncThunk(
-  'messages/getChatRoomsMessages',
-  async ({ getChatRoomsMessagesInput: { platform, channel_id, chat_room_id } }, { dispatch, rejectWithValue }) => {
-    const res = await apolloApiHelpers('query', CHATROOMS_MESSAGES, { roomId: chat_room_id }, FRESH)
-    if (res.error) return rejectWithValue(res.error)
-    return dispatch(saveMessages({ key: messagesKey({ platform, channel_id, chat_room_id }), data: res.map(toMessage) }))
   }
 )
 
@@ -225,6 +223,45 @@ export const removeConversationTag = createAsyncThunk(
   }
 )
 
+/** The company's agents, for the list's filter by agent. */
+export const loadAgents = createAsyncThunk(
+  'inbox/agents',
+  async (_, { rejectWithValue }) => {
+    const res = await apolloApiHelpers('query', CHAT_ROOM_ASSIGNEES, undefined, FRESH)
+    if (res.error) return rejectWithValue(res.error)
+    return res
+  }
+)
+
+/** Who this conversation can be assigned to: everyone who works in its channel. Not kept in the store. */
+export const loadRoomAssignees = createAsyncThunk(
+  'inbox/roomAssignees',
+  async ({ id }, { rejectWithValue }) => {
+    const res = await apolloApiHelpers('query', CHAT_ROOM_ASSIGNEES, { id }, FRESH)
+    if (res.error) return rejectWithValue(res.error)
+    return res
+  }
+)
+
+/**
+ * Hands a conversation to an agent, or leaves it unassigned (assigneeId null).
+ * Rejects with { message, conflict } — conflict when someone changed it first, after which the conversation is read again.
+ */
+export const assignConversation = createAsyncThunk(
+  'inbox/assign',
+  async ({ id, assigneeId }, { dispatch, rejectWithValue }) => {
+    const res = await apolloApiHelpers('mutation', ASSIGN_CHAT_ROOM, { id, assigneeId: assigneeId || null })
+    if (res.error) {
+      const conflict = res.extensions?.code === 'CONFLICT'
+      if (conflict) dispatch(fetchConversation({ id })).unwrap().then((room) => dispatch(roomUpdated(room))).catch(() => null)
+      return rejectWithValue({ message: res.error, conflict })
+    }
+    const room = toChatRoom(res)
+    dispatch(roomUpdated(room))
+    return room
+  }
+)
+
 /**
  * After the live connection comes back: refresh the top of the inbox and fetch the open conversation's
  * messages sent while it was down. Messages already shown aren't added twice.
@@ -266,6 +303,7 @@ export const catchUpAfterReconnect = createAsyncThunk(
 const RESUBSCRIBE_DELAY_MS = 5000;
 
 let messagesSubscription = null;
+let roomsSubscription = null;
 let resubscribeTimer = null;
 let stopCatchingUp = null;
 
@@ -273,14 +311,34 @@ export const stopMessagesSubscription = () => {
   clearTimeout(resubscribeTimer);
   messagesSubscription?.unsubscribe();
   messagesSubscription = null;
+  roomsSubscription?.unsubscribe();
+  roomsSubscription = null;
   stopCatchingUp?.();
   stopCatchingUp = null;
+}
+
+// Changes to conversations, such as a colleague taking one, as they happen.
+const followRoomUpdates = (dispatch, getState, resubscribe) => {
+  roomsSubscription = client.subscribe({ query: SUBSCRIBE_CHAT_ROOM_UPDATES }).subscribe({
+    next: ({ data }) => {
+      const room = data?.chatRoomUpdated;
+      if (room?.id) dispatch(roomUpdated(toChatRoom(room)));
+    },
+    error: () => {
+      roomsSubscription = null;
+      if (getState().user?.accessToken) resubscribe();
+    },
+    complete: () => {
+      roomsSubscription = null;
+      if (getState().user?.accessToken) resubscribe();
+    },
+  });
 }
 
 export const handleMessagesSubscription = createAsyncThunk(
   'messages/subscribe',
   async ({ resubscribed } = {}, { dispatch, getState }) => {
-    if (messagesSubscription || !getState().user?.accessToken) return;
+    if (!getState().user?.accessToken) return;
 
     // The socket reconnecting by itself keeps the subscription, but anything sent meanwhile was missed.
     stopCatchingUp ||= onSocketReconnected(() => dispatch(catchUpAfterReconnect()));
@@ -289,6 +347,9 @@ export const handleMessagesSubscription = createAsyncThunk(
       clearTimeout(resubscribeTimer);
       resubscribeTimer = setTimeout(() => dispatch(handleMessagesSubscription({ resubscribed: true })), RESUBSCRIBE_DELAY_MS);
     };
+
+    if (!roomsSubscription) followRoomUpdates(dispatch, getState, resubscribe);
+    if (messagesSubscription) return;
 
     messagesSubscription = client.subscribe({ query: SUBSCRIBE_MESSAGE }).subscribe({
       next: ({ data }) => {
@@ -382,6 +443,10 @@ const initialInbox = { rooms: [], filter: {}, nextCursor: null, hasMore: false, 
 
 const initialState = {
   messages: {},
+  // The server's latest copy of conversations that changed while open, by id, for when the list doesn't show them.
+  roomDetails: {},
+  // The company's agents, for filtering the list by agent.
+  agents: [],
   // Whether older messages are left to load, by messagesKey.
   messagePaging: {},
   channels: [],
@@ -450,6 +515,27 @@ export const messagesSlice = createSlice({
       state.chatRooms = bumpRoom(state.chatRooms, message, { countUnread: false });
     },
 
+    /**
+     * A conversation as the server has it now, after an assignment or a tag change, here or by a colleague.
+     * It leaves the list when it no longer fits the agent filter, and joins it when it now does.
+     */
+    roomUpdated: (state, { payload: room }) => {
+      if (!state.roomDetails) state.roomDetails = {};
+      state.roomDetails[room.id] = room;
+      if (Array.isArray(state.chatRooms)) state.chatRooms = state.chatRooms.map((known) => (known.id === room.id ? { ...known, ...room } : known));
+      if (!state.inbox || state.inbox.status !== 'succeeded') return;
+      const { rooms, filter, hasMore } = state.inbox;
+      if (rooms.some(({ id }) => id === room.id)) {
+        state.inbox.rooms = fitsAssignment(room, filter)
+          ? rooms.map((known) => (known.id === room.id ? { ...known, ...room } : known))
+          : rooms.filter(({ id }) => id !== room.id);
+        return;
+      }
+      // Beyond the pages loaded so far it shows up when the agent scrolls there.
+      const last = rooms[rooms.length - 1];
+      if (fitsFilter(room, filter) && !(hasMore && last && byActivity(room, last) > 0)) state.inbox.rooms = placeRoom(rooms, room);
+    },
+
     addMessages: (state, { payload: { key, messages } }) => {
       state.messages[key] = mergeMessages(state.messages[key], messages);
     },
@@ -471,20 +557,12 @@ export const messagesSlice = createSlice({
       }
     },
 
-    addChannels: (state, { payload }) => {
-      state.channels = [...state.channels, ...payload]
-    },
-
     saveChannels: (state, { payload }) => {
       state.channels = payload
     },
 
     saveChatrooms: (state, { payload }) => {
       state.chatRooms = payload
-    },
-
-    saveMessages: (state, { payload: { key, data } }) => {
-      state.messages = { ...state.messages, [key]: [...data].sort(byTimeThenId) }
     },
   },
 
@@ -566,6 +644,7 @@ export const messagesSlice = createSlice({
         updateRoom(state, payload.id, { unreadCount: payload.unreadCount });
       })
       .addCase(loadCustomerTags.fulfilled, (state, { payload }) => { state.customerTags = payload })
+      .addCase(loadAgents.fulfilled, (state, { payload }) => { state.agents = payload })
       .addCase(loadQuickReplies.pending, (state) => { state.quickRepliesStatus = 'loading' })
       .addCase(loadQuickReplies.fulfilled, (state, { payload }) => { state.quickReplies = payload; state.quickRepliesStatus = 'succeeded' })
       .addCase(loadQuickReplies.rejected, (state) => { state.quickRepliesStatus = 'failed' })
@@ -574,10 +653,7 @@ export const messagesSlice = createSlice({
   }
 })
 
-export const { receiveMessage, addMessages, setOpenRoom, refreshInboxTop, addChannels, saveChannels, saveChatrooms, saveMessages } = messagesSlice.actions;
-
-// Kept for callers that add a message they already have.
-export const pushMessage = (message) => receiveMessage({ message, seen: true });
+export const { receiveMessage, roomUpdated, addMessages, setOpenRoom, refreshInboxTop, saveChannels, saveChatrooms } = messagesSlice.actions;
 
 export const selectMessages = (state) => state.messages?.messages;
 
@@ -600,6 +676,12 @@ export const selectMessagePaging = (state) => state.messages?.messagePaging || N
 const NO_REPLIES = [];
 export const selectQuickReplies = (state) => state.messages?.quickReplies || NO_REPLIES;
 export const selectQuickRepliesStatus = (state) => state.messages?.quickRepliesStatus || 'idle';
+
+const NO_AGENTS = [];
+export const selectAgents = (state) => state.messages?.agents || NO_AGENTS;
+
+const NO_DETAILS = {};
+export const selectRoomDetails = (state) => state.messages?.roomDetails || NO_DETAILS;
 
 const NO_TAGS = [];
 export const selectCustomerTags = (state) => state.messages?.customerTags || NO_TAGS;

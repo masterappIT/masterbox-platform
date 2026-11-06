@@ -37,6 +37,8 @@ mutation CreateMetaConnectUrl($returnUrl: String!) {
 }
  `;
 
+const AGENT_FIELDS = `id name email role`;
+
 const ROOM_FIELDS = `
     id
     platform
@@ -72,6 +74,10 @@ const ROOM_FIELDS = `
       templateRequired
       humanAgentAvailable
     }
+    assignee {
+      ${AGENT_FIELDS}
+    }
+    assignedAt
     createdAt
     updatedAt
 `;
@@ -145,6 +151,33 @@ mutation RemoveChatRoomTag($id: ID!, $tagId: ID!) {
       id
       name
     }
+  }
+}
+`;
+
+// Hands the conversation to an agent, or leaves it unassigned with a null assigneeId.
+export const ASSIGN_CHAT_ROOM = gql`
+mutation AssignChatRoom($id: ID!, $assigneeId: ID) {
+  assignChatRoom(id: $id, assigneeId: $assigneeId) {
+    ${ROOM_FIELDS}
+  }
+}
+`;
+
+// Who a conversation can go to; without an id, every agent of the company.
+export const CHAT_ROOM_ASSIGNEES = gql`
+query ChatRoomAssignees($id: ID) {
+  chatRoomAssignees(id: $id) {
+    ${AGENT_FIELDS}
+  }
+}
+`;
+
+// A conversation in the account's channels changed, such as its agent or its tags.
+export const SUBSCRIBE_CHAT_ROOM_UPDATES = gql`
+subscription ChatRoomUpdates {
+  chatRoomUpdated {
+    ${ROOM_FIELDS}
   }
 }
 `;

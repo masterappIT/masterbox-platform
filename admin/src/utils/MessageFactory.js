@@ -39,7 +39,6 @@ export class MessageFactory {
 
 
         if (this.#body.platform === "fb" || this.#body.platform === "ig") {
-            console.log('this.#body.platform :>> ', this.#body.platform);
             this.#body.contents = new fbMessage(contents);
         }
 
@@ -52,14 +51,10 @@ export class MessageFactory {
             this.#body.contents = contents;
         }
 
-        console.log('this.#body :>> ', this.#body);
         // message.vehicleType = vehicleType;
 
-        // vehicle.startEngine = ()=> console.log(`Reving ${vehicleType} engine`);
 
-        // vehicle.driveVehicle = ()=> console.log(`Driving ${vehicleType}...`);
 
-        // vehicle.stopEngine = ()=> console.log(`Stop ${vehicleType} engine`);
 
         return { ...this.#body, contents: JSON.stringify(this.#body.contents) }
     }

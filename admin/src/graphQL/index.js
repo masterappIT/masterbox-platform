@@ -195,21 +195,17 @@ class apolloReqBuilder {
         }
 
         if (this.type === 'query') {
-            // console.log(' apolloApiHelpers:>> callApi2 ', this.type,"query");
 
             return client.query(this.#body)
         }
 
         if (this.type === 'mutation') {
-            // console.log(' apolloApiHelpers:>> callApi3 ', this.type,"mutation");
 
-            // console.log('this.#body', this.#body)
             return client.mutate(this.#body)
         }
         if (this.type === 'subscription') {
             return client.subscribe(this.#body)
         }
-        console.log('apolloReqBuilder', this.type)
     }
 
 
@@ -228,11 +224,9 @@ export const apolloApiHelpers = async (type, gqlOptions, variables, options) => 
 
     try {
 
-        // console.log(' apolloApiHelpers:>> variables', variables)
 
         const reqBody = new apolloReqBuilder(type).setBody(gqlOptions);
 
-        // console.log(' apolloApiHelpers:>> reqBody ', reqBody.callApi);
 
         if (variables) reqBody.setVariables(variables);
 
@@ -241,36 +235,12 @@ export const apolloApiHelpers = async (type, gqlOptions, variables, options) => 
         //for extra the data from res
         const reqName = getMainDefinition(gqlOptions).selectionSet.selections[0].name.value
 
-        console.log(' apolloApiHelpers:>> reqName1 ', reqName);
-
 
         const res = await reqBody.callApi();
 
 
-        console.log(' apolloApiHelpers:>> reqName2 ', res);
-        // console.log(' apolloApiHelpers:>> reqName3 ', error);
-
-
-        // if (error&&error.includes('INTERNAL_SERVER_ERROR')) {
-        //     console.log(' apolloApiHelpers:>> Expired ????? ', res);
-        //     const res = store.dispatch(handleTokenExpired)
-        //     console.log(' apolloApiHelpers:>> Expired  ', res);
-
-        //     if (res.error) {
-        //         alert('請重新登入')
-        //         store.dispatch(removeAccessToken())
-        //         // router.reload()
-        //     } else {
-        //         // res會拿到access token（短期） &refresh token（長期）
-        //         await apolloApiHelpers(type, gqlOptions, variables);
-        //     }
-        // }
-
-
-
         return res.data[reqName] || res
     } catch (error) {
-        // console.log('error :>> ', error);
         // extensions carry details a caller may act on, such as a reply whose file went out but whose text didn't.
         return { error: error.message, extensions: error.graphQLErrors?.[0]?.extensions }
     }

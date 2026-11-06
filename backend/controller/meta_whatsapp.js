@@ -1,35 +1,8 @@
 import metaClient from '../api/metaClient.js';
 import {masterBox_meta_Route, masterBox_Api_graphql} from '../api/masterBoxClient.js';
 
-// Hold whatsapp message send by company
-var wa_messages = []
-
 // Webhook events and API responses prefix the same id differently.
 export const whatsappMessageId = (id) => id.split('.')[1] || id
-
-
-/**
- * 操作暫時存取的訊息陣列
- * @param {string} wamid - 列於 wamid 之後的 ID 
- * @param {object} message - 訊息物件
- * @param {string} mode - 操作模式, add, get, delete
- */
-export const manage_wa_message = (wamid, message = {}, mode) => {
-    switch(mode){
-        case 'add':
-        wa_messages.push({
-            id: wamid,
-            message: message
-        })
-        break
-        case 'get':
-        return wa_messages.find(id => id == wamid)
-        case 'delete':
-        let index = wa_messages.find(id => id == wamid)
-        wa_messages.splice(index, 1)
-        break
-    }
-}
 
 
 /**
@@ -112,7 +85,6 @@ export const getNumberDetail = (res, whatsapp_business_account_id, access_token)
             'access_token': access_token
         }
     }).then((result) => {
-        console.log('Whatsapp phone number:', JSON.parse(result))
         
         res.send(JSON.parse(result))
     })
@@ -132,7 +104,6 @@ export const getBusinessProfile = (res, phone_number_id, access_token) => {
             "access_token": access_token
         }
     }).then((r) => {
-        console.log(r)
 
         res.send(r)
     })
@@ -188,35 +159,6 @@ export const fetchApprovedTemplates = async (whatsapp_business_account_id, acces
 }
 
 /**
- * Whatsapp 發送訊息
- * @param {*} res - 回應api呼叫的起始句
- * @param {object} messageData - 訊息物件 
- * @param {string} from - 公司的 whatsapp 號碼id
- * @param {string} access_token - user_access_token
- */
-export const whatsappSendMessage = (res, messageData, from, access_token) => {
-    sendWhatsappMessage(messageData, from, access_token).then((result) => {
-        console.log('Whatsapp sendMessage', result)
-
-        if(result.error !== undefined){
-            console.log(result.error)
-        }else{
-            // keep message for a while
-            manage_wa_message(
-                result.messages[0].id.split('.')[1], 
-                messageData, 'add'
-            )           
-        }
-
-        res.send(result) 
-    }).catch((error) => {
-        console.log(error)
-        res.status(error.statusCode || 500).send(error.responseBody || { error: { message: error.message } })
-    })
-}
-
-
-/**
  * 建立訊息模板
  * @param {*} res - 回應api呼叫的起始句
  * @param {string} whatsapp_business_account_ID - 公司 whatsapp 帳號 ID
@@ -228,7 +170,6 @@ export const createMessageTemplate = (res, whatsapp_business_account_ID, templat
         method: "POST",
         queryStrings: templateData
     }).then((result) => {
-        console.log('Template created:', result)
 
         res.send(JSON.parse(result))
     })
@@ -247,7 +188,6 @@ export const getMessageTemplate = (res, whatsapp_business_account_ID, params) =>
         method: "GET",
         queryStrings: params
     }).then((result) => {
-        console.log("Retrieve templates: ", result)
 
         res.send(JSON.parse(result))
     })
@@ -265,7 +205,6 @@ export const editMessageTemplate = (res, message_template_ID, templateData) => {
         method: "POST",
         queryStrings: templateData
     }).then((result) => {
-        console.log("Template edited: ", result)
 
         res.send(result) // Return with boolean
     })
@@ -284,7 +223,6 @@ export const deleteMessageTemplate = (res, whatsapp_business_account_ID, params)
         method: "DELETE",
         queryStrings: params
     }).then((result) => {
-        console.log("Template deleted: ", result)
 
         res.send(result) // Return with boolean
     })

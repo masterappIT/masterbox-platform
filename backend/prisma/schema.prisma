@@ -128,6 +128,7 @@ model Account {
   platformAdminProfile PlatformAdminProfile?
   refreshSessions     PlatformAdminRefreshSession[]
   chatRoomReads       ChatRoomRead[]
+  assignedChatRooms   ChatRoom[]        @relation("ChatRoomAssignee")
 
   @@index([companyId])
   @@map("accounts")
@@ -150,15 +151,20 @@ model ChatRoom {
   channelId    String          @map("channel_id") @db.Text
   chatRoomId   String?         @map("chat_room_id")
   users        Json?
+  // The agent handling the conversation; null while nobody is.
+  assigneeId   String?         @map("assignee_id") @db.Text
+  assignedAt   DateTime?       @map("assigned_at")
   createdAt    DateTime        @default(now()) @map("created_at")
   updatedAt    DateTime        @updatedAt @map("updated_at")
   company      Company         @relation(fields: [companyId], references: [id])
   callSessions CallSession[]
   channel      CompanyChannel  @relation(fields: [channelId], references: [id])
+  assignee     Account?        @relation("ChatRoomAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
   reads        ChatRoomRead[]
   tags         ChatRoomTag[]
 
   @@index([companyId])
+  @@index([assigneeId])
   @@index([platform, chatRoomId])
   // The conversation list, newest first, one page at a time.
   @@index([companyId, updatedAt(sort: Desc), id(sort: Desc)])

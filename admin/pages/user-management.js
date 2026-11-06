@@ -11,6 +11,7 @@ import useAlerts from '../src/utils/useAlerts'
 import usePagination from '../src/utils/usePagination'
 import { apolloApiHelpers } from '../src/graphQL'
 import { LIST_ACCOUNTS, DELETE_ACCOUNT, UPDATE_ACCOUNT } from '../src/graphQL/account'
+import { GET_USER_SUBSCRIBED_CHANNELS } from '../src/graphQL/channel'
 import { selectUserInfo } from '../src/redux/slices/userSlices'
 
 const ROLE_NAMES = { admin: '管理者', user: '使用者' }
@@ -28,6 +29,14 @@ function UserManagementPage() {
   const [pendingIds, setPendingIds] = useState([])
   const [confirming, setConfirming] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  // The company's channels by id, to name each user's.
+  const [channelNames, setChannelNames] = useState({})
+
+  useEffect(() => {
+    apolloApiHelpers('query', GET_USER_SUBSCRIBED_CHANNELS, undefined, { fetchPolicy: 'no-cache' }).then((result) => {
+      if (Array.isArray(result)) setChannelNames(Object.fromEntries(result.map(({ channel_id: id, name }) => [id, name])))
+    })
+  }, [])
 
   const loadAccounts = useCallback(async () => {
     if (!companyId) return
@@ -73,12 +82,20 @@ function UserManagementPage() {
     else pushAlert('success', `已刪除 ${selectedKeys.length} 位使用者`)
   }
 
+  // Admins work in every channel; a user only in the ones given to them.
+  const channelsOf = (account) => {
+    if (account.role === 'admin') return '全部頻道'
+    const names = (account.channel_ids || []).map((id) => channelNames[id]).filter(Boolean)
+    return names.length ? names.join('、') : '未設定（看不到對話）'
+  }
+
   const rows = pageItems.map((account) => {
     const name = account.info?.name || account.email
     return [
       { key: 'name', element: 'custom', value: <span className='flex items-center gap-[12px] min-w-0 px-[8px]'><Avatar name={account.info?.avatar || name} size='small' /><span className='truncate' title={name}>{name}{account._id === userInfo?._id ? '（你）' : ''}</span></span> },
       { key: 'role', element: 'text', value: ROLE_NAMES[account.role] || account.role || '' },
       { key: 'email', element: 'text', value: account.email },
+      { key: 'channels', element: 'text', value: channelsOf(account) },
       { key: 'enabled', element: 'toggle', value: account.enabled === false ? 0 : 1, label: `啟用「${name}」`, disabled: account._id === userInfo?._id },
     ]
   })
@@ -89,8 +106,8 @@ function UserManagementPage() {
       <Table
         withCheckbox
         withEdit
-        colsTemplate='24px minmax(200px,1.4fr) minmax(90px,0.6fr) minmax(220px,1.6fr) minmax(90px,0.5fr) 48px'
-        header={['名稱', '角色', '電子信箱', '啟用']}
+        colsTemplate='24px minmax(180px,1.3fr) minmax(80px,0.5fr) minmax(200px,1.4fr) minmax(160px,1.2fr) minmax(80px,0.5fr) 48px'
+        header={['名稱', '角色', '電子信箱', '可處理的頻道', '啟用']}
         row={rows}
         rowIds={pageItems.map((account) => account._id)}
         loading={loading}

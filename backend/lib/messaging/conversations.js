@@ -4,10 +4,14 @@ import { ApolloError } from 'apollo-server-errors';
 import { prisma } from '../db/prisma.js';
 import { messagePreview, encodeCursor, decodeCursor, pageSize, searchPattern, customerOf } from './conversationText.js';
 import { replyWindow } from './replyWindow.js';
+import { visibleChannelIds, channelAccountIds, accountSeesChannel, companyAgents } from './access.js';
+import { pubsub } from '../../config/redis.js';
 
 const { Prisma } = prismaClientPackage;
 
 const PLATFORMS = ['fb', 'ig', 'whatsapp', 'line', 'wechat'];
+const ASSIGNMENTS = ['all', 'mine', 'unassigned'];
+export const CHAT_ROOM_UPDATED = 'chatRoomUpdated';
 const TAG_MAX_LENGTH = 20;
 
 // Messages are linked to a conversation by its platform id (or its own id when it has none) and its channel.
@@ -41,26 +45,19 @@ const CUSTOMER_MATCHES = pattern => Prisma.sql`EXISTS (
     AND concat_ws(' ', u->>'name', u->>'first_name', u->>'last_name', concat(u->>'first_name', u->>'last_name'),
       concat(u->>'last_name', u->>'first_name'), u->>'username', u->>'id') ILIKE ${pattern})`;
 
-/** The channels an account works in; it only sees their conversations. */
-const accountChannelIds = async (account) => {
-  const channels = await prisma.companyChannel.findMany({
-    where: { companyId: account.company_id, accounts: { some: { accountId: account.account_id } } },
-    select: { id: true },
-  });
-  return channels.map(({ id }) => id);
-};
-
 /**
- * A conversation the account may open, by its own id, or by its platform id and channel as messages carry them.
+ * A conversation the account may open: by its own id, by its platform id and channel as messages carry them,
+ * or by `key`, which older clients send and may be either id, optionally with the channel.
  * @throws NOT_FOUND when it doesn't exist or is in a channel the account doesn't work in
  */
-export const findAccountRoom = async (account, { id, chatRoomId, channelId }) => {
-  const channelIds = await accountChannelIds(account);
-  const where = id
-    ? { id }
-    : { channelId, OR: [{ chatRoomId }, { id: chatRoomId }] };
-  const room = (id || (chatRoomId && channelId))
-    ? await prisma.chatRoom.findFirst({ where: { ...where, companyId: account.company_id, channelId: { in: channelIds } } })
+export const findAccountRoom = async (account, { id, chatRoomId, channelId, key }) => {
+  const channelIds = await visibleChannelIds(account);
+  let where = null;
+  if (id) where = { id };
+  else if (chatRoomId && channelId) where = { channelId, OR: [{ chatRoomId }, { id: chatRoomId }] };
+  else if (key) where = { ...(channelId ? { channelId } : {}), OR: [{ id: key }, { chatRoomId: key }] };
+  const room = where && channelIds.length
+    ? await prisma.chatRoom.findFirst({ where: { AND: [where, { companyId: account.company_id, channelId: { in: channelIds } }] } })
     : null;
   if (!room) throw new ApolloError('找不到這段對話', 'NOT_FOUND');
   return room;
@@ -90,6 +87,14 @@ const roomStats = async (accountId, roomIds) => {
 };
 
 const tagView = ({ id, name }) => ({ id, name });
+
+/** An agent as colleagues see them: the name they set, or their email. */
+export const agentView = account => account && ({
+  id: account.id,
+  name: (typeof account.userInfo?.name === 'string' && account.userInfo.name.trim()) || account.email,
+  email: account.email,
+  role: account.role,
+});
 
 /** Whether the conversation can still be answered, as the GraphQL ReplyWindow type has it. */
 export const replyWindowView = (platform, lastCustomerMessageAt, now = new Date()) => {
@@ -123,12 +128,18 @@ const roomView = (room, stats) => {
     unreadCount: stats?.unread || 0,
     lastCustomerMessageAt,
     replyWindow: replyWindowView(room.platform, lastCustomerMessageAt),
+    assignee: room.assignee ? agentView(room.assignee) : null,
+    assignedAt: room.assigneeId ? room.assignedAt : null,
     createdAt: room.createdAt,
     updatedAt: room.updatedAt,
   };
 };
 
-const ROOM_DETAILS = { channel: { select: { name: true } }, tags: { include: { tag: true } } };
+const ROOM_DETAILS = {
+  channel: { select: { name: true } },
+  tags: { include: { tag: true } },
+  assignee: { select: { id: true, email: true, role: true, userInfo: true } },
+};
 
 /** The conversations with these ids, in that order, as the account sees them. */
 export const roomViews = async (account, roomIds) => {
@@ -142,17 +153,19 @@ export const roomViews = async (account, roomIds) => {
 
 /**
  * A page of the account's conversations, the one with the newest message first.
- * @param {{ first?: number, after?: string, filter?: { search?: string, platform?: string, channel_id?: string, unread_only?: boolean } }} options
+ * @param {{ first?: number, after?: string, filter?: { search?: string, platform?: string, channel_id?: string, unread_only?: boolean,
+ *   assignment?: 'all' | 'mine' | 'unassigned', assignee_id?: string } }} options
  * @returns {{ rooms, nextCursor: string | null, hasMore: boolean }}
  */
 export const listRooms = async (account, { first, after, filter = {} } = {}) => {
   const size = pageSize(first, 30, 100);
-  const channelIds = await accountChannelIds(account);
+  const channelIds = await visibleChannelIds(account);
   if (filter.channel_id && !channelIds.includes(filter.channel_id)) return { rooms: [], nextCursor: null, hasMore: false };
   const channels = filter.channel_id ? [filter.channel_id] : channelIds;
   if (!channels.length) return { rooms: [], nextCursor: null, hasMore: false };
   if (filter.platform && !PLATFORMS.includes(filter.platform)) throw new ApolloError('不支援這個平台', 'BAD_USER_INPUT');
   if (after && !decodeCursor(after)) throw new ApolloError('列表位置無效，請重新整理', 'BAD_USER_INPUT');
+  if (filter.assignment && !ASSIGNMENTS.includes(filter.assignment)) throw new ApolloError('不支援這個指派篩選', 'BAD_USER_INPUT');
 
   const cursor = decodeCursor(after);
   const pattern = searchPattern(filter.search);
@@ -162,6 +175,9 @@ export const listRooms = async (account, { first, after, filter = {} } = {}) => 
     Prisma.sql`r.channel_id IN (${Prisma.join(channels)})`,
     ...(filter.platform ? [Prisma.sql`r.platform::text = ${filter.platform}`] : []),
     ...(cursor ? [Prisma.sql`(r.updated_at, r.id) < (${cursor.time}, ${cursor.id})`] : []),
+    ...(filter.assignment === 'mine' ? [Prisma.sql`r.assignee_id = ${account.account_id}`] : []),
+    ...(filter.assignment === 'unassigned' ? [Prisma.sql`r.assignee_id IS NULL`] : []),
+    ...(filter.assignee_id ? [Prisma.sql`r.assignee_id = ${filter.assignee_id}`] : []),
     ...(filter.unread_only ? [Prisma.sql`EXISTS (SELECT 1 ${roomMessages(now)} AND ${UNREAD})`] : []),
     ...(pattern ? [Prisma.sql`(${CUSTOMER_MATCHES(pattern)} OR EXISTS (
       SELECT 1 ${roomMessages(now)} AND m.encryption_mode = 'server' AND ${MESSAGE_TEXT} ILIKE ${pattern}))`] : []),
@@ -280,6 +296,77 @@ export const addRoomTag = async (account, room, name) => {
 /** Takes a tag off the conversation's customer; the company keeps the tag for others. */
 export const removeRoomTag = async (account, room, tagId) => {
   await prisma.chatRoomTag.deleteMany({ where: { roomId: room.id, tagId, tag: { companyId: account.company_id } } });
+};
+
+/** The agents a conversation can go to: everyone who works in its channel; without one, everyone in the company. */
+export const assignableAgents = async (account, room) => (await companyAgents(account.company_id, room?.channelId)).map(agentView);
+
+/**
+ * Tells everyone who works in the conversation's channel how it looks now, each with their own unread count.
+ * A failure here mustn't undo the change that caused it.
+ */
+export const publishRoom = async (roomId) => {
+  try {
+    const room = await prisma.chatRoom.findUnique({ where: { id: roomId }, select: { id: true, companyId: true, channelId: true } });
+    if (!room) return;
+    const accountIds = await channelAccountIds(room.companyId, room.channelId);
+    await Promise.all(accountIds.map(async (accountId) => {
+      const [view] = await roomViews({ account_id: accountId, company_id: room.companyId }, [room.id]);
+      if (view) await pubsub.publish(`${CHAT_ROOM_UPDATED}-${accountId}`, { chatRoomUpdated: view });
+    }));
+  } catch (error) {
+    console.error('Conversation update not published:', error.message);
+  }
+};
+
+/**
+ * Hands the conversation to an agent, passes it to another, or (assigneeId null) leaves it unassigned.
+ * Admins can do any of these. Other agents can take an unassigned conversation and pass on or give up their own,
+ * so nobody takes a colleague's customer from under them. The new agent must work in the conversation's channel.
+ * @throws FORBIDDEN, BAD_USER_INPUT, or CONFLICT when someone else changed it first
+ * @returns whether anything changed
+ */
+export const assignRoom = async (account, room, assigneeId) => {
+  const target = assigneeId || null;
+  const current = room.assigneeId || null;
+  if (target === current) return false;
+  const actor = await prisma.account.findUnique({ where: { id: account.account_id }, select: { role: true } });
+  const isAdmin = actor?.role === 'admin';
+  if (!isAdmin && current && current !== account.account_id) {
+    throw new ApolloError('這段對話已有負責人，只有負責人或管理員可以轉交或取消指派', 'FORBIDDEN');
+  }
+  if (target && !(await accountSeesChannel(account.company_id, target, room.channelId))) {
+    throw new ApolloError('這位客服沒有這個頻道的權限，或帳號已停用，無法指派', 'BAD_USER_INPUT');
+  }
+  const now = new Date();
+  // Only changes the conversation if nobody else did since it was read; updated_at stays, so the list keeps its order.
+  const changed = await prisma.$executeRaw`
+    UPDATE chat_rooms SET assignee_id = ${target}, assigned_at = ${target ? now : null}
+    WHERE id = ${room.id} AND company_id = ${account.company_id} AND assignee_id IS NOT DISTINCT FROM ${current}`;
+  if (!changed) throw new ApolloError('負責人剛被其他人變更，請看過目前的負責人再操作', 'CONFLICT');
+  await prisma.auditLog.create({
+    data: {
+      companyId: account.company_id, actorAccountId: account.account_id, action: target ? (current ? 'chat_room.transfer' : 'chat_room.assign') : 'chat_room.unassign',
+      resourceType: 'chat_room', resourceId: room.id, metadata: { from: current, to: target },
+    },
+  });
+  await publishRoom(room.id);
+  return true;
+};
+
+/**
+ * Leaves unassigned the conversations an account can no longer work on: all of them once it is disabled,
+ * otherwise those in channels it has lost. Run after changing an account's role, channels or status.
+ */
+export const releaseAssignments = async (account) => {
+  const channelIds = await visibleChannelIds(account);
+  const released = await prisma.$queryRaw`
+    UPDATE chat_rooms SET assignee_id = NULL, assigned_at = NULL
+    WHERE assignee_id = ${account.account_id} AND company_id = ${account.company_id}
+      ${channelIds.length ? Prisma.sql`AND channel_id NOT IN (${Prisma.join(channelIds)})` : Prisma.empty}
+    RETURNING id`;
+  await Promise.all(released.map(({ id }) => publishRoom(id)));
+  return released.length;
 };
 
 export { encodeCursor };

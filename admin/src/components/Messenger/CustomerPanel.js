@@ -11,10 +11,70 @@ import { customerOfRoom } from './ChatroomList'
 const TAG_MAX_LENGTH = 20
 
 /**
+ * Who handles the conversation. Anyone can take an unassigned one; the agent handling it, or an admin,
+ * can pass it to a colleague or give it up.
+ */
+function AssigneeSection({ room, assignment }) {
+  const { t, i18n } = useTranslation()
+  const [error, setError] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const { assignees, loadFailed, assign, myId, isAdmin } = assignment
+  const assignee = room.assignee
+  const isMine = Boolean(assignee && assignee.id === myId)
+  const canChange = isAdmin || !assignee || isMine
+  const others = assignees.filter(({ id }) => id !== assignee?.id)
+  const canTakeIt = !isMine && canChange && assignees.some(({ id }) => id === myId)
+
+  const change = async (agentId) => {
+    if (saving) return
+    setSaving(true)
+    setError(null)
+    try {
+      await assign(agentId)
+    } catch (reason) {
+      setError(t('assign_failed', { reason: reason?.message || '' }))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className='messenger-customer-assignee'>
+      <Headline size='small' title={t('assignee')} color='black-primary' />
+      <p className='messenger-customer-assignee-current'>
+        {assignee ? (isMine ? t('assignee_me', { name: assignee.name }) : assignee.name) : t('assignment_unassigned')}
+        {assignee && room.assignedAt && <span>{t('assigned_at', { time: dateTimeLabel(room.assignedAt, { language: i18n.language }) })}</span>}
+      </p>
+      {canChange ? (
+        <div className='messenger-customer-assignee-actions'>
+          {canTakeIt && <button type='button' disabled={saving} onClick={() => change(myId)}>{assignee ? t('take_over') : t('assign_to_me')}</button>}
+          {others.filter(({ id }) => id !== myId).length > 0 && (
+            <select
+              value=''
+              disabled={saving}
+              aria-label={assignee ? t('transfer_to') : t('assign_to')}
+              onChange={(event) => event.target.value && change(event.target.value)}
+            >
+              <option value=''>{assignee ? t('transfer_to') : t('assign_to')}</option>
+              {others.filter(({ id }) => id !== myId).map(({ id, name }) => <option key={id} value={id}>{name}</option>)}
+            </select>
+          )}
+          {assignee && <button type='button' className='is-secondary' disabled={saving} onClick={() => change(null)}>{t('unassign')}</button>}
+        </div>
+      ) : (
+        <ContentText title={t('assignee_only_hint', { name: assignee.name })} size='small' color='black-tertiary' />
+      )}
+      {loadFailed && <ContentText title={t('assignees_load_failed')} size='small' color='alert' customStyles='mt-[6px]' />}
+      {error && <ContentText title={error} size='small' color='alert' customStyles='mt-[6px]' />}
+    </div>
+  )
+}
+
+/**
  * What we know about the customer of a conversation, from the platform, and the company's tags for them.
  * Anything the platform doesn't share is left out rather than guessed.
  */
-function CustomerPanel({ room, isShown, onClose, tagSuggestions, onAddTag, onRemoveTag }) {
+function CustomerPanel({ room, isShown, onClose, tagSuggestions, onAddTag, onRemoveTag, assignment }) {
   const { t, i18n } = useTranslation()
   const [draft, setDraft] = useState('')
   const [error, setError] = useState(null)
@@ -75,6 +135,8 @@ function CustomerPanel({ room, isShown, onClose, tagSuggestions, onAddTag, onRem
         </dl>
       </div>
 
+      {assignment && <AssigneeSection key={room.id} room={room} assignment={assignment} />}
+
       <div className='messenger-customer-tags'>
         <Headline size='small' title={t('customer_tags')} color='black-primary' />
         <div className='messenger-customer-tags-list'>
@@ -114,12 +176,21 @@ CustomerPanel.propTypes = {
   // Each returns a promise that rejects with the reason when it didn't save.
   onAddTag: PropTypes.func.isRequired,
   onRemoveTag: PropTypes.func.isRequired,
+  // From useRoomAssignment: who handles the conversation, and changing that.
+  assignment: PropTypes.shape({
+    assignees: PropTypes.array.isRequired,
+    loadFailed: PropTypes.bool,
+    assign: PropTypes.func.isRequired,
+    myId: PropTypes.string,
+    isAdmin: PropTypes.bool,
+  }),
 }
 
 CustomerPanel.defaultProps = {
   room: null,
   isShown: false,
   tagSuggestions: [],
+  assignment: null,
 }
 
 export default CustomerPanel

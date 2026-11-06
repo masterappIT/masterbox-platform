@@ -1,6 +1,4 @@
 import express from "express";
-import meta from "../controller/meta.js";
-
 import metaController from '../controller/meta.js';
 
 const router = express.Router();
@@ -35,13 +33,6 @@ router
     .post('/editTemplate', metaController.editTemplate)
     .post('/deleteTemplate', metaController.deleteTemplate)
 
-    // meta_message
-    .get('/getConversations', metaController.getConversationsList)
-    // .get('/getInstagramConversations', metaController.getInstagramConversationsList)
-    .get('/messagesList', metaController.getConversationMessages)
-    .get('/message', metaController.getMessage)
-    .post('/sendMessage', metaController.sendMessage)
-    .post('/messenger', metaController.messenger)
 
 
 

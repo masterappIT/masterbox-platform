@@ -57,7 +57,7 @@ const connectFacebookPage = async(page) => {
             queryStrings: { 'subscribed_fields': 'messages,messaging_postbacks', 'access_token': page.access_token }
         })
     } catch (error) {
-        console.log('Page subscribe failed:', page.id, error.responseBody || error.message)
+        console.error('Page subscribe failed:', page.id, error.responseBody || error.message)
         return { failed: page.name || page.id }
     }
 
@@ -70,7 +70,7 @@ const connectFacebookPage = async(page) => {
             'access_token': page.access_token
         }
     }).then(JSON.parse).catch((error) => {
-        console.log('Instagram lookup failed:', page.id, error.responseBody || error.message)
+        console.error('Instagram lookup failed:', page.id, error.responseBody || error.message)
         return {}
     })
     const instagram = links.instagram_business_account || links.connected_instagram_account
@@ -107,7 +107,7 @@ const connectWhatsappAccounts = async(access_token) => {
             })
             numbers.data.forEach((number) => whatsappAccounts.push({ ...number, waid, access_token }))
         } catch (error) {
-            console.log('Whatsapp connect failed:', waid, error.responseBody || error.message)
+            console.error('Whatsapp connect failed:', waid, error.responseBody || error.message)
             failed.push(waid)
         }
     }
@@ -164,16 +164,14 @@ export const getDebugToken = (req, access_token, next) => {
         }
     }).then((r) => {
         let result = JSON.parse(r)
-        console.log('debug', result)
         req.query.whatsappAccounts = []
         let whatsappProcess = []
         
         if(result.error !== undefined){
-            console.log(result.error)
+            console.error(result.error)
         }else
 
         if(result.data.granular_scopes !== undefined){
-            console.log(result.data.granular_scopes)
             const whatsapp = result.data.granular_scopes.find((el) => el.scope == "whatsapp_business_management")
 
             if(whatsapp !== undefined){
@@ -215,22 +213,18 @@ export const getDebugToken = (req, access_token, next) => {
                 })
 
                 Promise.all(whatsappProcess).then((res) => {
-                    console.log('whatsapp result', res)
 
                     res.forEach((r, index) => {
                         let body = JSON.parse(r)
-                        console.log('return from route', body)
                        
                         if(body.error !== undefined){
                             next()
                         }else{
-                            console.log('begin iteration')
                             body.data.forEach(d => {
                                 d['waid'] = whatsapp.target_ids[index]
                                 req.query.whatsappAccounts.push(d)
                             })
 
-                            console.log('count', index)
                             if(index == (whatsapp.target_ids.length -1) && (req.query.whatsappAccounts.length - 1) == index){
                                 nextStep()
                             }                            
@@ -263,7 +257,6 @@ export const getUserLongLivedToken = (res, access_token) => {
             'fb_exchange_token': access_token
         }
     }).then((result) => {
-        console.log('user long live toekn:', result)
 
         res.send(result)
     })
@@ -283,7 +276,6 @@ export const getFacebookUserId = (req, access_token, whatsappAccounts=[], next=n
         method: 'GET',
         queryStrings:{ 'access_token': access_token, }
     }).then((result) => {
-        console.log('user_id:', JSON.parse(result))
         let body = JSON.parse(result)
         // res.send({...body, "user_access_token": access_token})
 
@@ -294,7 +286,6 @@ export const getFacebookUserId = (req, access_token, whatsappAccounts=[], next=n
         //         "access_token": access_token
         //     }
         // }).then((r) => {
-        //     console.log('permissions:', r)
         // })
 
         req.query.user_id = body.id
@@ -399,7 +390,6 @@ export const getFacebookPageToken = (res, user_id, access_token, whatsappAccount
         method: 'GET',
         queryStrings: {'access_token': access_token} // user_access_token
     }).then((result) => {
-        console.log('User PageToken:', JSON.parse(result));
         let response = JSON.parse(result)
         let body = {
             facebookPages: response.data,
@@ -433,7 +423,6 @@ export const getFacebookPageToken = (res, user_id, access_token, whatsappAccount
                 },
                 headers: { "authorization": `Bearer ${page.access_token}` }
             }).then((r) => {
-                // console.log('subscribe:', r)
                 if(r.error !== undefined){
                     subscribeFaildpage.push(index)
                 }
@@ -441,7 +430,6 @@ export const getFacebookPageToken = (res, user_id, access_token, whatsappAccount
         })
 
         Promise.all(instagramProcess).then((r) => {
-            // console.log('faild:', subscribeFaildpage)
 
             // Remove the faild page if exist
             if(subscribeFaildpage.length > 0){
@@ -450,7 +438,6 @@ export const getFacebookPageToken = (res, user_id, access_token, whatsappAccount
                 })
             }
 
-            // console.log('after:', body.facebookPages)
 
             r.forEach((res, index) => {
                 if(Object.keys(res).length > 0){
@@ -481,7 +468,6 @@ export const getPageFollowers = (res, page_id, access_token) => {
             "access_token": access_token
         }
     }).then((r) => {
-        console.log(r)
         // {
         //     "followers_count": 2,
         //     "id": "107453962033819"
@@ -490,96 +476,6 @@ export const getPageFollowers = (res, page_id, access_token) => {
     })
 }
 
-
-/**
- * 查詢粉絲頁/instagram 的聊天紀錄
- * @param {*} res - api回應起始句
- * @param {string} page_id - 粉絲頁ID
- * @param {string} platform - 平台名稱, messenger or instagram
- * @param {string} access_token - page_access_token
- */
-export const getMetaConversations = (res,page_id, platform, access_token) => {
-    let qs = { 
-        'platform': platform, 
-        'fields': "messages{from,to,message,created_time,id}",
-        'access_token': access_token 
-    }
-    // if (user_id) qs = { ...qs, 'user_id': user_id }
-
-    metaClient({
-        endPoints: `${page_id}/conversations`,
-        method: 'GET',
-        queryStrings: qs
-    }).then((result) => {
-        console.log('page getConversations:', JSON.parse(result));
-
-        res.send(JSON.parse(result))
-    }).catch((e) => { console.error('conversation error',e.message) })
-}
-
-
-/**
- * 查詢聊天室訊息紀錄
- * @param {*} res - api回應起始句
- * @param {string} conversation_id - 聊天室id 
- * @param {string} access_token - page_access_token
- */
-export const getConversationMessages = (res, conversation_id, access_token) => {
-    metaClient({
-        endPoints: `${conversation_id}/messages`,
-        method: 'GET',
-        queryStrings: {
-            'access_token': access_token,
-            'fields': 'messages, participants,updated_time '
-        }
-    }).then((result) => {
-        console.log('List of message_id:', JSON.parse(result))
-        res.send(JSON.parse(result))
-    })
-}
-
-
-/**
- * 查看訊息內容
- * @param {*} res - api回應起始句
- * @param {string} message_id - 訊息id
- * @param {string} access_token - page_access_token
- */
-export const getMessage = (res, message_id, access_token) => {
-    metaClient({
-        endPoints: message_id,
-        method: 'GET',
-        queryStrings: {
-            'access_token': access_token,
-            'fields': 'id,created_time,from,to,message'
-        }
-    }).then((result) => {
-        console.log('message:', result)
-
-        res.send(JSON.parse(result))
-    })
-}
-
-
-/**
- * 查看訊息附件
- * @param {*} res - api回應起始句
- * @param {string} message_id - 訊息id
- * @param {string} access_token - page_access_token
- */
-export const getAttachment = (res, message_id, access_token) => {
-    metaClient({
-        endPoints: `${message_id}/attachments`,
-        method: 'GET',
-        queryStrings: {
-            'access_token': access_token,
-        }
-    }).then((result) => {
-        console.log('Message attchment:', result)
-
-        res.send(JSON.parse(result))
-    })
-}
 
 /**
  * Messenger / Instagram 發送訊息，失敗時丟出錯誤
@@ -598,26 +494,6 @@ export const sendFacebookMessage = (page_id, content, access_token) => metaClien
 
 
 /**
- * Messenger 發送訊息
- * @param {*} res - api回應起始句
- * @param {string} page_id - 粉絲頁ID
- * @param {object} content - 訊息物件
- * @param {string} platform - 平台名稱 
- * @param {string} to_chat_room_id - 聊天室ID 
- * @param {string} access_token - page_access_token 
- */
-export const metaSendMessage = (res, page_id, content, platform, to_chat_room_id, access_token) => {
-    sendFacebookMessage(page_id, content, access_token).then((result) => {
-        console.log('Message send:', result);
-        res.send(result)
-    }).catch((error) => {
-        console.log(error)
-        res.status(error.statusCode || 500).send(error.responseBody || { error: { message: error.message } })
-    })
-}
-
-
-/**
  * MasterBox 訂閱粉絲頁 / whatapp商業帳號 訊息
  * @param {*} page_id - 粉絲頁ID / whatapp商業帳號ID
  * @param {*} access_token - 粉絲頁的 access_token / user_access_token
@@ -632,7 +508,6 @@ export const appSubscribePage = (page_id, access_token, res=null) => {
             "access_token": access_token
         }
     }).then((result) => {
-        console.log('Page subscripted:', result)
 
         if(res !== null){
             res.send(JSON.parse(result))

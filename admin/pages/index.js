@@ -8,13 +8,15 @@ import MobileHeader from "../src/components/Messenger/MobileHeader";
 import MobileSetting from "../src/components/Messenger/MobileSetting";
 import MobileSettingDetail from "../src/components/Messenger/MobileSettingDetail";
 import StatusMessage from "../src/components/Messenger/StatusMessage";
+import AssignmentFilter, { assignmentFilter } from "../src/components/Messenger/AssignmentFilter";
+import useRoomAssignment from "../src/utils/useRoomAssignment";
 import Checkbox from "../src/stories/components/Checkbox";
 import { useSelector, useDispatch, shallowEqual } from "react-redux";
 import {
   getUserSubscribedChannels, selectChannels, selectChannelsStatus, selectMessages, selectChatRooms,
   loadInbox, loadMoreInbox, selectInbox, openConversation, loadOlderMessages, selectMessagePaging, messagesKey,
   setOpenRoom, markConversationRead, fetchConversation, loadCustomerTags, selectCustomerTags,
-  addConversationTag, removeConversationTag, handleSendMessage,
+  addConversationTag, removeConversationTag, handleSendMessage, loadAgents, selectAgents, selectRoomDetails,
 } from '../src/redux/slices/messagesSlices';
 import { selectUserInfo } from '../src/redux/slices/userSlices';
 import { MessageFactory } from '../src/utils/MessageFactory';
@@ -51,6 +53,8 @@ export default function Messenger() {
   const messages = useSelector(selectMessages, shallowEqual);
   const messagePaging = useSelector(selectMessagePaging);
   const customerTags = useSelector(selectCustomerTags);
+  const agents = useSelector(selectAgents);
+  const roomDetails = useSelector(selectRoomDetails);
   const allRooms = useSelector(selectChatRooms);
   const channelsStatus = useSelector(selectChannelsStatus);
   const userInfo = useSelector(selectUserInfo);
@@ -69,6 +73,7 @@ export default function Messenger() {
   useEffect(() => {
     fetchChannels()
     dispatch(loadCustomerTags())
+    dispatch(loadAgents())
     return () => { dispatch(setOpenRoom(null)) }
   }, []);
 
@@ -79,6 +84,13 @@ export default function Messenger() {
   const [searchWords, setSearchWords] = useState('');
   const [platform, setPlatform] = useState('');
   const [unreadOnly, setUnreadOnly] = useState(false);
+  // '' for every conversation, 'mine', 'unassigned', or 'agent:<id>'.
+  const [assignment, setAssignment] = useState('');
+
+  // A colleague who left the company can't be filtered on any more.
+  useEffect(() => {
+    if (assignment.startsWith('agent:') && agents.length && !agents.some(({ id }) => `agent:${id}` === assignment)) setAssignment('')
+  }, [agents, assignment])
 
   // A refreshed channel list may be shorter than the one the selection came from.
   useEffect(() => {
@@ -96,7 +108,8 @@ export default function Messenger() {
     ...(searchWords ? { search: searchWords } : {}),
     ...(channelFilter ? { channel_id: channelFilter } : platform ? { platform } : {}),
     ...(unreadOnly ? { unread_only: true } : {}),
-  }), [searchWords, channelFilter, platform, unreadOnly])
+    ...assignmentFilter(assignment, userInfo?._id),
+  }), [searchWords, channelFilter, platform, unreadOnly, assignment, userInfo?._id])
   const filterKey = JSON.stringify(filter)
 
   const fetchInbox = () => {
@@ -109,13 +122,14 @@ export default function Messenger() {
   }, [hasChannels, filterKey])
 
   const chatrooms = inbox.rooms
-  const isFiltered = Boolean(searchWords || platform || unreadOnly)
+  const isFiltered = Boolean(searchWords || platform || unreadOnly || assignment)
 
-  // The list's copy is the freshest; the one kept on selecting stands in when the filter hides it.
+  // The list's copy is the freshest; when the filter hides it, the one kept on selecting with any change since.
   const currentChatroom = useMemo(() => {
     if (!selectedRoom) return null
-    return chatrooms.find(({ id }) => id === selectedRoom.id) || selectedRoom
-  }, [selectedRoom, chatrooms])
+    return chatrooms.find(({ id }) => id === selectedRoom.id) || { ...selectedRoom, ...roomDetails[selectedRoom.id] }
+  }, [selectedRoom, chatrooms, roomDetails])
+  const roomAssignment = useRoomAssignment(currentChatroom)
 
   const currentChannel = useMemo(() => {
     if (currentChatroom) return channels.find(({ account }) => account === currentChatroom.channel_id) || { account: currentChatroom.channel_id, platform: currentChatroom.platform }
@@ -141,7 +155,7 @@ export default function Messenger() {
       ? { title: t('no_channel_connected'), description: t('connect_channel_hint'), action: { title: t('go_to_channels_management'), onClick: () => router.push('/channels-management') } }
       : { title: t('no_channel_connected'), description: t('connect_channel_ask_admin') },
     no_chatrooms: { title: t('no_conversations_yet'), description: t('no_conversations_hint') },
-    no_matches: { title: unreadOnly && !searchWords ? t('no_unread_conversations') : t('no_matching_conversations') },
+    no_matches: { title: unreadOnly && !searchWords && !assignment ? t('no_unread_conversations') : t('no_matching_conversations') },
   }[homeStatus]
 
   const selectChatroom = (_, room) => {
@@ -219,6 +233,7 @@ export default function Messenger() {
             {platforms.map((value) => <option key={value} value={value}>{t(`platform_${value}`)}</option>)}
           </select>
         )}
+        <AssignmentFilter value={assignment} onChange={setAssignment} agents={agents} myId={userInfo?._id} />
         <Checkbox content={t('show_unread_only')} labelColor='black-primary' checked={unreadOnly} onClick={(event) => setUnreadOnly(event.target.checked)} />
       </div>
     </div>
@@ -279,6 +294,7 @@ export default function Messenger() {
           tagSuggestions={customerTags}
           onAddTag={(name) => changeTags(addConversationTag({ id: currentChatroom.id, name }))}
           onRemoveTag={(tagId) => changeTags(removeConversationTag({ id: currentChatroom.id, tagId }))}
+          assignment={roomAssignment}
         />
         {isMobile === true && componentHandler.current === 'setting' ? <MobileSetting /> : ''}
         {isMobile === true && componentHandler.current === 'settingDetail' ? <MobileSettingDetail /> : ''}

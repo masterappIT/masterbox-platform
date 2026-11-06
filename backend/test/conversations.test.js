@@ -85,7 +85,8 @@ describe('conversations in the database', { skip: !testDatabase && 'set TEST_DAT
     ({ saveInboundMessage } = await import('../utils/utils.js'));
     const company = await prisma.company.create({ data: { chineseName: '測試', englishName: 'Test', email: `${run}@conversations.test`, country: 'TW' } });
     ids.company = company.id;
-    const account = email => prisma.account.create({ data: { email: `${email}-${run}@conversations.test`, password: 'x', companyId: company.id } });
+    // Agents rather than admins, who would see every channel.
+    const account = email => prisma.account.create({ data: { email: `${email}-${run}@conversations.test`, password: 'x', companyId: company.id, role: 'user' } });
     const [a, b, c] = await Promise.all([account('a'), account('b'), account('c')]);
     agentA = { account_id: a.id, company_id: company.id };
     agentB = { account_id: b.id, company_id: company.id };

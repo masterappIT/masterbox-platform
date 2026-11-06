@@ -153,5 +153,22 @@
   "platform_ig": "Instagram",
   "platform_whatsapp": "WhatsApp",
   "platform_line": "LINE",
-  "platform_wechat": "WeChat"
+  "platform_wechat": "WeChat",
+  "assignee": "Assigned to",
+  "assignee_me": "{{name}} (you)",
+  "assigned_at": "Assigned {{time}}",
+  "assignment_filter": "Filter by agent",
+  "assignment_all": "All conversations",
+  "assignment_mine": "Assigned to me",
+  "assignment_unassigned": "Unassigned",
+  "assignment_by_agent": "Agents",
+  "assign_to_me": "Assign to me",
+  "take_over": "Take over",
+  "assign_to": "Assign to…",
+  "transfer_to": "Transfer to…",
+  "unassign": "Unassign",
+  "assign_failed": "Not reassigned: {{reason}}",
+  "assignee_only_hint": "{{name}} handles this. Only they or an admin can transfer or unassign it.",
+  "assignees_load_failed": "Couldn't load the agents; refresh to try again",
+  "assignee_label": "Assigned to {{name}}"
 }

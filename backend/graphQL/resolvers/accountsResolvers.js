@@ -5,6 +5,7 @@ import { prisma } from '../../lib/db/prisma.js';
 import { pubsub } from '../../config/redis.js';
 import { getJwtSecret } from '../../lib/auth/jwtSecret.js';
 import { withAuth, requireAdmin } from '../../middleware/auth.js';
+import { releaseAssignments, publishRoom } from '../../lib/messaging/conversations.js';
 
 const ACCESS_TOKEN_TTL = '2h';
 const REFRESH_TOKEN_TTL = '30d';
@@ -23,6 +24,7 @@ const accountView = (account, tokens = {}) => account && ({
     permissions: account.permissions,
     info: account.userInfo,
     enabled: account.enabled,
+    channel_ids: account.subscribedChannels ? account.subscribedChannels.map(({ channelId }) => channelId) : null,
     token: tokens.token,
     refreshToken: tokens.refreshToken,
 });
@@ -38,6 +40,17 @@ const parseJsonInput = (value, field) => {
 };
 
 const permissionsValue = (permissions) => Array.isArray(permissions) ? permissions.join(',') : permissions;
+
+const WITH_CHANNELS = { subscribedChannels: { select: { channelId: true } } };
+
+// The channels an admin picked for an account, checked to be the company's own.
+const companyChannelIds = async (companyId, channelIds) => {
+    if (channelIds === undefined || channelIds === null) return undefined;
+    const ids = [...new Set(channelIds)];
+    const found = await prisma.companyChannel.count({ where: { companyId, id: { in: ids } } });
+    if (found !== ids.length) throw new ApolloError('找不到部分頻道，請重新整理後再選擇', 'BAD_USER_INPUT');
+    return ids;
+};
 
 const scopedAccountId = (context, companyId, accountId) => {
     const admin = requireAdmin(context);
@@ -104,6 +117,7 @@ export default {
             const normalizedEmail = input.email.toLowerCase();
             const existsCompany = await prisma.company.findUnique({ where: { id: company_id }, select: { id: true } });
             if (!existsCompany) throw new ApolloError('Invalid company', 'BAD_USER_INPUT');
+            const channelIds = await companyChannelIds(company_id, input.channel_ids);
             const data = {
                 email: normalizedEmail,
                 password: await bcrypt.hash(input.password, 10),
@@ -111,9 +125,10 @@ export default {
                 ...(input.role ? { role: input.role } : {}),
                 ...(input.permissions ? { permissions: permissionsValue(input.permissions) } : {}),
                 ...(input.user_info !== undefined ? { userInfo: parseJsonInput(input.user_info, 'user_info') } : {}),
+                ...(channelIds?.length ? { subscribedChannels: { create: channelIds.map(channelId => ({ channelId })) } } : {}),
             };
             try {
-                return accountView(await prisma.account.create({ data }));
+                return accountView(await prisma.account.create({ data, include: WITH_CHANNELS }));
             } catch (error) {
                 if (error.code === 'P2002') throw new ApolloError('A user is already registered with that email', 'USER_ALREADY_EXISTS');
                 throw error;
@@ -133,12 +148,23 @@ export default {
                 userInfo: input.user_info !== undefined ? parseJsonInput(input.user_info, 'user_info') : undefined,
                 enabled: input.enabled ?? undefined,
             }).filter(([, value]) => value !== undefined));
+            const channelIds = await companyChannelIds(admin.company_id, input.channel_ids);
+            let updated;
             try {
-                return accountView(await prisma.account.update({ where: { id: _id }, data }));
+                updated = await prisma.$transaction(async (tx) => {
+                    if (channelIds) {
+                        await tx.accountChannel.deleteMany({ where: { accountId: _id, channelId: { notIn: channelIds } } });
+                        await tx.accountChannel.createMany({ data: channelIds.map(channelId => ({ accountId: _id, channelId })), skipDuplicates: true });
+                    }
+                    return tx.account.update({ where: { id: _id }, data, include: WITH_CHANNELS });
+                });
             } catch (error) {
                 if (error.code === 'P2002') throw new ApolloError('A user is already registered with that email', 'USER_ALREADY_EXISTS');
                 throw error;
             }
+            // Conversations it can no longer work on go back to the team.
+            await releaseAssignments({ account_id: updated.id, company_id: updated.companyId });
+            return accountView(updated);
         },
 
         async deleteAccount(_, { _id }, context) {
@@ -146,7 +172,10 @@ export default {
             const existing = await prisma.account.findUnique({ where: { id: _id }, select: { id: true, companyId: true } });
             if (!existing || existing.companyId !== admin.company_id) throw new ApolloError('Account not found', 'NOT_FOUND');
             if (existing.id === admin.account_id) throw new ApolloError('You cannot delete your own account', 'BAD_USER_INPUT');
+            const assigned = await prisma.chatRoom.findMany({ where: { assigneeId: _id }, select: { id: true } });
+            // Its conversations become unassigned with it; tell everyone's list.
             await prisma.account.delete({ where: { id: _id } });
+            await Promise.all(assigned.map(({ id }) => publishRoom(id)));
             return true;
         },
 
@@ -192,7 +221,7 @@ export default {
             const companyId = input.company_id || admin.company_id;
             if (companyId !== admin.company_id) throw new ApolloError('Company scope violation', 'FORBIDDEN');
             const [items, total] = await Promise.all([
-                prisma.account.findMany({ where: { companyId }, orderBy: { createdAt: 'desc' } }),
+                prisma.account.findMany({ where: { companyId }, orderBy: { createdAt: 'desc' }, include: WITH_CHANNELS }),
                 prisma.account.count({ where: { companyId } }),
             ]);
             return { items: items.map(account => accountView(account)), total };
