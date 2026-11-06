@@ -3,6 +3,7 @@ import PropTypes from 'prop-types'
 import Bubble from "../../stories/components/Bubble";
 import Avatar from "../../stories/components/Avatar";
 import ContentText from '../../stories/components/ContentText';
+import { isSticker, withoutRepeatedStickers } from '../../utils/attachments';
 
 const ATTACHMENT_LABELS = {
     image: '圖片',
@@ -30,7 +31,7 @@ function Attachment({ type, payload, caption, filename }) {
     const captionLine = caption ? <div className='mt-[4px]'>{caption}</div> : null
 
     if (url && (type === 'image' || type === 'sticker')) {
-        return <div><a href={url} target='_blank' rel='noopener noreferrer'><img src={url} alt={filename || label} className='messenger-attachment-media' onError={() => setIsBroken(true)} /></a>{captionLine}</div>
+        return <div><a href={url} target='_blank' rel='noopener noreferrer'><img src={url} alt={filename || label} className={isSticker({ type, payload }) ? 'messenger-attachment-sticker' : 'messenger-attachment-media'} onError={() => setIsBroken(true)} /></a>{captionLine}</div>
     }
     if (url && type === 'video') {
         return <div><video src={url} controls preload='metadata' className='messenger-attachment-media' onError={() => setIsBroken(true)} />{captionLine}</div>
@@ -72,7 +73,7 @@ function ChatBubble({ contents, attachments, deliveryError, note, name, time, sh
 
             {showAvatar && <Avatar title='' size='small' customStyles='mr-[8px]' name={name} />}
             <div className={`flex flex-col flex-1 items-${justifyItem} align`}>
-                <Bubble contents={<>{contents}{attachments?.map((attachment, i) => <Attachment key={i} {...attachment} />)}</>} color={justifyItem === 'start' && 'secondary'} />
+                <Bubble contents={<>{contents}{withoutRepeatedStickers(attachments)?.map((attachment, i) => <Attachment key={i} {...attachment} />)}</>} color={justifyItem === 'start' && 'secondary'} />
                 {deliveryError && <ContentText title={`未送達：${deliveryError}`} size='small' color='alert' customStyles='mt-[3px]' />}
                 <ContentText title={note ? `${note}・${newTime}` : newTime} size='small' color='black-tertiary' customStyles='mt-[3px]'/>
             </div>

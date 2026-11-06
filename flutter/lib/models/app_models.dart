@@ -284,11 +284,13 @@ class MessageAttachment {
     this.url,
     this.caption,
     this.filename,
+    this.stickerId,
   });
   final String type;
   final String? url;
   final String? caption;
   final String? filename;
+  final String? stickerId;
 
   static const _labels = {
     'image': '圖片',
@@ -307,6 +309,7 @@ class MessageAttachment {
 
   String get label => _labels[type] ?? '附件';
   bool get isImage => type == 'image' || type == 'sticker';
+  bool get isSticker => type == 'sticker' || stickerId != null;
 
   /// Only https links are opened or shown; anything else falls back to text.
   String? get safeUrl =>
@@ -319,7 +322,21 @@ class MessageAttachment {
       url: payload is Map ? payload['url'] as String? : null,
       caption: json['caption'] as String?,
       filename: (json['filename'] ?? json['name']) as String?,
+      stickerId: payload is Map && payload['sticker_id'] != null
+          ? '${payload['sticker_id']}'
+          : null,
     );
+  }
+
+  /// Meta sends a Messenger sticker, such as the Like button, as an image and a
+  /// sticker with the same sticker_id.
+  static List<MessageAttachment> withoutRepeatedStickers(
+    Iterable<MessageAttachment> attachments,
+  ) {
+    final seen = <String>{};
+    return attachments
+        .where((a) => a.stickerId == null || seen.add(a.stickerId!))
+        .toList();
   }
 }
 
@@ -435,10 +452,11 @@ class ChatMessage {
     final nestedMap = nested is Map<String, dynamic> ? nested : null;
     final attachmentList = parsed?['attachments'] ?? nestedMap?['attachments'];
     final attachments = attachmentList is List
-        ? attachmentList
-              .whereType<Map<String, dynamic>>()
-              .map(MessageAttachment.fromJson)
-              .toList()
+        ? MessageAttachment.withoutRepeatedStickers(
+            attachmentList.whereType<Map<String, dynamic>>().map(
+              MessageAttachment.fromJson,
+            ),
+          )
         : const <MessageAttachment>[];
     Object? value = parsed == null
         ? raw

@@ -879,13 +879,19 @@ class _ConversationPageState extends State<ConversationPage> {
         onTap: () => _openAttachment(url),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(6),
-          child: Image.network(
-            url,
-            width: 220,
-            fit: BoxFit.cover,
-            webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
-            // Meta's attachment links expire.
-            errorBuilder: (_, _, _) => fallback,
+          // Stickers keep their own size, so a small one stays sharp.
+          child: ConstrainedBox(
+            constraints: attachment.isSticker
+                ? const BoxConstraints(maxWidth: 120, maxHeight: 120)
+                : const BoxConstraints(),
+            child: Image.network(
+              url,
+              width: attachment.isSticker ? null : 220,
+              fit: attachment.isSticker ? BoxFit.contain : BoxFit.cover,
+              webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
+              // Meta's attachment links expire.
+              errorBuilder: (_, _, _) => fallback,
+            ),
           ),
         ),
       );

@@ -49,6 +49,20 @@ void main() {
       expect(read('{"text":{"body":"早安"}}').text, '早安');
     });
 
+    test('a sticker Meta sends twice shows once', () {
+      final message = ChatMessage.fromJson({
+        'id': 'm1',
+        'contents': '{"attachments":[{"type":"image","payload":{"url":"https://x/a.jpg","sticker_id":369239263222822}},{"type":"sticker","payload":{"url":"https://x/b.jpg","sticker_id":369239263222822}},{"type":"image","payload":{"url":"https://x/c.jpg"}},{"type":"image","payload":{"url":"https://x/d.jpg"}}]}',
+      });
+      expect(message.attachments.map((a) => a.url), [
+        'https://x/a.jpg',
+        'https://x/c.jpg',
+        'https://x/d.jpg',
+      ]);
+      expect(message.attachments.first.isSticker, isTrue);
+      expect(message.attachments.last.isSticker, isFalse);
+    });
+
     test('attachments, and their label when the link is unusable', () {
       final message = read(
         '{"message":{"attachments":[{"type":"image","payload":{"url":"https://x/a.png"}},{"type":"audio","payload":{"url":"http://x/a.mp3"}}]}}',
