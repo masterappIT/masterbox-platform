@@ -37,7 +37,7 @@ const gatewayFailed = (error) => {
 
 const companyWebChannel = async (companyId, channelId) => {
   const channel = await prisma.companyChannel.findUnique({ where: { id: channelId } });
-  if (!channel || channel.companyId !== companyId || !isWebChannel(channel)) throw new ApolloError('找不到這個掃碼連結的 WhatsApp 頻道', 'NOT_FOUND');
+  if (!channel || channel.companyId !== companyId || channel.deletedAt || !isWebChannel(channel)) throw new ApolloError('找不到這個掃碼連結的 WhatsApp 頻道', 'NOT_FOUND');
   return channel;
 };
 
@@ -117,6 +117,25 @@ export const updateWhatsappWebChannel = async (admin, channelId, { name, agentId
 // ----- Events from whatsapp-gateway -----
 
 /**
+ * Brings back the conversations of channels the company removed that had this number: they move to the channel
+ * the phone just connected, with their agents and name, and the removed channels are dropped.
+ * @returns {string} the channel's name
+ */
+const takeOverRemoved = async (channel, removed, name) => {
+  const ids = removed.map(({ id }) => id);
+  const latest = [...removed].sort((a, b) => b.deletedAt - a.deletedAt)[0];
+  await prisma.$transaction(async (tx) => {
+    const agents = await tx.accountChannel.findMany({ where: { channelId: { in: ids } }, select: { accountId: true } });
+    if (agents.length) await tx.accountChannel.createMany({ data: agents.map(({ accountId }) => ({ accountId, channelId: channel.id })), skipDuplicates: true });
+    await tx.chatRoom.updateMany({ where: { channelId: { in: ids } }, data: { channelId: channel.id } });
+    await tx.messageRecipient.updateMany({ where: { channelId: { in: ids } }, data: { channelId: channel.id } });
+    await tx.companyChannel.deleteMany({ where: { id: { in: ids } } });
+  });
+  console.info(`WhatsApp channel ${channel.id} took over the conversations of removed channels ${ids.join(', ')}`);
+  return name === DEFAULT_NAME ? latest.name : name;
+};
+
+/**
  * Records a change in a channel's connection. When a phone connects, its number is checked: a channel that
  * scans again must stay on the same number, and a number can only be in one channel.
  * @returns {{ action?: 'logout', reason?: string, message?: string }} what the gateway should do
@@ -131,12 +150,16 @@ const onStatus = async (channel, status) => {
     if (accessInfo.phone) {
       rejection = { reason: 'wrong_number', message: `這個頻道只能重新連結原本的號碼 ${accessInfo.phone}，請用該手機掃碼` };
     } else {
-      const others = await prisma.companyChannel.findMany({ where: { platform: 'whatsapp', id: { not: channel.id } } });
-      const owner = others.find((other) => isWebChannel(other) && digits(other.accessInfo?.phone) === digits(status.phone));
+      const others = (await prisma.companyChannel.findMany({ where: { platform: 'whatsapp', id: { not: channel.id } } }))
+        .filter((other) => isWebChannel(other) && digits(other.accessInfo?.phone) === digits(status.phone));
+      // A channel another company removed doesn't hold on to the number.
+      const owner = others.find((other) => !other.deletedAt);
       if (owner) {
         rejection = { reason: 'already_connected', message: owner.companyId === channel.companyId ? `這個號碼已經連結在「${owner.name}」` : '這個號碼已經連結在其他公司' };
       } else {
         accessInfo.phone = status.phone;
+        const removed = others.filter((other) => other.companyId === channel.companyId);
+        if (removed.length) name = await takeOverRemoved(channel, removed, name);
         if (name === DEFAULT_NAME) name = status.name || status.phone;
       }
     }
@@ -183,7 +206,7 @@ const onHistory = (channel, conversations) => {
   const next = previous.then(async () => {
     // Read again: the channel may have been disabled or removed while earlier batches were stored.
     const current = await prisma.companyChannel.findUnique({ where: { id: channel.id } });
-    if (!current?.enabled) return;
+    if (!current?.enabled || current.deletedAt) return;
     const stored = await saveConversationHistory(current, batch, current.accessInfo?.connected_by);
     console.info(`WhatsApp history for channel ${channel.id}: ${stored} messages from ${batch.length} chats`);
   }).catch((error) => console.error(`WhatsApp history for channel ${channel.id} not stored:`, error.message));
@@ -198,7 +221,7 @@ const onHistory = (channel, conversations) => {
  */
 export const handleGatewayEvent = async (event) => {
   const channel = event?.channelId ? await prisma.companyChannel.findUnique({ where: { id: event.channelId } }) : null;
-  if (!isWebChannel(channel)) return { status: 410, body: { error: 'Unknown channel' } };
+  if (!isWebChannel(channel) || channel.deletedAt) return { status: 410, body: { error: 'Unknown channel' } };
   // A new channel whose QR code ran out before any phone scanned it was abandoned, such as by closing the browser.
   if (event.type === 'status' && event.status?.state === 'qr_timeout' && !channel.accessInfo?.phone) {
     await prisma.companyChannel.delete({ where: { id: channel.id } }).catch(() => {});

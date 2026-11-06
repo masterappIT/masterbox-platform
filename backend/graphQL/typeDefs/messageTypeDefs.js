@@ -111,11 +111,23 @@ export default gql`
     "Only the conversations this agent handles."
     assignee_id: ID
   }
+  "How a channel's connection to its platform is doing, as last checked."
+  type ChannelConnection {
+    "ok, auth_expired (connect again through Meta), not_subscribed (Meta doesn't send its messages), error, disabled, or unknown (not checked yet, or the platform can't be checked)."
+    state: String!
+    "What to tell the admin, in Chinese."
+    message: String
+    checked_at: DateTime
+  }
   type SubscribedChannel {
     channel_id: ID!
     platform: String!
     name: String!
     enabled: Boolean!
+    "The WhatsApp number, such as +886 912 345 678; null for other platforms."
+    phone: String
+    "Null for WhatsApp numbers connected by QR code, which have whatsapp_web instead. Admins' lists ask Meta again when the last check is 10 minutes old."
+    connection: ChannelConnection
   }
   input MessageInput {
     to_chat_room_id: String
@@ -166,6 +178,10 @@ export default gql`
     appSendMessage(MessageInput: MessageInput): Message
     markMessageRead(messageId: ID!): Message
     setChannelEnabled(channel_id: ID!, enabled: Boolean!): SubscribedChannel!
+    "Removes one of the company's channels: it stops taking in and sending messages and its conversations are hidden. Connecting the same account or number again brings them back. Admins only."
+    deleteChannel(channel_id: ID!): Boolean!
+    "Asks the platform now how the channel's connection is doing. Admins only."
+    checkChannelConnection(channel_id: ID!): SubscribedChannel!
     "Marks the conversation read for the signed-in account, up to messageId or its newest message."
     markChatRoomRead(id: ID!, messageId: ID): ChatRoom!
     addChatRoomTag(id: ID!, name: String!): ChatRoom!

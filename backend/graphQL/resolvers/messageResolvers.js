@@ -8,6 +8,7 @@ import {
   assignRoom, assignableAgents, publishRoom, countUnreadRooms, CHAT_ROOM_UPDATED,
 } from '../../lib/messaging/conversations.js';
 import { visibleChannelIds, visibleChannels } from '../../lib/messaging/access.js';
+import { deleteChannel, channelConnection } from '../../lib/messaging/channels.js';
 
 import { channelView } from '../../lib/messaging/channelView.js';
 
@@ -71,8 +72,19 @@ export default {
     async setChannelEnabled(_, { channel_id, enabled }, context) {
       const admin = requireAdmin(context);
       const channel = await prisma.companyChannel.findUnique({ where: { id: channel_id } });
-      if (!channel || channel.companyId !== admin.company_id) throw new ApolloError('找不到這個頻道', 'NOT_FOUND');
+      if (!channel || channel.companyId !== admin.company_id || channel.deletedAt) throw new ApolloError('找不到這個頻道', 'NOT_FOUND');
       return channelView(await prisma.companyChannel.update({ where: { id: channel_id }, data: { enabled } }));
+    },
+    async deleteChannel(_, { channel_id }, context) {
+      return deleteChannel(requireAdmin(context), channel_id);
+    },
+    async checkChannelConnection(_, { channel_id }, context) {
+      const admin = requireAdmin(context);
+      const channel = await prisma.companyChannel.findUnique({ where: { id: channel_id } });
+      if (!channel || channel.companyId !== admin.company_id || channel.deletedAt) throw new ApolloError('找不到這個頻道', 'NOT_FOUND');
+      const connection = await channelConnection(channel, { force: true });
+      const fresh = await prisma.companyChannel.findUnique({ where: { id: channel_id } });
+      return { ...channelView(fresh), connection };
     },
     async appSendMessage(_, { MessageInput: input }, { account, isAuth }) {
       withAuth(Boolean(isAuth || account));

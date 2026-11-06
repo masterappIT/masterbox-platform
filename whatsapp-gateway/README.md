@@ -20,6 +20,9 @@ using one. Cloud API channels (connected through Meta) are not affected by this 
 ## What it does
 
 - `PUT /channels/:id` starts a channel's client; the admin polls the backend for the QR code.
+- Instead of scanning, the phone can enter a pairing code: once the QR code shows, 改用電話號碼連結 in the admin
+  asks for the number (with its country code) and calls `POST /channels/:id/pairing-code`. On the phone:
+  WhatsApp → 已連結的裝置 → 連結裝置 → 改用電話號碼連結, then type the 8-character code.
 - Once a phone scans, it reports the number to the backend, which accepts it or answers `logout`
   (a channel that scans again must keep its number; one number can only be in one channel).
 - It copies the last `HISTORY_DAYS` of one-to-one chats, then reports every new message,
@@ -28,6 +31,10 @@ using one. Cloud API channels (connected through Meta) are not affected by this 
   `GET /channels/:id/messages/:messageId/media`.
 - Logins are kept in `DATA_PATH`; after a restart every number reconnects by itself.
   A phone that is offline for 14 days, or that removes the linked device, logs the channel out.
+- Deleting the channel in 社群平台管理 calls `DELETE /channels/:id`, which logs the number out (the linked device
+  disappears from the phone) and removes its login. If the gateway is down at that moment, the backend answers its
+  next report about the channel with 410 and the gateway does the same then. The conversations stay in MasterBox:
+  scanning the same number again in the same company brings them back.
 
 Every request needs `Authorization: Bearer $WHATSAPP_GATEWAY_SECRET`, and the gateway reports to
 `$BACKEND_URL/internal/whatsapp-web/events` with the same header.

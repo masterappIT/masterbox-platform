@@ -76,12 +76,27 @@
 	&-busy .channel-connection-dot { @apply bg-primary; }
 	&-error { @apply text-alert; }
 	&-error .channel-connection-dot { @apply bg-alert; }
+	&-off .channel-connection-dot { @apply bg-grayscale opacity-50; }
+	&-warn .channel-connection-dot { @apply bg-primary; }
 
 	&-action {
 		@apply shrink-0 p-0 border-0 bg-transparent text-[14px] leading-[20px] font-medium text-primary_dark underline cursor-pointer;
 
 		&:focus-visible { @apply outline outline-2 outline-offset-1 outline-primary; }
+		&:disabled { @apply opacity-50 cursor-default; }
 	}
+}
+
+// The row's actions, such as removing the channel.
+.channel-actions {
+	@apply flex items-center px-[8px];
+}
+
+.channel-delete {
+	@apply p-0 border-0 bg-transparent text-[14px] leading-[20px] font-medium text-alert cursor-pointer;
+
+	&:hover { @apply underline; }
+	&:focus-visible { @apply outline outline-2 outline-offset-1 outline-alert; }
 }
 
 // The dialog that connects a WhatsApp number by QR code.

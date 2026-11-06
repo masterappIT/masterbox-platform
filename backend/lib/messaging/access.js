@@ -2,14 +2,18 @@
 // Admins work in every channel of their company; other accounts only in the channels assigned to them.
 import { prisma } from '../db/prisma.js';
 
+/** Channels that have not been removed, as a Prisma channel filter. A removed channel is hidden everywhere. */
+export const LIVE_CHANNEL = { deletedAt: null };
+
 /** Who can see a channel's conversations, as a Prisma account filter. */
 const seesChannel = channelId => ({ enabled: true, OR: [{ role: 'admin' }, { subscribedChannels: { some: { channelId } } }] });
 
 /**
  * The ids of the channels whose conversations the account may see, read from the database
  * so a role or channel change applies straight away. A disabled or unknown account sees none.
+ * @param {{ includeRemoved?: boolean }} [options] - also the removed channels, which come back when connected again
  */
-export const visibleChannelIds = async (account) => {
+export const visibleChannelIds = async (account, { includeRemoved = false } = {}) => {
   if (!account?.account_id || !account?.company_id) return [];
   const record = await prisma.account.findFirst({
     where: { id: account.account_id, companyId: account.company_id, enabled: true },
@@ -17,7 +21,7 @@ export const visibleChannelIds = async (account) => {
   });
   if (!record) return [];
   const channels = await prisma.companyChannel.findMany({
-    where: { companyId: account.company_id, ...(record.role === 'admin' ? {} : { accounts: { some: { accountId: account.account_id } } }) },
+    where: { companyId: account.company_id, ...(includeRemoved ? {} : LIVE_CHANNEL), ...(record.role === 'admin' ? {} : { accounts: { some: { accountId: account.account_id } } }) },
     select: { id: true },
   });
   return channels.map(({ id }) => id);

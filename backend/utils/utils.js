@@ -14,6 +14,7 @@ import { lastCustomerMessageAt } from '../lib/messaging/conversations.js';
 import { channelAccountIds } from '../lib/messaging/access.js';
 import { notifyCustomerMessage } from '../lib/push/notifications.js';
 import { isWebChannel, sendThroughGateway, GatewayError } from '../lib/messaging/whatsappGateway.js';
+import { markChannelAuthExpired } from '../lib/messaging/channels.js';
 
 export const errorTypes = {
   MISS_REQUEUED_PRAMS: 'MISS_REQUEUED_PRAMS',
@@ -63,7 +64,8 @@ export const publishMessage = async (message) => {
   await Promise.all(accountIds.map(accountId => pubsub.publish(`${SEND_MESSAGE}-${accountId}`, { sendMessage: messageView(message, undefined, accountId) })));
 };
 
-const sendFailed = (error) => {
+// channelId: the channel Meta refused; a refused authorization (code 190) shows on 社群平台管理 straight away.
+const sendFailed = (error, channelId) => {
   if (error instanceof GatewayError) {
     console.error('WhatsApp gateway send failed:', error.message);
     return `WhatsApp 無法送出這則訊息：${error.message}`;
@@ -71,6 +73,7 @@ const sendFailed = (error) => {
   let body = error.responseBody;
   if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = undefined; } }
   console.error('Meta send failed:', body?.error || error.message);
+  if (body?.error?.code === 190 && channelId) markChannelAuthExpired(channelId);
   return metaFailureReason(body?.error || { message: error.message });
 };
 
@@ -112,6 +115,7 @@ const replyTarget = async (room) => {
   if (!['fb', 'ig', 'whatsapp'].includes(room.platform)) throw new ApolloError(`尚未支援回覆 ${room.platform} 訊息`, 'SEND_FAILED');
   const channel = await prisma.companyChannel.findUnique({ where: { id: room.channelId } });
   const { access_token: token, page_id: pageId, phone_number_id: phoneNumberId } = channel?.accessInfo || {};
+  if (channel?.deletedAt) throw new ApolloError('此頻道已移除，重新連結後才能回覆', 'SEND_FAILED');
   if (channel && !channel.enabled) throw new ApolloError('此頻道已停用，請到社群平台管理啟用後再回覆', 'SEND_FAILED');
   if (!token && !isWebChannel(channel)) throw new ApolloError('此頻道尚未完成 Meta 串接，無法送出訊息', 'SEND_FAILED');
 
@@ -183,7 +187,7 @@ export const handleSendMessage = async (accountId, roomId, contents, channelId) 
     try {
       externalId = await send(part);
     } catch (error) {
-      const reason = sendFailed(error);
+      const reason = sendFailed(error, room.channelId);
       if (!message) throw new ApolloError(reason, 'SEND_FAILED');
       throw new ApolloError(`附件已送出，但文字沒有送出：${reason}`, 'SEND_FAILED', { sentAttachment: true });
     }
@@ -221,7 +225,7 @@ export const listWhatsappTemplates = async (room) => {
     const templates = await fetchApprovedTemplates(wabaId, token);
     return templates.map(templateView).sort((a, b) => Number(b.supported) - Number(a.supported) || a.name.localeCompare(b.name));
   } catch (error) {
-    throw new ApolloError(`無法讀取 WhatsApp 範本：${sendFailed(error)}`, 'TEMPLATES_UNAVAILABLE');
+    throw new ApolloError(`無法讀取 WhatsApp 範本：${sendFailed(error, room.channelId)}`, 'TEMPLATES_UNAVAILABLE');
   }
 };
 
@@ -236,7 +240,7 @@ export const sendWhatsappTemplate = async (accountId, room, { templateId, values
   try {
     templates = await fetchApprovedTemplates(wabaId, token);
   } catch (error) {
-    throw new ApolloError(`無法讀取 WhatsApp 範本：${sendFailed(error)}`, 'SEND_FAILED');
+    throw new ApolloError(`無法讀取 WhatsApp 範本：${sendFailed(error, room.channelId)}`, 'SEND_FAILED');
   }
   // Read again rather than trusting the client: the template may have been paused or changed since the list was shown.
   const template = templates.find(({ id }) => String(id) === String(templateId));
@@ -259,7 +263,7 @@ export const sendWhatsappTemplate = async (accountId, room, { templateId, values
     const result = await sendWhatsappMessage(built.payload, phoneNumberId, token);
     externalId = whatsappMessageId(result.messages[0].id);
   } catch (error) {
-    throw new ApolloError(sendFailed(error), 'SEND_FAILED');
+    throw new ApolloError(sendFailed(error, room.channelId), 'SEND_FAILED');
   }
   const contents = {
     text: built.text,
@@ -291,8 +295,9 @@ export const markMessageFailed = async (externalId, reason) => {
   return updated;
 };
 
+// Removed channels are left out: their webhooks still arrive until the page or number is disconnected at Meta.
 const findChannelByExternalId = async (externalId, where) => {
-  const channels = await prisma.companyChannel.findMany({ where });
+  const channels = await prisma.companyChannel.findMany({ where: { ...where, deletedAt: null } });
   return channels.find(({ accessInfo }) => accessInfo && [accessInfo.id, accessInfo.page_id, accessInfo.phone_number_id].includes(externalId));
 };
 
@@ -437,8 +442,10 @@ const channelRecords = ({ facebookPages = [], instagramAccounts = [], whatsappAc
   })),
 ];
 
-// Saves the channels from a Meta authorization. Authorizing again refreshes their tokens instead of adding copies.
-// An external account can only belong to one company, because webhooks find their channel by its external id.
+// Saves the channels from a Meta authorization. Authorizing again refreshes their tokens instead of adding copies,
+// and brings back a channel the company removed, with its conversations.
+// An external account can only belong to one company, because webhooks find their channel by its external id;
+// a channel another company removed doesn't count.
 export const saveMetaChannels = async ({ companyId, accountId, ...accounts }) => {
   const records = channelRecords(accounts);
   const existing = await prisma.companyChannel.findMany({ where: { platform: { in: ['fb', 'ig', 'whatsapp'] } } });
@@ -447,12 +454,16 @@ export const saveMetaChannels = async ({ companyId, accountId, ...accounts }) =>
   await prisma.$transaction(async (tx) => {
     for (const { platform, name, accessInfo, info } of records) {
       const owners = existing.filter(channel => channel.platform === platform && channel.accessInfo?.id === accessInfo.id);
-      if (owners.some(channel => channel.companyId !== companyId)) {
+      if (owners.some(channel => channel.companyId !== companyId && !channel.deletedAt)) {
         skipped.push(name);
         continue;
       }
-      const channel = owners[0]
-        ? await tx.companyChannel.update({ where: { id: owners[0].id }, data: { name, accessInfo, info } })
+      // The company's live channel first, otherwise the one it removed most recently.
+      const own = owners
+        .filter(channel => channel.companyId === companyId)
+        .sort((a, b) => Number(Boolean(a.deletedAt)) - Number(Boolean(b.deletedAt)) || (b.deletedAt?.getTime() || 0) - (a.deletedAt?.getTime() || 0))[0];
+      const channel = own
+        ? await tx.companyChannel.update({ where: { id: own.id }, data: { name, accessInfo, info, ...(own.deletedAt ? { deletedAt: null, enabled: true } : {}) } })
         : await tx.companyChannel.create({ data: { companyId, platform, name, accessInfo, info } });
       // Live messages reach the accounts in account_channels, so whoever connected it must be one.
       await tx.accountChannel.createMany({ data: [{ accountId, channelId: channel.id }], skipDuplicates: true });

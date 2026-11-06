@@ -1,13 +1,14 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/router'
 import { useDispatch, useSelector } from 'react-redux'
 import { getUserSubscribedChannels, saveChannels, selectChannels } from '../src/redux/slices/messagesSlices'
 import { apolloApiHelpers } from '../src/graphQL'
-import { CREATE_META_CONNECT_URL, SET_CHANNEL_ENABLED } from '../src/graphQL/channel'
+import { CREATE_META_CONNECT_URL, SET_CHANNEL_ENABLED, DELETE_CHANNEL, CHECK_CHANNEL_CONNECTION } from '../src/graphQL/channel'
 import Table from '../src/stories/components/Table'
 import TableTop from '../src/components/Table/TableTop'
 import Pagination from '../src/stories/components/Pagination'
 import AlertStack from '../src/stories/components/AlertStack'
+import ConfirmDialog from '../src/stories/components/ConfirmDialog'
 import PopupChannel from '../src/components/channels-management/PopupChannel'
 import WhatsappWebConnect from '../src/components/channels-management/WhatsappWebConnect'
 import useAlerts from '../src/utils/useAlerts'
@@ -24,7 +25,7 @@ const PLATFORMS = [
 const platformName = (value) => PLATFORMS.find((platform) => platform.value === value)?.name || value
 
 // How a WhatsApp number connected by QR code is doing, in the list's words. reconnect: it needs a new scan.
-const connectionStatus = (web) => {
+const webStatus = (web) => {
   switch (web?.state) {
     case 'ready': return { tone: 'ok', text: '已連線' }
     case 'syncing': {
@@ -41,16 +42,53 @@ const connectionStatus = (web) => {
   }
 }
 
-function ConnectionCell({ channel, onReconnect }) {
-  const status = connectionStatus(channel.whatsapp_web)
+const CHECKABLE = ['fb', 'ig', 'whatsapp']
+
+// How a channel connected through Meta is doing, as the backend last checked it: a short label, with the backend's
+// explanation on hover. reconnect: Meta must be connected again.
+const metaStatus = (connection) => {
+  const detail = connection?.message || ''
+  switch (connection?.state) {
+    case 'ok': return { tone: detail ? 'warn' : 'ok', text: '已連線', detail }
+    case 'auth_expired': return { tone: 'error', text: '授權已失效', detail, reconnect: true }
+    case 'not_subscribed': return { tone: 'error', text: '未收到訊息通知', detail, reconnect: true }
+    case 'error': return { tone: 'error', text: '連線異常', detail }
+    case 'unknown': return { tone: 'off', text: '尚未檢查', detail }
+    // Not read yet, such as while the list is loading.
+    default: return { tone: 'off', text: '—' }
+  }
+}
+
+const checkedAt = (value) => (value ? `上次檢查：${new Date(value).toLocaleString('zh-TW', { hour12: false })}` : '')
+
+const channelStatus = (channel) => {
+  if (!channel.enabled) return { tone: 'off', text: '已停用' }
+  if (channel.whatsapp_web) return { ...webStatus(channel.whatsapp_web), rescan: webStatus(channel.whatsapp_web).reconnect, reconnect: false }
+  if (!CHECKABLE.includes(channel.platform)) return { tone: 'off', text: '無法檢查' }
+  return { ...metaStatus(channel.connection), recheck: true }
+}
+
+function ConnectionCell({ channel, checking, onRescan, onReconnect, onRecheck }) {
+  const status = channelStatus(channel)
+  const title = [status.detail || status.text, checkedAt(channel.connection?.checked_at)].filter(Boolean).join('\n')
   return (
-    <span className={`channel-connection channel-connection-${status.tone}`} title={status.text}>
+    <span className={`channel-connection channel-connection-${status.tone}`} title={title}>
       <span className='channel-connection-dot' aria-hidden='true' />
-      <span className='truncate'>{status.text}</span>
-      {status.reconnect && <button type='button' className='channel-connection-action' onClick={onReconnect}>重新掃碼</button>}
+      <span className='truncate'>{checking ? '檢查中…' : status.text}</span>
+      {status.detail && !checking && <span className='sr-only'>：{status.detail}</span>}
+      {status.rescan && <button type='button' className='channel-connection-action' onClick={onRescan}>重新掃碼</button>}
+      {status.reconnect && !checking && <button type='button' className='channel-connection-action' onClick={onReconnect}>重新串接</button>}
+      {status.recheck && <button type='button' className='channel-connection-action' disabled={checking} onClick={onRecheck}>重新檢查</button>}
     </span>
   )
 }
+
+// What removing a channel does, for the confirmation.
+const deleteDescription = (channel) => [
+  '刪除後會停止收發這個社群的訊息，並從社群列表和對話列表中移除。',
+  channel.whatsapp_web ? '這支 WhatsApp 號碼也會從手機的「已連結的裝置」登出。' : '',
+  channel.whatsapp_web ? '之後重新掃碼連結同一支號碼，可以找回原本的對話。' : '之後重新串接同一個帳號，可以找回原本的對話。',
+].filter(Boolean).join('')
 
 function ChannelsManagementPage() {
   const router = useRouter()
@@ -65,16 +103,20 @@ function ChannelsManagementPage() {
   const [pendingIds, setPendingIds] = useState([])
   // false: closed; null: connecting a new number; a channel: scanning again for it.
   const [scanning, setScanning] = useState(false)
+  const [deleting, setDeleting] = useState(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [checkingIds, setCheckingIds] = useState([])
 
-  useEffect(() => { dispatch(getUserSubscribedChannels()) }, [dispatch])
+  const loadChannels = useCallback(() => dispatch(getUserSubscribedChannels({ withConnection: true })), [dispatch])
+  useEffect(() => { loadChannels() }, [loadChannels])
 
   // While a number is syncing or reconnecting, its status is read again every few seconds.
   const changing = allChannels.some((channel) => ['syncing', 'disconnected'].includes(channel.whatsapp_web?.state))
   useEffect(() => {
     if (!changing || scanning !== false) return undefined
-    const timer = setInterval(() => dispatch(getUserSubscribedChannels()), 8000)
+    const timer = setInterval(loadChannels, 8000)
     return () => clearInterval(timer)
-  }, [changing, scanning, dispatch])
+  }, [changing, scanning, loadChannels])
 
   // The backend sends the browser back here with the outcome of a Meta connection.
   useEffect(() => {
@@ -105,6 +147,27 @@ function ChannelsManagementPage() {
     if (res.error) return pushAlert('error', `無法${enabled ? '啟用' : '停用'}「${channel.name}」：${res.error}`)
     dispatch(saveChannels(allChannels.map((item) => (item.channel_id === channel.channel_id ? { ...item, enabled: res.enabled } : item))))
     pushAlert('success', `已${res.enabled ? '啟用' : '停用'}「${channel.name}」`)
+    // A channel switched back on shows its connection again.
+    if (res.enabled) loadChannels()
+  }
+
+  const handleDelete = async () => {
+    if (!deleting || isDeleting) return
+    setIsDeleting(true)
+    const res = await apolloApiHelpers('mutation', DELETE_CHANNEL, { channelId: deleting.channel_id })
+    setIsDeleting(false)
+    if (res?.error) return pushAlert('error', `無法刪除「${deleting.name}」：${res.error}`)
+    dispatch(saveChannels(allChannels.filter((item) => item.channel_id !== deleting.channel_id)))
+    pushAlert('success', `已刪除「${deleting.name}」`)
+    setDeleting(null)
+  }
+
+  const handleRecheck = async (channel) => {
+    setCheckingIds((ids) => [...ids, channel.channel_id])
+    const res = await apolloApiHelpers('mutation', CHECK_CHANNEL_CONNECTION, { channelId: channel.channel_id })
+    setCheckingIds((ids) => ids.filter((id) => id !== channel.channel_id))
+    if (res.error) return pushAlert('error', `無法檢查「${channel.name}」：${res.error}`)
+    dispatch(saveChannels(allChannels.map((item) => (item.channel_id === channel.channel_id ? { ...item, phone: res.phone || item.phone, connection: res.connection } : item))))
   }
 
   const handleConnect = async () => {
@@ -121,19 +184,20 @@ function ChannelsManagementPage() {
 
   const closeScan = (changed) => {
     setScanning(false)
-    if (changed) dispatch(getUserSubscribedChannels())
+    if (changed) loadChannels()
   }
   const finishScan = (name) => {
     setScanning(false)
-    dispatch(getUserSubscribedChannels())
+    loadChannels()
     pushAlert('success', name ? `已連結「${name}」` : '已重新連結')
   }
 
   const rows = pageItems.map((channel) => [
     { key: 'enabled', element: 'toggle', value: channel.enabled ? 1 : 0, label: `啟用「${channel.name}」` },
     { key: 'name', element: 'text', value: channel.name },
-    { key: 'account', element: 'custom', value: <span className='flex items-center gap-[8px] min-w-0 px-[8px]'><img src={`/svg/${channel.platform}.svg`} alt='' width={16} height={16} /><span className='truncate' title={channel.channel_id}>{platformName(channel.platform)} · {channel.whatsapp_web?.phone || channel.channel_id}</span></span> },
-    { key: 'connection', element: 'custom', value: channel.whatsapp_web ? <ConnectionCell channel={channel} onReconnect={() => setScanning(channel)} /> : <span className='channel-connection'>—</span> },
+    { key: 'account', element: 'custom', value: <span className='flex items-center gap-[8px] min-w-0 px-[8px]'><img src={`/svg/${channel.platform}.svg`} alt='' width={16} height={16} /><span className='truncate' title={channel.channel_id}>{platformName(channel.platform)} · {channel.phone || channel.whatsapp_web?.phone || channel.channel_id}</span></span> },
+    { key: 'connection', element: 'custom', value: <ConnectionCell channel={channel} checking={checkingIds.includes(channel.channel_id)} onRescan={() => setScanning(channel)} onReconnect={handleConnect} onRecheck={() => handleRecheck(channel)} /> },
+    { key: 'actions', element: 'custom', value: <span className='channel-actions'><button type='button' className='channel-delete' onClick={() => setDeleting(channel)} aria-label={`刪除「${channel.name}」`}>刪除</button></span> },
   ])
 
   const isLoading = channelsStatus === 'loading' && !allChannels.length
@@ -141,8 +205,8 @@ function ChannelsManagementPage() {
   return (
     <div className='w-full h-full'>
       <Table
-        colsTemplate='minmax(64px,0.3fr) minmax(200px,1.2fr) minmax(240px,1.4fr) minmax(220px,1.2fr)'
-        header={['狀態', '社群名稱', '連結社群', '連線狀態']}
+        colsTemplate='minmax(64px,0.3fr) minmax(180px,1.1fr) minmax(240px,1.4fr) minmax(260px,1.4fr) minmax(72px,0.35fr)'
+        header={['狀態', '社群名稱', '連結社群', '連線狀態', '操作']}
         row={rows}
         rowIds={pageItems.map((channel) => channel.channel_id)}
         loading={isLoading}
@@ -166,6 +230,14 @@ function ChannelsManagementPage() {
       />
       <PopupChannel isShow={isPicking} onClick={() => { if (!isConnecting) setIsPicking(false) }} onConnectMeta={handleConnect} onConnectWhatsapp={() => { setIsPicking(false); setScanning(null) }} connecting={isConnecting} />
       <WhatsappWebConnect isShow={scanning !== false} channel={scanning || null} onClose={closeScan} onDone={finishScan} pushAlert={pushAlert} />
+      <ConfirmDialog
+        isShow={Boolean(deleting)}
+        title={deleting ? `確定要刪除「${deleting.name}」嗎？` : ''}
+        description={deleting ? deleteDescription(deleting) : ''}
+        busy={isDeleting}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleting(null)}
+      />
       <AlertStack alerts={alerts} onDismiss={dismissAlert} />
     </div>
   )

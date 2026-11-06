@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { getJwtSecret } from '../lib/auth/jwtSecret.js';
 import { prisma } from '../lib/db/prisma.js';
 import { saveMetaChannels, findChannelToken, saveInboundMessage, saveConversationHistory, markMessageFailed, metaFailureReason } from '../utils/utils.js';
+import { markChannelAuthExpired } from '../lib/messaging/channels.js';
 
 // facebook
 import { getUserAccessToken, getDebugToken,
@@ -327,7 +328,8 @@ export default {
                 }
 
                 for(const { externalId, error } of whatsappFailedStatuses(entry)){
-                    await markMessageFailed(externalId, metaFailureReason(error))
+                    const failed = await markMessageFailed(externalId, metaFailureReason(error))
+                    if (error?.code === 190 && failed?.recipients?.[0]?.channelId) await markChannelAuthExpired(failed.recipients[0].channelId)
                 }
             } catch (error) {
                 console.error('webhook_error', error)

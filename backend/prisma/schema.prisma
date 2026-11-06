@@ -85,6 +85,8 @@ model CompanyChannel {
   info       Json
   // A disabled channel neither takes in customer messages nor sends replies.
   enabled    Boolean          @default(true)
+  // A removed channel is hidden everywhere and takes in nothing; connecting the same account again brings it back.
+  deletedAt  DateTime?        @map("deleted_at")
   company    Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
   accounts   AccountChannel[]
   chatRooms  ChatRoom[]

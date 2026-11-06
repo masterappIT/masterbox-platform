@@ -378,7 +378,8 @@ export const assignRoom = async (account, room, assigneeId) => {
  * otherwise those in channels it has lost. Run after changing an account's role, channels or status.
  */
 export const releaseAssignments = async (account) => {
-  const channelIds = await visibleChannelIds(account);
+  // A removed channel keeps its assignments for when it is connected again.
+  const channelIds = await visibleChannelIds(account, { includeRemoved: true });
   const released = await prisma.$queryRaw`
     UPDATE chat_rooms SET assignee_id = NULL, assigned_at = NULL
     WHERE assignee_id = ${account.account_id} AND company_id = ${account.company_id}

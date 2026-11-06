@@ -153,7 +153,8 @@ export default {
             try {
                 updated = await prisma.$transaction(async (tx) => {
                     if (channelIds) {
-                        await tx.accountChannel.deleteMany({ where: { accountId: _id, channelId: { notIn: channelIds } } });
+                        // A removed channel isn't offered in the form, so its agents are kept for when it comes back.
+                        await tx.accountChannel.deleteMany({ where: { accountId: _id, channelId: { notIn: channelIds }, channel: { deletedAt: null } } });
                         await tx.accountChannel.createMany({ data: channelIds.map(channelId => ({ accountId: _id, channelId })), skipDuplicates: true });
                     }
                     return tx.account.update({ where: { id: _id }, data, include: WITH_CHANNELS });

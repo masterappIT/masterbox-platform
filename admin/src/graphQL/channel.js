@@ -23,6 +23,51 @@ query GetUserSubscribedChannels {
 }
  `;
 
+// The channel list of 社群平台管理, with how each channel's connection is doing. Reading it may ask Meta again,
+// so the other pages use GET_USER_SUBSCRIBED_CHANNELS.
+const CONNECTION_FIELDS = `state message checked_at`;
+
+export const GET_CHANNELS_WITH_CONNECTION = gql`
+
+query GetChannelsWithConnection {
+  getUserSubscribedChannels {
+    platform
+    name
+    channel_id
+    enabled
+    phone
+    connection {
+      ${CONNECTION_FIELDS}
+    }
+    whatsapp_web {
+      ${WHATSAPP_WEB_FIELDS}
+    }
+  }
+}
+ `;
+
+// Removes a channel: it stops taking in and sending messages; connecting the same account again brings it back.
+export const DELETE_CHANNEL = gql`
+
+mutation DeleteChannel($channelId: ID!) {
+  deleteChannel(channel_id: $channelId)
+}
+ `;
+
+// Asks the platform now, skipping the 10-minute wait between checks.
+export const CHECK_CHANNEL_CONNECTION = gql`
+
+mutation CheckChannelConnection($channelId: ID!) {
+  checkChannelConnection(channel_id: $channelId) {
+    channel_id
+    phone
+    connection {
+      ${CONNECTION_FIELDS}
+    }
+  }
+}
+ `;
+
 // Switches a channel on or off for the whole company.
 export const SET_CHANNEL_ENABLED = gql`
 

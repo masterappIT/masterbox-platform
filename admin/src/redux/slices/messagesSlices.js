@@ -2,7 +2,7 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit'
 import { apolloApiHelpers, client, refreshSession, onSocketReconnected } from '../../graphQL';
 import { SUBSCRIBE_MESSAGE } from '../../graphQL/subscription'
 import {
-  GET_USER_SUBSCRIBED_CHANNELS, CHATROOMS, CHAT_ROOM_PAGE, CHAT_ROOM, MARK_CHAT_ROOM_READ, CUSTOMER_TAGS, ADD_CHAT_ROOM_TAG, REMOVE_CHAT_ROOM_TAG,
+  GET_USER_SUBSCRIBED_CHANNELS, GET_CHANNELS_WITH_CONNECTION, CHATROOMS, CHAT_ROOM_PAGE, CHAT_ROOM, MARK_CHAT_ROOM_READ, CUSTOMER_TAGS, ADD_CHAT_ROOM_TAG, REMOVE_CHAT_ROOM_TAG,
   ASSIGN_CHAT_ROOM, CHAT_ROOM_ASSIGNEES, SUBSCRIBE_CHAT_ROOM_UPDATES,
 } from '../../graphQL/channel'
 import { SEND_MESSAGE, MESSAGE_PAGE, WHATSAPP_TEMPLATES, SEND_WHATSAPP_TEMPLATE } from '../../graphQL/messages'
@@ -17,7 +17,9 @@ const MESSAGES_PER_PAGE = 30;
 const CATCH_UP_PAGES = 10;
 
 // The home page keys chat rooms by `account`; rooms point at their channel by its id.
-const toChannel = ({ channel_id, platform, name, enabled, whatsapp_web }) => ({ channel_id, platform, name, enabled: enabled !== false, account: channel_id, whatsapp_web: whatsapp_web || null });
+const toChannel = ({ channel_id, platform, name, enabled, phone, connection, whatsapp_web }) => ({
+  channel_id, platform, name, enabled: enabled !== false, account: channel_id, phone: phone || null, connection: connection || null, whatsapp_web: whatsapp_web || null,
+});
 
 const toChatRoom = ({ users, ...room }) => ({
   ...room,
@@ -84,8 +86,9 @@ const isPageVisible = () => typeof document === 'undefined' || document.visibili
 
 export const getUserSubscribedChannels = createAsyncThunk(
   'channel/getUserSubscribedChannels',
-  async (_, { dispatch, rejectWithValue }) => {
-    const res = await apolloApiHelpers('query', GET_USER_SUBSCRIBED_CHANNELS, undefined, FRESH)
+  // withConnection: also how each channel's connection is doing, for 社群平台管理.
+  async ({ withConnection = false } = {}, { dispatch, rejectWithValue }) => {
+    const res = await apolloApiHelpers('query', withConnection ? GET_CHANNELS_WITH_CONNECTION : GET_USER_SUBSCRIBED_CHANNELS, undefined, FRESH)
     if (res.error) return rejectWithValue(res.error)
     return dispatch(saveChannels(res.map(toChannel)))
   }
