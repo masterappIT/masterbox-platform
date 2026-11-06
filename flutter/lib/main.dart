@@ -688,6 +688,10 @@ class _MainShellState extends State<MainShell> {
   StreamSubscription<ChatMessage>? _newMessages;
   StreamSubscription<String>? _tappedNotifications;
   StreamSubscription<ForegroundPush>? _foregroundPushes;
+  final _unreadTriggers = <StreamSubscription<Object?>>[];
+  AppLifecycleListener? _lifecycle;
+  Timer? _unreadCount;
+  int _unreadRooms = 0;
   final _announced = <String>{};
   final _checkedForNotice = <String>{};
 
@@ -701,6 +705,18 @@ class _MainShellState extends State<MainShell> {
       (id) => _openRoom(id: id),
     );
     _foregroundPushes = widget.push.foregroundMessages.listen(_announcePush);
+    _unreadTriggers
+      ..add(
+        widget.graphQL.messageEvents
+            .where((message) => !message.isMine)
+            .listen((_) => _countUnread()),
+      )
+      ..add(widget.graphQL.roomEvents.listen((_) => _countUnread()))
+      ..add(widget.graphQL.readChanges.listen((_) => _countUnread()))
+      ..add(widget.graphQL.reconnects.listen((_) => _countUnread()))
+      ..add(widget.push.foregroundMessages.listen((_) => _countUnread()));
+    _lifecycle = AppLifecycleListener(onResume: _countUnread);
+    _countUnread();
     // The notification that launched the app, tapped before this was showing.
     final launched = widget.push.takePendingRoom();
     if (launched != null) {
@@ -716,7 +732,29 @@ class _MainShellState extends State<MainShell> {
     _newMessages?.cancel();
     _tappedNotifications?.cancel();
     _foregroundPushes?.cancel();
+    for (final trigger in _unreadTriggers) {
+      trigger.cancel();
+    }
+    _lifecycle?.dispose();
+    _unreadCount?.cancel();
     super.dispose();
+  }
+
+  /// The Chat tab and the app icon show how many conversations have messages
+  /// this account hasn't read. Changes come in bursts, such as a message and
+  /// its conversation being read on screen, so it is counted once they settle.
+  void _countUnread() {
+    _unreadCount?.cancel();
+    _unreadCount = Timer(const Duration(milliseconds: 500), () async {
+      try {
+        final count = await widget.graphQL.unreadConversationCount();
+        if (!mounted) return;
+        if (count != _unreadRooms) setState(() => _unreadRooms = count);
+        await widget.push.setBadge(count);
+      } catch (_) {
+        // Counted again on the next change.
+      }
+    });
   }
 
   /// A new message while the app is open, unless the settings page's in-app
@@ -887,6 +925,7 @@ class _MainShellState extends State<MainShell> {
       bottomNavigationBar: _BottomBar(
         selectedIndex: index,
         showManage: isAdmin,
+        unreadConversations: _unreadRooms,
         onSelected: (value) => setState(() => index = value),
       ),
     );
@@ -898,10 +937,12 @@ class _BottomBar extends StatelessWidget {
     required this.selectedIndex,
     required this.onSelected,
     this.showManage = false,
+    this.unreadConversations = 0,
   });
   final int selectedIndex;
   final ValueChanged<int> onSelected;
   final bool showManage;
+  final int unreadConversations;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -939,6 +980,7 @@ class _BottomBar extends StatelessWidget {
               label: 'Chat',
               selectedIndex: selectedIndex,
               onSelected: onSelected,
+              unread: unreadConversations,
             ),
             if (showManage)
               _BottomBarItem(
@@ -972,6 +1014,7 @@ class _BottomBarItem extends StatelessWidget {
     required this.label,
     required this.selectedIndex,
     required this.onSelected,
+    this.unread = 0,
   });
   final int index;
   final IconData icon;
@@ -979,6 +1022,9 @@ class _BottomBarItem extends StatelessWidget {
   final String label;
   final int selectedIndex;
   final ValueChanged<int> onSelected;
+
+  /// Conversations with unread messages, shown on the icon.
+  final int unread;
 
   @override
   Widget build(BuildContext context) {
@@ -1002,7 +1048,21 @@ class _BottomBarItem extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(selected ? selectedIcon : icon, color: color, size: 23),
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(selected ? selectedIcon : icon, color: color, size: 23),
+                  if (unread > 0)
+                    Positioned(
+                      top: -6,
+                      left: 14,
+                      child: UnreadBadge(
+                        count: unread,
+                        semanticLabel: '$unread 個對話有未讀訊息',
+                      ),
+                    ),
+                ],
+              ),
               const SizedBox(height: 3),
               Text(
                 label,

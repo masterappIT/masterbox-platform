@@ -191,6 +191,7 @@ class GraphQLService {
   final _messageEvents = StreamController<ChatMessage>.broadcast();
   final _roomEvents = StreamController<ChatConversation>.broadcast();
   final _reconnects = StreamController<void>.broadcast();
+  final _readChanges = StreamController<void>.broadcast();
 
   bool get isAuthenticated => token != null && token!.isNotEmpty;
 
@@ -203,6 +204,9 @@ class GraphQLService {
   /// The live connection came back; anything sent meanwhile was missed and
   /// should be caught up on.
   Stream<void> get reconnects => _reconnects.stream;
+
+  /// This device read a conversation, so its unread total went down.
+  Stream<void> get readChanges => _readChanges.stream;
 
   /// Whether live updates are arriving right now.
   bool get isLive => _realtime?.isConnected ?? false;
@@ -600,7 +604,20 @@ class GraphQLService {
       {'id': id, 'messageId': ?messageId},
     );
     final value = _map(result, const ['data', 'markChatRoomRead']);
+    _readChanges.add(null);
     return (value?['unreadCount'] as num?)?.toInt() ?? 0;
+  }
+
+  /// How many of this account's conversations have messages it hasn't read.
+  Future<int> unreadConversationCount() async {
+    final result = await _request(
+      r'''query UnreadChatRoomCount { unreadChatRoomCount }''',
+      const {},
+    );
+    final data = result['data'];
+    final count = data is Map ? data['unreadChatRoomCount'] : null;
+    if (count is! num) throw StateError('unread count missing');
+    return count.toInt();
   }
 
   /// The approved templates of a WhatsApp conversation's number, read from Meta.

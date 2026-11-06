@@ -310,11 +310,14 @@ class ConversationTile extends StatelessWidget {
 }
 
 class UnreadBadge extends StatelessWidget {
-  const UnreadBadge({required this.count, super.key});
+  const UnreadBadge({required this.count, this.semanticLabel, super.key});
   final int count;
+
+  /// What a screen reader says; by default, the number of unread messages.
+  final String? semanticLabel;
   @override
   Widget build(BuildContext context) => Semantics(
-    label: '$count 則未讀',
+    label: semanticLabel ?? '$count 則未讀',
     excludeSemantics: true,
     child: Container(
       constraints: const BoxConstraints(minWidth: 20),

@@ -2,6 +2,7 @@
 import { ApolloError } from 'apollo-server-errors';
 import { prisma } from '../db/prisma.js';
 import { channelAccountIds } from '../messaging/access.js';
+import { countUnreadRooms } from '../messaging/conversations.js';
 import { apnsSender } from './apns.js';
 import { notificationRecipients, notificationFor } from './notificationContent.js';
 
@@ -66,12 +67,24 @@ export const messageNotifiesAccount = async (account, { chatRoomId, channelId },
 };
 
 /**
+ * The number on the app icon for each account: its conversations with unread messages, this one included.
+ * An account whose count can't be worked out gets none, so its icon keeps what it showed.
+ */
+const unreadBadges = async (companyId, accountIds, unreadFor) => new Map((await Promise.all(accountIds.map(async (accountId) => {
+  try {
+    return [accountId, await unreadFor({ account_id: accountId, company_id: companyId })];
+  } catch {
+    return null;
+  }
+}))).filter(Boolean));
+
+/**
  * Tells the phones of the accounts that work in the conversation about a customer's message.
  * Never throws: a notification that can't go out mustn't lose the message.
  * @param message - the stored message, with its recipients
- * @param {{ sender?: { send }, accountIdsFor?: typeof channelAccountIds }} [deps] - for tests
+ * @param {{ sender?: { send }, accountIdsFor?: typeof channelAccountIds, unreadFor?: typeof countUnreadRooms }} [deps] - for tests
  */
-export const notifyCustomerMessage = async (message, { sender, accountIdsFor = channelAccountIds } = {}) => {
+export const notifyCustomerMessage = async (message, { sender, accountIdsFor = channelAccountIds, unreadFor = countUnreadRooms } = {}) => {
   try {
     const push = sender ?? (pushConfigured() ? apnsSender() : null);
     const recipient = message?.recipients?.[0];
@@ -85,9 +98,12 @@ export const notifyCustomerMessage = async (message, { sender, accountIdsFor = c
     const devices = await prisma.deviceToken.findMany({ where: { accountId: { in: accountIds }, companyId: room.companyId, platform: 'ios' } });
     if (!devices.length) return 0;
     const payload = notificationFor({ room, channelName: room.channel?.name, message });
+    const badges = await unreadBadges(room.companyId, [...new Set(devices.map(({ accountId }) => accountId))], unreadFor);
     const results = await Promise.all(devices.map(async (device) => {
+      const badge = badges.get(device.accountId);
+      const notification = badge === undefined ? payload : { ...payload, aps: { ...payload.aps, badge } };
       try {
-        return { device, result: await push.send(device.token, payload) };
+        return { device, result: await push.send(device.token, notification) };
       } catch (error) {
         return { device, result: { ok: false, unregistered: false, reason: error.message } };
       }

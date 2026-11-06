@@ -103,6 +103,9 @@ abstract class PushClient {
 
   /// Stops this phone receiving anything, even if the server couldn't be told.
   Future<void> stop();
+
+  /// The number on the app icon; 0 clears it.
+  Future<void> setBadge(int count);
 }
 
 /// Apple's push service, through AppDelegate.swift. Android has no push yet, so
@@ -171,6 +174,10 @@ class ApnsPushClient implements PushClient {
 
   @override
   Future<void> stop() => _channel.invokeMethod<void>('stop');
+
+  @override
+  Future<void> setBadge(int count) =>
+      _channel.invokeMethod<void>('setBadge', count);
 }
 
 /// Registers this phone for the signed-in account's notifications and opens
@@ -300,6 +307,20 @@ class PushService {
     }
   }
 
+  int? _badge;
+
+  /// Shows the account's unread conversations on the app icon, as its
+  /// notifications do. The phone hides it when badges aren't allowed.
+  Future<void> setBadge(int count) async {
+    if (!_client.available || count == _badge) return;
+    try {
+      await _client.setBadge(count);
+      _badge = count;
+    } catch (_) {
+      // The next count tries again.
+    }
+  }
+
   /// Signing out: the account's notifications stop on this phone.
   Future<void> signOut() async {
     // Not awaited: nothing depends on it, and it can finish after sign-out.
@@ -307,6 +328,7 @@ class PushService {
     _tokenRefresh = null;
     if (!_client.available) return;
     await _stopHere();
+    await setBadge(0);
     _state.value = PushState.off;
   }
 

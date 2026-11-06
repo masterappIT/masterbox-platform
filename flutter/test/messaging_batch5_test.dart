@@ -196,6 +196,7 @@ class _FakePush implements PushClient {
   final foreground = StreamController<ForegroundPush>.broadcast();
   var token = 'aa11';
   var stopped = 0;
+  final badges = <int>[];
 
   @override
   bool get available => true;
@@ -215,6 +216,8 @@ class _FakePush implements PushClient {
   Future<Map<String, dynamic>?> launchedFrom() async => launched;
   @override
   Future<void> stop() async => stopped++;
+  @override
+  Future<void> setBadge(int count) async => badges.add(count);
 }
 
 void main() {
@@ -440,6 +443,86 @@ void main() {
     });
   });
 
+  group('unread conversations on the Chat tab and the app icon', () {
+    int? chatTabCount(WidgetTester tester) {
+      final badges = tester
+          .widgetList<UnreadBadge>(find.byType(UnreadBadge))
+          .where((badge) => badge.semanticLabel != null);
+      return badges.isEmpty ? null : badges.single.count;
+    }
+
+    // Counting waits for changes to settle.
+    Future<void> settle(WidgetTester tester) async {
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('go up with a customer message and down once it is read', (
+      tester,
+    ) async {
+      var unread = 2;
+      final push = _FakePush();
+      final responses = _backend(
+        rooms: [_room(unread: 1)],
+        messagePage: _messagePage([_message('m1', '請問有貨嗎')]),
+      );
+      responses['UnreadChatRoomCount'] = (Map<String, dynamic> _) => {
+        'unreadChatRoomCount': unread,
+      };
+      responses['MarkChatRoomRead'] = (Map<String, dynamic> _) {
+        unread = 1;
+        return {
+          'markChatRoomRead': {'id': 'room-row-1', 'unreadCount': 0},
+        };
+      };
+      final app = await _open(tester, responses, push: push, openChat: false);
+      await settle(tester);
+      // The app opens on Client, where the conversation list isn't showing.
+      expect(chatTabCount(tester), 2);
+      expect(push.badges.last, 2);
+
+      unread = 3;
+      app.sockets.last.receiveMessage(
+        _message('m9', '還有貨嗎', roomId: 'psid-2', ago: Duration.zero),
+      );
+      await settle(tester);
+      expect(chatTabCount(tester), 3);
+      expect(push.badges.last, 3);
+
+      await tester.tap(find.text('Chat'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('小美'));
+      await settle(tester);
+      expect(push.badges.last, 1);
+      await tester.pageBack();
+      await settle(tester);
+      expect(chatTabCount(tester), 1);
+    });
+
+    testWidgets('show nothing with nothing unread', (tester) async {
+      final responses = _backend()
+        ..['UnreadChatRoomCount'] = {'unreadChatRoomCount': 0};
+      await _open(tester, responses, openChat: false);
+      await settle(tester);
+      expect(chatTabCount(tester), isNull);
+    });
+
+    testWidgets('keep the last count when the server cannot say', (
+      tester,
+    ) async {
+      Object answer = {'unreadChatRoomCount': 4};
+      final responses = _backend()
+        ..['UnreadChatRoomCount'] = (Map<String, dynamic> _) => answer;
+      final app = await _open(tester, responses, openChat: false);
+      await settle(tester);
+      expect(chatTabCount(tester), 4);
+      answer = FakeError('伺服器錯誤', code: 'INTERNAL_SERVER_ERROR');
+      app.sockets.last.receiveMessage(_message('m9', '在嗎', ago: Duration.zero));
+      await settle(tester);
+      expect(chatTabCount(tester), 4);
+    });
+  });
+
   group('a conversation', () {
     Future<_App> openRoom(
       WidgetTester tester,
@@ -476,6 +559,29 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(UnreadBadge), findsNothing);
     });
+
+    testWidgets(
+      'opens at its newest message',
+      variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+      (tester) async {
+        await openRoom(
+          tester,
+          _backend(
+            messagePage: _messagePage([
+              for (var i = 1; i <= 30; i++)
+                _message('m$i', '第 $i 則', ago: Duration(minutes: 60 - i)),
+            ], hasOlder: true),
+          ),
+        );
+        tester.view.physicalSize = const Size(390, 844);
+        await tester.pumpAndSettle();
+        final screen = tester.getSize(find.byType(ConversationPage)).height;
+        final newest = find.text('第 30 則');
+        expect(newest, findsOneWidget);
+        expect(tester.getBottomLeft(newest).dy, lessThan(screen));
+        expect(find.text('第 1 則'), findsNothing);
+      },
+    );
 
     testWidgets('older messages load above without moving what is on screen', (
       tester,
@@ -1224,6 +1330,7 @@ void main() {
         'token': 'aa11',
       });
       expect(push.stopped, 1);
+      expect(push.badges.last, 0);
       expect(find.text('登入 MasterBox'), findsOneWidget);
     });
 

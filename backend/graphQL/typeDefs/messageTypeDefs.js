@@ -182,6 +182,8 @@ export default gql`
     messages(conversationId: ID, roomId: ID): [Message!]!
     "The conversations in the signed-in account's channels, newest message first."
     chatRoomPage(first: Int, after: String, filter: ChatRoomFilter): ChatRoomPage!
+    "How many of the signed-in account's conversations have customer messages it hasn't read."
+    unreadChatRoomCount: Int!
     "One conversation, by its id or by the chat_room_id and channel_id that messages carry."
     chatRoom(id: ID, chat_room_id: String, channel_id: ID): ChatRoom
     "A conversation's messages: the newest by default, older ones with before, newer ones with after."

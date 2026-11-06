@@ -198,6 +198,23 @@ export const listRooms = async (account, { first, after, filter = {} } = {}) => 
 };
 
 /**
+ * How many of the account's conversations have customer messages it hasn't read, for the app's Chat tab and icon.
+ * The same conversations the list shows with "unread only".
+ */
+export const countUnreadRooms = async (account) => {
+  const channelIds = await visibleChannelIds(account);
+  if (!channelIds.length) return 0;
+  const now = new Date();
+  const [row] = await prisma.$queryRaw`
+    SELECT count(*)::int AS count FROM chat_rooms r
+    LEFT JOIN chat_room_reads rd ON rd.room_id = r.id AND rd.account_id = ${account.account_id}
+    WHERE r.company_id = ${account.company_id}
+      AND r.channel_id IN (${Prisma.join(channelIds)})
+      AND EXISTS (SELECT 1 ${roomMessages(now)} AND ${UNREAD})`;
+  return row?.count || 0;
+};
+
+/**
  * A page of a conversation's messages, oldest first.
  * Without a cursor it is the newest messages; `before` pages back to older ones, `after` catches up on newer ones.
  * @returns {{ messages, hasOlder: boolean, hasNewer: boolean }} the stored messages, with their recipients
