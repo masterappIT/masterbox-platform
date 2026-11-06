@@ -3,6 +3,10 @@ import { ApolloError } from 'apollo-server-errors';
 import { pubsub } from '../config/redis.js';
 import { sendFacebookMessage } from '../controller/meta_facebook.js';
 import { sendWhatsappMessage, whatsappMessageId } from '../controller/meta_whatsapp.js';
+import { replyContentsOf, replyParts, metaPayload, partContents, storedAttachment } from '../lib/messaging/outbound.js';
+import { checkAttachment } from '../lib/storage/attachmentRules.js';
+import { describeUrl } from '../lib/storage/index.js';
+import { storeInboundAttachments } from '../lib/messaging/inbound.js';
 
 export const errorTypes = {
   MISS_REQUEUED_PRAMS: 'MISS_REQUEUED_PRAMS',
@@ -45,12 +49,11 @@ export const publishMessage = async (message) => {
   await Promise.all(accounts.map(({ accountId }) => pubsub.publish(`${SEND_MESSAGE}-${accountId}`, { sendMessage: view })));
 };
 
-// The reply text from plain text, a JSON message (`text`), or a Meta payload (`message.text`).
-const replyTextOf = (contents) => {
-  let parsed;
-  try { parsed = JSON.parse(contents); } catch { return contents; }
-  if (!parsed || typeof parsed !== 'object') return contents;
-  return parsed.text ?? parsed.message?.text ?? parsed.message?.body;
+const sendFailed = (error) => {
+  let body = error.responseBody;
+  if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = undefined; } }
+  console.log('Meta send failed:', body?.error || error.message);
+  return metaFailureReason(body?.error || { message: error.message });
 };
 
 // Turns Meta's error (from a send response or a status webhook) into something an agent can act on.
@@ -60,18 +63,27 @@ export const metaFailureReason = (error) => {
   return `Meta 無法送出這則訊息：${error?.message || error?.title || '未知錯誤'}`;
 };
 
-const sendFailed = (error) => {
-  let body = error.responseBody;
-  if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = undefined; } }
-  console.log('Meta send failed:', body?.error || error.message);
-  return new ApolloError(metaFailureReason(body?.error || { message: error.message }), 'SEND_FAILED');
+// The file an agent attached, checked against storage and the platform's limits.
+const replyAttachment = async (platform, attachments) => {
+  if (!attachments.length) return {};
+  if (attachments.length > 1) throw new ApolloError('一次只能傳送一個附件', 'SEND_FAILED');
+  const file = await describeUrl(attachments[0]?.payload?.url);
+  if (!file) throw new ApolloError('找不到這個附件，請重新選擇檔案', 'SEND_FAILED');
+  const check = checkAttachment(platform, { mime: file.mime_type, size: file.size });
+  if (!check.ok) throw new ApolloError(check.reason, 'SEND_FAILED');
+  return { attachment: storedAttachment(file), sendType: check.sendType };
 };
 
-// Sends the reply to the customer and returns the platform's message id. Throws when it wasn't sent.
-const deliverReply = async (room, contents) => {
+/**
+ * Works out how a reply goes to the customer, before anything is sent.
+ * @returns {{ parts, send }} parts in the order they are sent; send(part) returns the platform's message id or throws
+ */
+const prepareReply = async (room, contents) => {
   if (!['fb', 'ig', 'whatsapp'].includes(room.platform)) throw new ApolloError(`尚未支援回覆 ${room.platform} 訊息`, 'SEND_FAILED');
-  const text = replyTextOf(contents);
-  if (typeof text !== 'string' || !text.trim()) throw new ApolloError('訊息內容不可空白', 'SEND_FAILED');
+  const { text, attachments } = replyContentsOf(contents);
+  const { attachment, sendType } = await replyAttachment(room.platform, attachments);
+  const parts = replyParts(room.platform, { text, attachment, sendType });
+  if (!parts.length) throw new ApolloError('訊息內容不可空白', 'SEND_FAILED');
 
   const channel = await prisma.companyChannel.findUnique({ where: { id: room.channelId } });
   const { access_token: token, page_id: pageId, phone_number_id: phoneNumberId } = channel?.accessInfo || {};
@@ -82,18 +94,23 @@ const deliverReply = async (room, contents) => {
   const customerId = (Array.isArray(room.users) ? room.users[0]?.id : null) || (room.platform === 'whatsapp' ? room.chatRoomId : null);
   if (!customerId) throw new ApolloError('找不到這段對話的客戶，無法送出訊息', 'SEND_FAILED');
 
-  try {
+  const send = async (part) => {
+    const payload = metaPayload(room.platform, customerId, part);
     if (room.platform === 'whatsapp') {
-      const result = await sendWhatsappMessage({ messaging_product: 'whatsapp', recipient_type: 'individual', to: customerId, type: 'text', text: { body: text } }, phoneNumberId, token);
+      const result = await sendWhatsappMessage(payload, phoneNumberId, token);
       return whatsappMessageId(result.messages[0].id);
     }
-    const result = await sendFacebookMessage(pageId, { recipient: { id: customerId }, messaging_type: 'RESPONSE', message: { text } }, token);
+    const result = await sendFacebookMessage(pageId, payload, token);
     return result.message_id;
-  } catch (error) {
-    throw sendFailed(error);
-  }
+  };
+  return { parts, send };
 };
 
+/**
+ * Sends an agent's reply. Only what Meta accepted is stored, so nothing here can look sent when it wasn't.
+ * A reply with a file may go as two messages; when only the file went out, the error says so and carries `sentAttachment`.
+ * @returns the last stored message
+ */
 export const handleSendMessage = async (accountId, roomId, contents, channelId) => {
   if (!accountId) throw new ApolloError('A PostgreSQL account is required', 'SEND_FAILED');
   const account = await prisma.account.findUnique({ where: { id: accountId } });
@@ -102,21 +119,32 @@ export const handleSendMessage = async (accountId, roomId, contents, channelId) 
     where: { companyId: account.companyId, ...(channelId ? { channelId } : {}), OR: [{ id: roomId }, { chatRoomId: roomId }] },
   });
   if (!room) throw new ApolloError('Chat room not found', 'SEND_FAILED');
-  // Only a reply Meta accepted is stored, so nothing here can look sent when it wasn't.
-  const externalId = await deliverReply(room, contents);
-  const message = await prisma.message.create({
-    data: {
-      companyId: account.companyId,
-      createdBy: account.id,
-      platform: room.platform,
-      contents,
-      externalId,
-      recipients: { create: [{ channelId: room.channelId, chatRoomIds: [room.chatRoomId || room.id] }] },
-    },
-    include: { recipients: true },
-  });
-  await prisma.chatRoom.update({ where: { id: room.id }, data: { updatedAt: new Date() } });
-  await publishMessage(message);
+  const { parts, send } = await prepareReply(room, contents);
+
+  let message = null;
+  for (const part of parts) {
+    let externalId;
+    try {
+      externalId = await send(part);
+    } catch (error) {
+      const reason = sendFailed(error);
+      if (!message) throw new ApolloError(reason, 'SEND_FAILED');
+      throw new ApolloError(`附件已送出，但文字沒有送出：${reason}`, 'SEND_FAILED', { sentAttachment: true });
+    }
+    message = await prisma.message.create({
+      data: {
+        companyId: account.companyId,
+        createdBy: account.id,
+        platform: room.platform,
+        contents: partContents(contents, part),
+        externalId,
+        recipients: { create: [{ channelId: room.channelId, chatRoomIds: [room.chatRoomId || room.id] }] },
+      },
+      include: { recipients: true },
+    });
+    await prisma.chatRoom.update({ where: { id: room.id }, data: { updatedAt: new Date() } });
+    await publishMessage(message);
+  }
   return message;
 };
 
@@ -157,6 +185,9 @@ export const saveInboundMessage = async ({ externalChannelId, platform, chatRoom
   // A disabled channel takes in nothing; the message stays in the platform's own inbox.
   const channel = await findChannelByExternalId(externalChannelId, { platform, enabled: true });
   if (!channel) return null;
+  // The platform retried a message that is already stored; don't download its files again.
+  if (externalId && await prisma.message.findUnique({ where: { externalId }, select: { id: true } })) return null;
+  const stored = typeof contents === 'string' ? contents : JSON.stringify(await storeInboundAttachments(contents, channel));
 
   const room = await findCustomerRoom(channel, chatRoomId, customer);
   const users = usersWithCustomer(room?.users, customer);
@@ -166,7 +197,7 @@ export const saveInboundMessage = async ({ externalChannelId, platform, chatRoom
 
   try {
     const message = await prisma.message.create({
-      data: { companyId: channel.companyId, platform, contents, externalId, recipients: { create: [{ channelId: channel.id, chatRoomIds: [roomId] }] } },
+      data: { companyId: channel.companyId, platform, contents: stored, externalId, recipients: { create: [{ channelId: channel.id, chatRoomIds: [roomId] }] } },
       include: { recipients: true },
     });
     await publishMessage(message);
@@ -197,8 +228,15 @@ export const saveConversationHistory = async (channel, conversations, accountId)
     if (!room) await prisma.chatRoom.create({ data: { companyId: channel.companyId, platform: channel.platform, channelId: channel.id, chatRoomId, users: users || [], createdAt: lastAt, updatedAt: lastAt } });
     const roomId = room?.chatRoomId || room?.id || chatRoomId;
 
+    // Only new messages get their files downloaded; connecting again leaves stored ones alone.
+    const known = new Set((await prisma.message.findMany({ where: { externalId: { in: messages.map(({ externalId }) => externalId) } }, select: { externalId: true } })).map(({ externalId }) => externalId));
+    const fresh = [];
+    for (const message of messages.filter(({ externalId }) => !known.has(externalId))) {
+      fresh.push({ ...message, contents: await storeInboundAttachments(message.contents, channel) });
+    }
+    if (!fresh.length) continue;
     const result = await prisma.message.createMany({
-      data: messages.map(({ externalId, sentAt, fromCompany, contents }) => ({
+      data: fresh.map(({ externalId, sentAt, fromCompany, contents }) => ({
         companyId: channel.companyId, platform: channel.platform, contents: JSON.stringify(contents), externalId,
         createdAt: new Date(sentAt), createdBy: fromCompany ? accountId : null,
       })),

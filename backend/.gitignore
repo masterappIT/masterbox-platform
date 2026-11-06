@@ -32,3 +32,5 @@ commit.sh
 
 #ngrok
 .exe
+# Attachments stored in local development
+/uploads

@@ -19,17 +19,27 @@ const ATTACHMENT_LABELS = {
     unsupported: '不支援的訊息類型',
 }
 
-// Meta's attachment links expire, so a broken one falls back to the same text as having no link.
+// Files are served over HTTPS; local development serves them from the API on localhost.
+const isFileUrl = (url) => /^https:\/\//.test(url || '') || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(url || '')
+
+// Meta's own attachment links expire and a file may not have been saved, so a broken one falls back to the same text as having no link.
 function Attachment({ type, payload, caption, filename }) {
     const [isBroken, setIsBroken] = useState(false)
     const label = ATTACHMENT_LABELS[type] || '附件'
-    const url = /^https:\/\//.test(payload?.url || '') && !isBroken ? payload.url : null
+    const url = isFileUrl(payload?.url) && !isBroken ? payload.url : null
+    const captionLine = caption ? <div className='mt-[4px]'>{caption}</div> : null
 
     if (url && (type === 'image' || type === 'sticker')) {
-        return <img src={url} alt={label} className='max-w-[240px] rounded-[6px]' onError={() => setIsBroken(true)} />
+        return <div><a href={url} target='_blank' rel='noopener noreferrer'><img src={url} alt={filename || label} className='messenger-attachment-media' onError={() => setIsBroken(true)} /></a>{captionLine}</div>
+    }
+    if (url && type === 'video') {
+        return <div><video src={url} controls preload='metadata' className='messenger-attachment-media' onError={() => setIsBroken(true)} />{captionLine}</div>
+    }
+    if (url && type === 'audio') {
+        return <div><audio src={url} controls preload='metadata' className='messenger-attachment-audio' onError={() => setIsBroken(true)} />{captionLine}</div>
     }
     if (url) {
-        return <a href={url} target='_blank' rel='noopener noreferrer' className='underline'>查看{label}</a>
+        return <div><a href={url} target='_blank' rel='noopener noreferrer' className='underline break-all'>📎 {filename || `查看${label}`}</a>{captionLine}</div>
     }
     return <div>[{label}{filename ? `：${filename}` : ''}]{caption ? ` ${caption}` : ''}</div>
 }

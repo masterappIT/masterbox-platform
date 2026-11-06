@@ -5,7 +5,7 @@ import { onError } from '@apollo/client/link/error';
 import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
 import { createClient } from 'graphql-ws';
 
-const getAccessToken = () => {
+export const getAccessToken = () => {
     if (typeof window === 'undefined') return null;
     const directToken = window.localStorage.getItem('accessToken');
     if (directToken) return directToken;
@@ -22,6 +22,8 @@ const getAccessToken = () => {
 };
 
 const apiUri = process.env.NODE_ENV === 'production' ? process.env.GRAPHQL_CONNECTION_PRODUCTION : process.env.GRAPHQL_CONNECTION_DEV
+// REST endpoints such as attachment uploads live on the same API host.
+export const apiBaseUri = process.env.NODE_ENV === 'production' ? process.env.API_CONNECTION_PRODUCTION : process.env.API_CONNECTION_DEV
 const wsUri = process.env.NODE_ENV === 'production' ? process.env.GRAPHQL_WS_CONNECTION_PRODUCTION : process.env.GRAPHQL_WS_CONNECTION_DEV
 
 const httpLink = createHttpLink({
@@ -231,7 +233,8 @@ export const apolloApiHelpers = async (type, gqlOptions, variables, options) => 
         return res.data[reqName] || res
     } catch (error) {
         // console.log('error :>> ', error);
-        return { error: error.message }
+        // extensions carry details a caller may act on, such as a reply whose file went out but whose text didn't.
+        return { error: error.message, extensions: error.graphQLErrors?.[0]?.extensions }
     }
 }
 

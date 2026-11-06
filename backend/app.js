@@ -8,7 +8,7 @@ import { WebSocketServer } from "ws";
 import { useServer } from "graphql-ws/lib/use/ws";
 import typeDefs from "./graphQL/typeDefs/index.js";
 import resolvers from "./graphQL/resolvers/index.js"
-import auth from "./middleware/auth.js";
+import auth, { requireAccount } from "./middleware/auth.js";
 import cors from 'cors';
 import 'dotenv/config.js';
 import meta from './route/meta.js';
@@ -16,6 +16,8 @@ import integrations from './route/integrations.js';
 import embed from './route/embed.js';
 import platformAdmin from './route/platformAdmin.js';
 import realtime from './route/realtime.js';
+import { filesRouter, createUploadsRouter } from './route/uploads.js';
+import { FILES_ROUTE } from './lib/storage/index.js';
 import pkg from 'body-parser';
 // import { saveChannelSchema } from "./utils/utils.js";
 
@@ -66,6 +68,9 @@ app.use('/meta', meta);
 app.use('/api/integrations', integrations);
 app.use('/api/embed', embed);
 app.use('/api/realtime', realtime);
+// Attachments: agents upload here before sending, and stored files are served from the API's domain.
+app.use('/api/uploads', createUploadsRouter({ authenticate: requireAccount }));
+app.use(FILES_ROUTE, filesRouter);
 // Namespaced, read-only API for the standalone platform administrator.
 app.use('/api/platform-admin', platformAdmin);
 // Set up WebSocket server.

@@ -8,7 +8,7 @@ const getBearerToken = (authorization = '') => {
     return scheme?.toLowerCase() === 'bearer' ? token : undefined;
 };
 
-export default async (context) => {
+const authenticate = async (context) => {
     const req = context.req;
     const token = getBearerToken(req?.headers?.authorization);
     if (!token) return { isAuth: false, req };
@@ -39,6 +39,8 @@ export default async (context) => {
     }
 };
 
+export default authenticate;
+
 export function withAuth(isAuth) {
     if (!isAuth) throw new AuthenticationError('Invalid/No token provided');
 }
@@ -51,3 +53,15 @@ export function requireAdmin({ isAuth, account } = {}) {
     return account;
 }
 
+
+// The same login check for REST routes: sets req.account or answers 401.
+export async function requireAccount(req, res, next) {
+    try {
+        const context = await authenticate({ req });
+        if (!context.isAuth) return res.status(401).json({ error: '請先登入' });
+        req.account = context.account;
+        next();
+    } catch (error) {
+        res.status(401).json({ error: '登入已失效，請重新登入' });
+    }
+}

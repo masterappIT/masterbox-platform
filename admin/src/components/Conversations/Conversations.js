@@ -132,7 +132,7 @@ export default function Conversations({ isCustomerSideInfo, setIsCustomerSideInf
               {hasNewMessages && <button type='button' className='messenger-room-newMessages' onClick={scrollToLatest}>{t('new_messages')}</button>}
             </div>
 
-            <MessageInput handlePushMessage={handleSendMessage} isMobile={isMobile} />
+            <MessageInput handlePushMessage={handleSendMessage} isMobile={isMobile} platform={currentChatroom.platform || currentChannel?.platform} />
           </>
         ) : (
           <div className="messenger-room-messages-null">

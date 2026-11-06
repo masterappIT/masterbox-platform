@@ -155,9 +155,10 @@ export const handleSendMessage = createAsyncThunk(
       }
     )
 
-    // The caller keeps the agent's text and shows why it wasn't sent.
+    // The caller keeps the agent's text and file and shows why they weren't sent.
+    // sentAttachment: the file went out as its own message but the text after it didn't.
     if (res.error) {
-      return rejectWithValue(res.error)
+      return rejectWithValue({ message: res.error, sentAttachment: Boolean(res.extensions?.sentAttachment) })
     }
 
     dispatch(pushMessage(res))

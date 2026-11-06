@@ -114,13 +114,13 @@
 		}
 		
 		&-send {
-			@apply shrink-0 h-[77px] sm:h-[79px] w-full p-[12px] flex justify-center items-center space-x-3 bg-primary sm:bg-transparent  sm:pt-[12px];
+			@apply shrink-0 min-h-[77px] sm:min-h-[79px] w-full p-[12px] flex justify-center items-end space-x-3 bg-primary sm:bg-transparent  sm:pt-[12px];
 
 			&-inputArea {
-				@apply h-[45px] w-full rounded-[8px] flex items-center bg-primary justify-between sm:w-[75%] sm:border sm:border-[#D9D9D9] sm:bg-[#FFFFFF];
+				@apply relative min-h-[45px] w-full rounded-[8px] flex items-end bg-primary justify-between sm:w-[75%] sm:border sm:border-[#D9D9D9] sm:bg-[#FFFFFF];
 
 				&-input {
-					@apply border-none text-[15px]  outline-none py-[8px] px-[12px]  sm:bg-transparent sm:py-[0px] sm:px-[10px] sm:flex-1;
+					@apply border-none text-[15px]  outline-none py-[12px] px-[12px] resize-none leading-[20px] max-h-[120px] sm:bg-transparent sm:px-[10px] sm:flex-1;
 
 					&:focus {
 						@apply shadow-none;
@@ -133,7 +133,11 @@
 					}
 				}
 				&-iconArea {
-					@apply w-[20%] sm:py-[10px] flex justify-around items-center sm:justify-end;
+					@apply w-[20%] min-h-[43px] sm:py-[6px] flex justify-around items-center sm:justify-end;
+					&-button {
+						@apply flex items-center justify-center rounded-[6px] disabled:opacity-40 disabled:cursor-not-allowed;
+						&:hover:not(:disabled) { background: rgba(0, 0, 0, 0.05); }
+					}
 					&-icon {
 						@apply m-[5px] cursor-pointer;
 						filter: brightness(0) invert(1);

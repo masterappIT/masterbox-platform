@@ -364,8 +364,8 @@ export const getRecentConversations = async(page_id, platform, access_token) => 
 export const historyAttachments = (message) => (message.attachments?.data || []).flatMap((attachment) => {
     const url = attachment.image_data?.url || attachment.video_data?.url || attachment.file_url
     if (!url) return []
-    const type = attachment.image_data ? 'image' : attachment.video_data ? 'video' : 'file'
-    return [{ type, payload: { url } }]
+    const type = attachment.image_data ? 'image' : attachment.video_data ? 'video' : /^audio\//.test(attachment.mime_type || '') ? 'audio' : 'file'
+    return [{ type, payload: { url }, ...(attachment.name && { filename: attachment.name }), ...(attachment.mime_type && { mime_type: attachment.mime_type }) }]
 })
 
 export const getMetaSenderInfo = async(senderPsid, access_token) => {

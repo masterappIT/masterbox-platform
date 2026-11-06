@@ -62,9 +62,13 @@ export const whatsappWebhookMessages = async(entry) => {
                     case 'interactive':
                         content.message = { text: (msg.interactive?.button_reply || msg.interactive?.list_reply)?.title }
                     break;
-                    // Media needs a token to download, so the conversation shows what was sent instead.
+                    // Media needs the channel's token to download, which happens when the message is stored.
+                    // Without a media id (locations, contacts) the conversation shows what was sent instead.
                     default:
-                        content.attachments = [{ type: msg.type, caption: msg[msg.type]?.caption, filename: msg[msg.type]?.filename }]
+                        content.attachments = [{
+                            type: msg.type, caption: msg[msg.type]?.caption, filename: msg[msg.type]?.filename,
+                            media_id: msg[msg.type]?.id, mime_type: msg[msg.type]?.mime_type,
+                        }]
                 }
 
                 results.push({

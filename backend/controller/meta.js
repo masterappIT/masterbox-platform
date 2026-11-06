@@ -264,7 +264,8 @@ const appendMessage = async (to_chat_room_id, platform, contents, customer, chan
         externalChannelId: channel_id,
         platform: platform,
         chatRoomId: to_chat_room_id,
-        contents: JSON.stringify(contents),
+        // Stored as JSON once its attachments are saved.
+        contents: contents,
         customer: customer,
         externalId: message_id,
     })
