@@ -583,7 +583,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.masterboxFlutter;
+				PRODUCT_BUNDLE_IDENTIFIER = com.masterbox.masterappinc;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
@@ -600,7 +600,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.masterboxFlutter.RunnerTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.masterbox.masterappinc.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -618,7 +618,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.masterboxFlutter.RunnerTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.masterbox.masterappinc.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Runner.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Runner";
@@ -634,7 +634,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.masterboxFlutter.RunnerTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.masterbox.masterappinc.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Runner.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Runner";
@@ -643,13 +643,14 @@
 		};
 		40D74887EC2F22390D419A76 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = YU6GT6HQJ8;
 				INFOPLIST_FILE = MasterBoxLiveActivity/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.masterboxFlutter.MasterBoxLiveActivity;
+				PRODUCT_BUNDLE_IDENTIFIER = com.masterbox.masterappinc.MasterBoxLiveActivity;
 				PRODUCT_NAME = MasterBoxLiveActivity;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;
@@ -659,13 +660,14 @@
 		};
 		6480F9F94B9AFE44BB096039 /* Profile */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = YU6GT6HQJ8;
 				INFOPLIST_FILE = MasterBoxLiveActivity/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.masterboxFlutter.MasterBoxLiveActivity;
+				PRODUCT_BUNDLE_IDENTIFIER = com.masterbox.masterappinc.MasterBoxLiveActivity;
 				PRODUCT_NAME = MasterBoxLiveActivity;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;
@@ -676,13 +678,14 @@
 		};
 		8014412B15335C27235652D0 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = YU6GT6HQJ8;
 				INFOPLIST_FILE = MasterBoxLiveActivity/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.masterboxFlutter.MasterBoxLiveActivity;
+				PRODUCT_BUNDLE_IDENTIFIER = com.masterbox.masterappinc.MasterBoxLiveActivity;
 				PRODUCT_NAME = MasterBoxLiveActivity;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;
@@ -819,7 +822,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.masterboxFlutter;
+				PRODUCT_BUNDLE_IDENTIFIER = com.masterbox.masterappinc;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -843,7 +846,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.masterboxFlutter;
+				PRODUCT_BUNDLE_IDENTIFIER = com.masterbox.masterappinc;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
