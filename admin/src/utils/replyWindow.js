@@ -16,10 +16,17 @@ const ENDING_SOON_MS = 3 * HOUR_MS
 const PLATFORM_NAMES = { fb: 'Facebook', ig: 'Instagram', whatsapp: 'WhatsApp', line: 'LINE', wechat: 'WeChat' }
 
 /**
+ * A WhatsApp number connected by QR code is an ordinary WhatsApp account, without Meta's windows:
+ * the server says so with replyWindow.state no_limit, and the chat then shows no notice at all.
+ */
+export const hasNoReplyLimit = (room) => room?.replyWindow?.state === 'no_limit'
+
+/**
  * @param room - a conversation with platform, lastCustomerMessageAt and replyWindow from the server
- * @returns {{ state: 'open'|'human_agent'|'closed'|'no_customer_message'|'unsupported', closesAt: number|null, templateRequired: boolean, humanAgentAvailable: boolean }}
+ * @returns null when the conversation can always be answered (see hasNoReplyLimit), otherwise {{ state: 'open'|'human_agent'|'closed'|'no_customer_message'|'unsupported', closesAt: number|null, templateRequired: boolean, humanAgentAvailable: boolean }}
  */
 export const replyWindowOf = (room, now = Date.now()) => {
+  if (hasNoReplyLimit(room)) return null
   const platform = room?.platform
   const isMeta = platform === 'fb' || platform === 'ig'
   const humanAgentAvailable = Boolean(isMeta && room?.replyWindow?.humanAgentAvailable)

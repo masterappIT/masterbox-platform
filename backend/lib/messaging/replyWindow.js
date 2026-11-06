@@ -7,6 +7,7 @@
 //   the app's Human Agent permission, so it is switched on with META_HUMAN_AGENT_ENABLED=true.
 //   Meta retired the other message tags on 2026-04-27. Conversations that start from a Click to Messenger
 //   ad can get up to 7 days too, which Meta doesn't tell us about, so a closed window there is a warning, not a block.
+// - WhatsApp connected by QR code (a linked device of an ordinary WhatsApp account) has no window: state no_limit.
 
 const HOUR_MS = 60 * 60 * 1000;
 export const STANDARD_WINDOW_MS = 24 * HOUR_MS;
@@ -24,16 +25,17 @@ const toDate = (value) => {
 
 /**
  * Where a conversation stands for replies.
- * @param {{ platform: string, lastCustomerMessageAt?: Date|string|null, now?: Date, humanAgent?: boolean }} options
+ * @param {{ platform: string, lastCustomerMessageAt?: Date|string|null, now?: Date, humanAgent?: boolean, noLimit?: boolean }} options - noLimit for a channel connected by QR code
  * @returns {{
- *   state: 'open' | 'human_agent' | 'closed' | 'no_customer_message' | 'unsupported',
+ *   state: 'open' | 'human_agent' | 'closed' | 'no_customer_message' | 'unsupported' | 'no_limit',
  *   closesAt: Date | null,          // when the current state ends; null when it doesn't
  *   templateRequired: boolean,      // WhatsApp can only send an approved template
  *   messagingTag: string | null,    // the tag Messenger and Instagram replies need now
  *   humanAgentAvailable: boolean,   // whether this platform and app can use the 7-day human agent window
  * }}
  */
-export const replyWindow = ({ platform, lastCustomerMessageAt, now = new Date(), humanAgent = humanAgentEnabled() }) => {
+export const replyWindow = ({ platform, lastCustomerMessageAt, now = new Date(), humanAgent = humanAgentEnabled(), noLimit = false }) => {
+  if (noLimit) return { state: 'no_limit', closesAt: null, templateRequired: false, messagingTag: null, humanAgentAvailable: false };
   const isMeta = platform === 'fb' || platform === 'ig';
   const humanAgentAvailable = Boolean(isMeta && humanAgent);
   const result = (state, closesAt = null) => ({

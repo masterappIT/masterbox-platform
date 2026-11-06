@@ -47,6 +47,7 @@ class ChatConversation {
     this.unreadCount = 0,
     this.lastCustomerMessageAt,
     this.humanAgentAvailable = false,
+    this.noReplyLimit = false,
     this.assignee,
     this.tags = const [],
   });
@@ -72,6 +73,10 @@ class ChatConversation {
 
   /// Meta approved the 7-day human agent window, as the server says.
   final bool humanAgentAvailable;
+
+  /// A WhatsApp number connected by QR code: an ordinary WhatsApp account
+  /// without Meta's reply windows or templates, as the server says.
+  final bool noReplyLimit;
 
   /// The agent handling the conversation; null while it is unassigned.
   final RoomAgent? assignee;
@@ -112,6 +117,7 @@ class ChatConversation {
     unreadCount: unreadCount ?? this.unreadCount,
     lastCustomerMessageAt: lastCustomerMessageAt ?? this.lastCustomerMessageAt,
     humanAgentAvailable: humanAgentAvailable,
+    noReplyLimit: noReplyLimit,
     assignee: assignee,
     tags: tags,
   );
@@ -153,6 +159,7 @@ class ChatConversation {
       lastCustomerMessageAt: parseServerDate(json['lastCustomerMessageAt']),
       humanAgentAvailable:
           window is Map && window['humanAgentAvailable'] == true,
+      noReplyLimit: window is Map && window['state'] == 'no_limit',
       assignee: assignee is Map<String, dynamic>
           ? RoomAgent.fromJson(assignee)
           : null,

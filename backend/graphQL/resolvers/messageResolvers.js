@@ -9,7 +9,7 @@ import {
 } from '../../lib/messaging/conversations.js';
 import { visibleChannelIds, visibleChannels } from '../../lib/messaging/access.js';
 
-const channelView = channel => ({ channel_id: channel.id, platform: channel.platform, name: channel.name, enabled: channel.enabled });
+import { channelView } from '../../lib/messaging/channelView.js';
 
 const validateEncryption = (mode, contents, errorCode = 'SEND_FAILED') => {
   if (!['server', 'e2ee'].includes(mode)) throw new ApolloError('encryption_mode must be server or e2ee', errorCode);

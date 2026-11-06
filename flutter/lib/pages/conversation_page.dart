@@ -74,12 +74,13 @@ class _ConversationPageState extends State<ConversationPage> {
   final _subscriptions = <StreamSubscription<Object?>>[];
 
   bool get _canReplyHere => _replyPlatforms.contains(room.platform);
-  bool get _isWhatsapp => room.platform == 'whatsapp';
+  // Templates are a Cloud API feature; a number connected by QR code just replies.
+  bool get _isWhatsapp => room.platform == 'whatsapp' && !room.noReplyLimit;
 
   /// Rooms of a social platform follow Meta's rules; the rest only the app's.
   bool get _isPlatformRoom => room.platform != null && room.platform != 'app';
 
-  ReplyWindow? get _window => _isPlatformRoom
+  ReplyWindow? get _window => _isPlatformRoom && !room.noReplyLimit
       ? replyWindowOf(
           platform: room.platform,
           lastCustomerMessageAt: room.lastCustomerMessageAt,

@@ -9,6 +9,7 @@ import TableTop from '../src/components/Table/TableTop'
 import Pagination from '../src/stories/components/Pagination'
 import AlertStack from '../src/stories/components/AlertStack'
 import PopupChannel from '../src/components/channels-management/PopupChannel'
+import WhatsappWebConnect from '../src/components/channels-management/WhatsappWebConnect'
 import useAlerts from '../src/utils/useAlerts'
 import usePagination from '../src/utils/usePagination'
 
@@ -22,6 +23,35 @@ const PLATFORMS = [
 ]
 const platformName = (value) => PLATFORMS.find((platform) => platform.value === value)?.name || value
 
+// How a WhatsApp number connected by QR code is doing, in the list's words. reconnect: it needs a new scan.
+const connectionStatus = (web) => {
+  switch (web?.state) {
+    case 'ready': return { tone: 'ok', text: '已連線' }
+    case 'syncing': {
+      const { chats_total: total, chats_done: done } = web.progress || {}
+      return { tone: 'busy', text: `同步聊天記錄中${total ? ` ${Math.round((done / total) * 100)}%` : ''}` }
+    }
+    case 'disconnected': return { tone: 'busy', text: '連線中斷，正在重新連線' }
+    case 'qr':
+    case 'starting':
+    case 'authenticated': return { tone: 'busy', text: '等待掃碼' }
+    case 'logged_out': return { tone: 'error', text: web.error || '已斷線，請重新掃碼', reconnect: true }
+    case 'rejected': return { tone: 'error', text: web.error || '掃描的號碼不符', reconnect: true }
+    default: return { tone: 'error', text: web?.error || '需重新掃碼', reconnect: true }
+  }
+}
+
+function ConnectionCell({ channel, onReconnect }) {
+  const status = connectionStatus(channel.whatsapp_web)
+  return (
+    <span className={`channel-connection channel-connection-${status.tone}`} title={status.text}>
+      <span className='channel-connection-dot' aria-hidden='true' />
+      <span className='truncate'>{status.text}</span>
+      {status.reconnect && <button type='button' className='channel-connection-action' onClick={onReconnect}>重新掃碼</button>}
+    </span>
+  )
+}
+
 function ChannelsManagementPage() {
   const router = useRouter()
   const dispatch = useDispatch()
@@ -33,8 +63,18 @@ function ChannelsManagementPage() {
   const [isPicking, setIsPicking] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
   const [pendingIds, setPendingIds] = useState([])
+  // false: closed; null: connecting a new number; a channel: scanning again for it.
+  const [scanning, setScanning] = useState(false)
 
   useEffect(() => { dispatch(getUserSubscribedChannels()) }, [dispatch])
+
+  // While a number is syncing or reconnecting, its status is read again every few seconds.
+  const changing = allChannels.some((channel) => ['syncing', 'disconnected'].includes(channel.whatsapp_web?.state))
+  useEffect(() => {
+    if (!changing || scanning !== false) return undefined
+    const timer = setInterval(() => dispatch(getUserSubscribedChannels()), 8000)
+    return () => clearInterval(timer)
+  }, [changing, scanning, dispatch])
 
   // The backend sends the browser back here with the outcome of a Meta connection.
   useEffect(() => {
@@ -79,10 +119,21 @@ function ChannelsManagementPage() {
     window.location.assign(res)
   }
 
+  const closeScan = (changed) => {
+    setScanning(false)
+    if (changed) dispatch(getUserSubscribedChannels())
+  }
+  const finishScan = (name) => {
+    setScanning(false)
+    dispatch(getUserSubscribedChannels())
+    pushAlert('success', name ? `已連結「${name}」` : '已重新連結')
+  }
+
   const rows = pageItems.map((channel) => [
     { key: 'enabled', element: 'toggle', value: channel.enabled ? 1 : 0, label: `啟用「${channel.name}」` },
     { key: 'name', element: 'text', value: channel.name },
-    { key: 'account', element: 'custom', value: <span className='flex items-center gap-[8px] min-w-0 px-[8px]'><img src={`/svg/${channel.platform}.svg`} alt='' width={16} height={16} /><span className='truncate' title={channel.channel_id}>{platformName(channel.platform)} · {channel.channel_id}</span></span> },
+    { key: 'account', element: 'custom', value: <span className='flex items-center gap-[8px] min-w-0 px-[8px]'><img src={`/svg/${channel.platform}.svg`} alt='' width={16} height={16} /><span className='truncate' title={channel.channel_id}>{platformName(channel.platform)} · {channel.whatsapp_web?.phone || channel.channel_id}</span></span> },
+    { key: 'connection', element: 'custom', value: channel.whatsapp_web ? <ConnectionCell channel={channel} onReconnect={() => setScanning(channel)} /> : <span className='channel-connection'>—</span> },
   ])
 
   const isLoading = channelsStatus === 'loading' && !allChannels.length
@@ -90,8 +141,8 @@ function ChannelsManagementPage() {
   return (
     <div className='w-full h-full'>
       <Table
-        colsTemplate='minmax(64px,0.3fr) minmax(200px,1.4fr) minmax(240px,1.6fr)'
-        header={['狀態', '社群名稱', '連結社群']}
+        colsTemplate='minmax(64px,0.3fr) minmax(200px,1.2fr) minmax(240px,1.4fr) minmax(220px,1.2fr)'
+        header={['狀態', '社群名稱', '連結社群', '連線狀態']}
         row={rows}
         rowIds={pageItems.map((channel) => channel.channel_id)}
         loading={isLoading}
@@ -113,7 +164,8 @@ function ChannelsManagementPage() {
         </TableTop>}
         footer={<Pagination page={page} pageCount={pageCount} onChange={setPage} />}
       />
-      <PopupChannel isShow={isPicking} onClick={() => { if (!isConnecting) setIsPicking(false) }} onConnectMeta={handleConnect} connecting={isConnecting} />
+      <PopupChannel isShow={isPicking} onClick={() => { if (!isConnecting) setIsPicking(false) }} onConnectMeta={handleConnect} onConnectWhatsapp={() => { setIsPicking(false); setScanning(null) }} connecting={isConnecting} />
+      <WhatsappWebConnect isShow={scanning !== false} channel={scanning || null} onClose={closeScan} onDone={finishScan} pushAlert={pushAlert} />
       <AlertStack alerts={alerts} onDismiss={dismissAlert} />
     </div>
   )

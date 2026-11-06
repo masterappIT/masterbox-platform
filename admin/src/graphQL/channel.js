@@ -5,6 +5,9 @@ import { gql, } from '@apollo/client';
 //  find channel_id
 
 
+// A WhatsApp number connected by scanning a QR code, as whatsapp-gateway reports it.
+const WHATSAPP_WEB_FIELDS = `channel_id state qr phone name error updated_at progress { chats_total chats_done messages }`;
+
 export const GET_USER_SUBSCRIBED_CHANNELS = gql`
 
 query GetUserSubscribedChannels {
@@ -13,6 +16,9 @@ query GetUserSubscribedChannels {
     name
     channel_id
     enabled
+    whatsapp_web {
+      ${WHATSAPP_WEB_FIELDS}
+    }
   }
 }
  `;
@@ -178,6 +184,45 @@ export const SUBSCRIBE_CHAT_ROOM_UPDATES = gql`
 subscription ChatRoomUpdates {
   chatRoomUpdated {
     ${ROOM_FIELDS}
+  }
+}
+`;
+
+// Starts connecting a WhatsApp number by QR code: a new channel, or scanning again for channelId.
+export const CONNECT_WHATSAPP_WEB = gql`
+mutation ConnectWhatsappWeb($channelId: ID) {
+  connectWhatsappWeb(channel_id: $channelId) {
+    ${WHATSAPP_WEB_FIELDS}
+  }
+}
+`;
+
+// The connection right now, with the newest QR code; polled while the scan dialog is open.
+export const WHATSAPP_WEB_CONNECTION = gql`
+query WhatsappWebConnection($channelId: ID!) {
+  whatsappWebConnection(channel_id: $channelId) {
+    ${WHATSAPP_WEB_FIELDS}
+  }
+}
+`;
+
+export const REQUEST_WHATSAPP_WEB_PAIRING_CODE = gql`
+mutation RequestWhatsappWebPairingCode($channelId: ID!, $phone: String!) {
+  requestWhatsappWebPairingCode(channel_id: $channelId, phone: $phone)
+}
+`;
+
+export const CANCEL_WHATSAPP_WEB = gql`
+mutation CancelWhatsappWeb($channelId: ID!) {
+  cancelWhatsappWeb(channel_id: $channelId)
+}
+`;
+
+export const UPDATE_WHATSAPP_WEB_CHANNEL = gql`
+mutation UpdateWhatsappWebChannel($channelId: ID!, $name: String!, $agentIds: [ID!]) {
+  updateWhatsappWebChannel(channel_id: $channelId, name: $name, agent_ids: $agentIds) {
+    channel_id
+    name
   }
 }
 `;

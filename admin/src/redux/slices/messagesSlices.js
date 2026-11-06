@@ -17,7 +17,7 @@ const MESSAGES_PER_PAGE = 30;
 const CATCH_UP_PAGES = 10;
 
 // The home page keys chat rooms by `account`; rooms point at their channel by its id.
-const toChannel = ({ channel_id, platform, name, enabled }) => ({ channel_id, platform, name, enabled: enabled !== false, account: channel_id });
+const toChannel = ({ channel_id, platform, name, enabled, whatsapp_web }) => ({ channel_id, platform, name, enabled: enabled !== false, account: channel_id, whatsapp_web: whatsapp_web || null });
 
 const toChatRoom = ({ users, ...room }) => ({
   ...room,

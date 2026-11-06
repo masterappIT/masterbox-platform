@@ -1,0 +1,5 @@
+node_modules
+.env
+.wwebjs
+.wwebjs_cache
+test

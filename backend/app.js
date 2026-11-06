@@ -16,6 +16,7 @@ import integrations from './route/integrations.js';
 import embed from './route/embed.js';
 import platformAdmin from './route/platformAdmin.js';
 import realtime from './route/realtime.js';
+import whatsappWeb from './route/whatsappWeb.js';
 import { filesRouter, createUploadsRouter } from './route/uploads.js';
 import { FILES_ROUTE } from './lib/storage/index.js';
 import { pushConfigured } from './lib/push/notifications.js';
@@ -60,6 +61,8 @@ app.use(cors(corsOptions));
 // Parse application/x-www-form-urlencoded
 app.use(urlencoded({ extended: true }));
 
+// whatsapp-gateway reports here with the shared secret; it parses its own, larger bodies.
+app.use('/internal/whatsapp-web', whatsappWeb);
 // Parse application/json
 // Meta's webhook signature covers the exact bytes it sent.
 app.use(json({ verify: (req, _res, body) => { req.rawBody = body; } }));

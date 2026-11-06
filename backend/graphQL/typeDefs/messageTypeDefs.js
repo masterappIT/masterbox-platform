@@ -54,7 +54,7 @@ export default gql`
   }
   "Whether a conversation can still be answered, by Meta's rules for its platform."
   type ReplyWindow {
-    "open: any reply. human_agent: Messenger and Instagram within 7 days, sent with the HUMAN_AGENT tag. closed: the window has passed. no_customer_message: the customer hasn't written. unsupported: the platform can't be answered here."
+    "open: any reply. human_agent: Messenger and Instagram within 7 days, sent with the HUMAN_AGENT tag. closed: the window has passed. no_customer_message: the customer hasn't written. unsupported: the platform can't be answered here. no_limit: WhatsApp connected by QR code, which can always be answered."
     state: String!
     "When this state ends, or null when it doesn't."
     closesAt: DateTime

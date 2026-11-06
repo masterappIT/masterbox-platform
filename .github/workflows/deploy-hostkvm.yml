@@ -36,9 +36,14 @@ jobs:
             backend/package-lock.json
             admin/package-lock.json
             super-admin/package-lock.json
+            whatsapp-gateway/package-lock.json
       - run: npm ci --prefix backend
       - run: npm ci --prefix admin
       - run: npm ci --prefix super-admin
+      - run: npm ci --prefix whatsapp-gateway
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+      - run: npm test --prefix whatsapp-gateway
       - run: npm run prisma:validate --prefix backend
         env:
           DATABASE_URL: postgresql://masterbox:validation-only@localhost:5432/masterbox
@@ -120,3 +125,14 @@ jobs:
             https://masterboxapp.masterappinc.com/; do
             curl --fail --silent --show-error --location --max-time 30 "$url" >/dev/null
           done
+
+      # whatsapp-gateway is published but not yet started by the server's deploy script (MasterApp-infra apps/masterbox/),
+      # so it is built after the release and never holds it up. See whatsapp-gateway/README.md for the server setup.
+      - name: Publish whatsapp-gateway image
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          docker buildx build --platform linux/amd64 --push --provenance=false \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --tag "${IMAGE}:${GITHUB_SHA}-whatsapp-gateway" \
+            --file whatsapp-gateway/Dockerfile whatsapp-gateway

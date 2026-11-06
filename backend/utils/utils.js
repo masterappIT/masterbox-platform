@@ -13,6 +13,7 @@ import { templateView, templateMessage } from '../lib/messaging/whatsappTemplate
 import { lastCustomerMessageAt } from '../lib/messaging/conversations.js';
 import { channelAccountIds } from '../lib/messaging/access.js';
 import { notifyCustomerMessage } from '../lib/push/notifications.js';
+import { isWebChannel, sendThroughGateway, GatewayError } from '../lib/messaging/whatsappGateway.js';
 
 export const errorTypes = {
   MISS_REQUEUED_PRAMS: 'MISS_REQUEUED_PRAMS',
@@ -63,6 +64,10 @@ export const publishMessage = async (message) => {
 };
 
 const sendFailed = (error) => {
+  if (error instanceof GatewayError) {
+    console.error('WhatsApp gateway send failed:', error.message);
+    return `WhatsApp 無法送出這則訊息：${error.message}`;
+  }
   let body = error.responseBody;
   if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = undefined; } }
   console.error('Meta send failed:', body?.error || error.message);
@@ -108,7 +113,7 @@ const replyTarget = async (room) => {
   const channel = await prisma.companyChannel.findUnique({ where: { id: room.channelId } });
   const { access_token: token, page_id: pageId, phone_number_id: phoneNumberId } = channel?.accessInfo || {};
   if (channel && !channel.enabled) throw new ApolloError('此頻道已停用，請到社群平台管理啟用後再回覆', 'SEND_FAILED');
-  if (!token) throw new ApolloError('此頻道尚未完成 Meta 串接，無法送出訊息', 'SEND_FAILED');
+  if (!token && !isWebChannel(channel)) throw new ApolloError('此頻道尚未完成 Meta 串接，無法送出訊息', 'SEND_FAILED');
 
   // The recipient comes from the stored conversation rather than the client.
   const customerId = (Array.isArray(room.users) ? room.users[0]?.id : null) || (room.platform === 'whatsapp' ? room.chatRoomId : null);
@@ -127,7 +132,17 @@ const prepareReply = async (room, contents) => {
   const parts = replyParts(room.platform, { text, attachment, sendType });
   if (!parts.length) throw new ApolloError('訊息內容不可空白', 'SEND_FAILED');
 
-  const { token, pageId, phoneNumberId, customerId } = await replyTarget(room);
+  const { channel, token, pageId, phoneNumberId, customerId } = await replyTarget(room);
+
+  // A number connected by QR code is an ordinary WhatsApp account: no reply window, and it sends through the gateway.
+  if (isWebChannel(channel)) {
+    const send = async ({ text, attachment, sendType }) => {
+      const media = attachment ? { url: attachment.payload.url, mimetype: attachment.mime_type, filename: attachment.filename } : undefined;
+      const result = await sendThroughGateway(channel.id, { to: customerId, text, media, sendType });
+      return result.id;
+    };
+    return { parts, send };
+  }
 
   // Meta counts its reply windows from the customer's last message. WhatsApp rejects anything but a template
   // outside it; Messenger and Instagram replies within 7 days go with the human agent tag when the app has it.
@@ -193,6 +208,7 @@ export const handleSendMessage = async (accountId, roomId, contents, channelId) 
 const whatsappChannel = async (room) => {
   if (room.platform !== 'whatsapp') throw new ApolloError('只有 WhatsApp 對話可以使用 WhatsApp 範本', 'BAD_USER_INPUT');
   const target = await replyTarget(room);
+  if (isWebChannel(target.channel)) throw new ApolloError('掃碼連結的 WhatsApp 不需要範本，可以直接回覆', 'TEMPLATES_UNAVAILABLE');
   const wabaId = target.channel?.accessInfo?.whatsapp_business_account_id;
   if (!wabaId) throw new ApolloError('這個 WhatsApp 頻道缺少商業帳號資料，請到社群平台管理重新串接後再使用範本', 'TEMPLATES_UNAVAILABLE');
   return { ...target, wabaId };
@@ -324,6 +340,38 @@ export const saveInboundMessage = async ({ externalChannelId, platform, chatRoom
     return message;
   } catch (error) {
     // The platform retried a message that is already stored.
+    if (error.code === 'P2002') return null;
+    throw error;
+  }
+};
+
+/**
+ * Stores a message the company sent from somewhere other than MasterBox, such as from the phone of a WhatsApp
+ * number connected by QR code. It counts as the company's reply, under the account that connected the channel.
+ * @param {{ channel, chatRoomId: string, customer?: object, contents: object, externalId: string, sentAt?: string }} message
+ * @returns the stored message, or null when it was already stored
+ */
+export const saveCompanyMessage = async ({ channel, chatRoomId, customer, contents, externalId, sentAt, accountId }) => {
+  if (!channel?.enabled) return null;
+  if (await prisma.message.findUnique({ where: { externalId }, select: { id: true } })) return null;
+  const stored = JSON.stringify(await storeInboundAttachments(contents, channel));
+  const room = await findCustomerRoom(channel, chatRoomId, customer);
+  const users = usersWithCustomer(room?.users, customer);
+  const roomId = room?.chatRoomId || room?.id || chatRoomId;
+  if (room) await prisma.chatRoom.update({ where: { id: room.id }, data: { updatedAt: new Date(), ...(users ? { users } : {}) } });
+  else await prisma.chatRoom.create({ data: { companyId: channel.companyId, platform: channel.platform, channelId: channel.id, chatRoomId, users: users || [] } });
+  try {
+    const message = await prisma.message.create({
+      data: {
+        companyId: channel.companyId, platform: channel.platform, contents: stored, externalId, createdBy: accountId || null,
+        ...(sentAt ? { createdAt: new Date(sentAt) } : {}),
+        recipients: { create: [{ channelId: channel.id, chatRoomIds: [roomId] }] },
+      },
+      include: { recipients: true },
+    });
+    await publishMessage(message);
+    return message;
+  } catch (error) {
     if (error.code === 'P2002') return null;
     throw error;
   }

@@ -8,7 +8,7 @@ import EmojiPicker from './EmojiPicker';
 import QuickReplyPicker from './QuickReplyPicker';
 import ReplyWindowNotice from './ReplyWindowNotice';
 import WhatsappTemplateDialog from './WhatsappTemplateDialog';
-import { replyWindowOf, canSendFreeform } from '../../utils/replyWindow';
+import { replyWindowOf, canSendFreeform, hasNoReplyLimit } from '../../utils/replyWindow';
 import useNow from '../../utils/useNow';
 import { selectUserInfo } from '../../redux/slices/userSlices';
 import { checkAttachment, ACCEPT_ATTRIBUTE } from '../../utils/attachmentRules';
@@ -63,7 +63,8 @@ function MessageInput({ handlePushMessage, isMobile, platform, room }) {
     const now = useNow();
     const replyState = room ? replyWindowOf(room, now) : null;
     const canWrite = !replyState || canSendFreeform(replyState);
-    const isWhatsapp = platform === 'whatsapp' && Boolean(room?.id);
+    // Templates are a Cloud API feature; a number connected by QR code just replies.
+    const isWhatsapp = platform === 'whatsapp' && Boolean(room?.id) && !hasNoReplyLimit(room);
     const textareaRef = useRef(null);
     const fileInputRef = useRef(null);
     // Where the cursor was, so an emoji goes there even after the text box lost focus.

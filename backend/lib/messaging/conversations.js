@@ -4,6 +4,7 @@ import { ApolloError } from 'apollo-server-errors';
 import { prisma } from '../db/prisma.js';
 import { messagePreview, encodeCursor, decodeCursor, pageSize, searchPattern, customerOf } from './conversationText.js';
 import { replyWindow } from './replyWindow.js';
+import { isWebChannel } from './whatsappGateway.js';
 import { visibleChannelIds, channelAccountIds, accountSeesChannel, companyAgents } from './access.js';
 import { pubsub } from '../../config/redis.js';
 
@@ -97,8 +98,8 @@ export const agentView = account => account && ({
 });
 
 /** Whether the conversation can still be answered, as the GraphQL ReplyWindow type has it. */
-export const replyWindowView = (platform, lastCustomerMessageAt, now = new Date()) => {
-  const window = replyWindow({ platform, lastCustomerMessageAt, now });
+export const replyWindowView = (platform, lastCustomerMessageAt, now = new Date(), { noLimit = false } = {}) => {
+  const window = replyWindow({ platform, lastCustomerMessageAt, now, noLimit });
   return {
     state: window.state,
     closesAt: window.closesAt,
@@ -127,7 +128,7 @@ const roomView = (room, stats) => {
     lastMessageInbound: stats?.last_id ? !stats.last_created_by : null,
     unreadCount: stats?.unread || 0,
     lastCustomerMessageAt,
-    replyWindow: replyWindowView(room.platform, lastCustomerMessageAt),
+    replyWindow: replyWindowView(room.platform, lastCustomerMessageAt, undefined, { noLimit: isWebChannel({ platform: room.platform, accessInfo: room.channel?.accessInfo }) }),
     assignee: room.assignee ? agentView(room.assignee) : null,
     assignedAt: room.assigneeId ? room.assignedAt : null,
     createdAt: room.createdAt,
@@ -136,7 +137,8 @@ const roomView = (room, stats) => {
 };
 
 const ROOM_DETAILS = {
-  channel: { select: { name: true } },
+  // accessInfo says whether a WhatsApp channel was connected by QR code; it never leaves the server.
+  channel: { select: { name: true, accessInfo: true } },
   tags: { include: { tag: true } },
   assignee: { select: { id: true, email: true, role: true, userInfo: true } },
 };
