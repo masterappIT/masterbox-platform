@@ -18,7 +18,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=builder /app/package*.json ./
-RUN npm install --include=dev --no-audit --no-fund
+RUN npm install --omit=dev --no-audit --no-fund
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/next.config.js ./next.config.js

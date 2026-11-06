@@ -12,7 +12,6 @@ import { updateObjectState } from '../src/utils/utils';
 import Input from '../src/stories/components/Input';
 import Icon from '../src/stories/components/Icon';
 import Headline from '../src/stories/components/Headline';
-import { list } from 'postcss';
 import ContentText from '../src/stories/components/ContentText';
 import Selector from '../src/stories/components/Selector';
 import PhoneRegister from '../src/components/Auth/PhoneRegister';

@@ -20,7 +20,6 @@ import Loading from "../src/stories/components/Loading";
 import Headline from "../src/stories/components/Headline";
 import Button from "../src/stories/components/Button";
 import Form from "../src/stories/components/Form";
-import { data } from "autoprefixer";
 import Selector from "../src/stories/components/Selector";
 import Dropdown from "../src/stories/components/Dropdown";
 import Checkbox from "../src/stories/components/Checkbox";

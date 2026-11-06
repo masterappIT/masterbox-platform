@@ -4,7 +4,6 @@ import { SUBSCRIBE_MESSAGE } from '../../graphQL/subscription'
 import { GET_USER_SUBSCRIBED_CHANNELS, CHATROOMS } from '../../graphQL/channel'
 import { SEND_MESSAGE, CHATROOMS_MESSAGES } from '../../graphQL/messages'
 import errorHandler from '../../utils/errorHandler';
-import { info } from 'autoprefixer';
 
 // import  SEND_MESSAGE  from '../../graphQL/messages';
 
