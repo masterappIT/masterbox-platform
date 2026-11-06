@@ -74,5 +74,7 @@
 	<string>MasterBox 需要使用麥克風進行語音與視訊通話</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>MasterBox 需要讀取相簿，讓你在對話中選擇圖片</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>
