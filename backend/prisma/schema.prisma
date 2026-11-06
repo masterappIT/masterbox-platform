@@ -129,9 +129,27 @@ model Account {
   refreshSessions     PlatformAdminRefreshSession[]
   chatRoomReads       ChatRoomRead[]
   assignedChatRooms   ChatRoom[]        @relation("ChatRoomAssignee")
+  deviceTokens        DeviceToken[]
 
   @@index([companyId])
   @@map("accounts")
+}
+
+// A phone signed in to an account, which gets a push notification when a customer writes.
+// A token belongs to one account at a time: signing in with another account on the same phone moves it.
+model DeviceToken {
+  id        String   @id @default(cuid()) @db.Text
+  token     String   @unique
+  accountId String   @map("account_id") @db.Text
+  companyId String   @map("company_id") @db.Text
+  // ios or android
+  platform  String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@map("device_tokens")
 }
 
 model AccountChannel {

@@ -18,6 +18,7 @@ import platformAdmin from './route/platformAdmin.js';
 import realtime from './route/realtime.js';
 import { filesRouter, createUploadsRouter } from './route/uploads.js';
 import { FILES_ROUTE } from './lib/storage/index.js';
+import { pushConfigured } from './lib/push/notifications.js';
 import pkg from 'body-parser';
 // import { saveChannelSchema } from "./utils/utils.js";
 
@@ -123,6 +124,8 @@ httpServer.listen(PORT, () => {
   console.log(
     `🚀 Subscription endpoint ready at ws://localhost:${PORT}${server.graphqlPath}`
   );
+  // A broken service account is reported here rather than at the first customer message.
+  console.log(pushConfigured() ? 'Push notifications are on' : 'Push notifications are off (no FCM service account)');
 });
 
 

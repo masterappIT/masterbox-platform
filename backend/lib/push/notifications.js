@@ -1,0 +1,90 @@
+// Which phones hear about a customer's message, and what the notification says.
+import { ApolloError } from 'apollo-server-errors';
+import { prisma } from '../db/prisma.js';
+import { channelAccountIds } from '../messaging/access.js';
+import { fcmSender } from './fcm.js';
+import { notificationRecipients, notificationFor } from './notificationContent.js';
+
+export { notificationRecipients, notificationFor };
+
+export const DEVICE_PLATFORMS = ['ios', 'android'];
+// FCM tokens are about 160 characters; anything far longer isn't one.
+const MAX_TOKEN_LENGTH = 4096;
+
+let configError;
+
+/** Whether this server can send push notifications. A broken setup is logged once and treated as not set up. */
+export const pushConfigured = () => {
+  try {
+    return Boolean(fcmSender());
+  } catch (error) {
+    if (!configError) {
+      configError = error;
+      console.error('Push notifications are off:', error.message);
+    }
+    return false;
+  }
+};
+
+const cleanToken = (token) => {
+  const value = typeof token === 'string' ? token.trim() : '';
+  if (!value || value.length > MAX_TOKEN_LENGTH || /\s/.test(value)) throw new ApolloError('裝置推播代碼無效', 'BAD_USER_INPUT');
+  return value;
+};
+
+/** Notifications for the account's customers go to this phone, and no longer to whoever used it before. */
+export const registerDevice = async (account, { token, platform }) => {
+  const value = cleanToken(token);
+  if (!DEVICE_PLATFORMS.includes(platform)) throw new ApolloError('只支援 iOS 和 Android 推播', 'BAD_USER_INPUT');
+  await prisma.deviceToken.upsert({
+    where: { token: value },
+    update: { accountId: account.account_id, companyId: account.company_id, platform },
+    create: { token: value, accountId: account.account_id, companyId: account.company_id, platform },
+  });
+};
+
+/** The phone stops getting the account's notifications, as when signing out or turning them off. */
+export const unregisterDevice = async (account, { token }) => {
+  await prisma.deviceToken.deleteMany({ where: { token: cleanToken(token), accountId: account.account_id } });
+};
+
+/**
+ * Tells the phones of the accounts that work in the conversation about a customer's message.
+ * Never throws: a notification that can't go out mustn't lose the message.
+ * @param message - the stored message, with its recipients
+ * @param {{ sender?: { send }, accountIdsFor?: typeof channelAccountIds }} [deps] - for tests
+ */
+export const notifyCustomerMessage = async (message, { sender, accountIdsFor = channelAccountIds } = {}) => {
+  try {
+    const push = sender ?? (pushConfigured() ? fcmSender() : null);
+    const recipient = message?.recipients?.[0];
+    const roomKey = recipient?.chatRoomIds?.[0];
+    if (!push || message?.createdBy || !roomKey || !recipient.channelId) return 0;
+    const room = await prisma.chatRoom.findFirst({
+      where: { companyId: message.companyId, channelId: recipient.channelId, OR: [{ chatRoomId: roomKey }, { id: roomKey }] },
+      include: { channel: { select: { name: true } } },
+    });
+    if (!room) return 0;
+    const accountIds = notificationRecipients(room, await accountIdsFor(room.companyId, room.channelId));
+    if (!accountIds.length) return 0;
+    // The company is checked again so a token can't carry another company's customers.
+    const devices = await prisma.deviceToken.findMany({ where: { accountId: { in: accountIds }, companyId: room.companyId } });
+    if (!devices.length) return 0;
+    const notification = notificationFor({ room, channelName: room.channel?.name, message });
+    const results = await Promise.all(devices.map(async (device) => {
+      try {
+        return { device, result: await push.send(device.token, notification) };
+      } catch (error) {
+        return { device, result: { ok: false, unregistered: false, reason: error.message } };
+      }
+    }));
+    const gone = results.filter(({ result }) => result.unregistered).map(({ device }) => device.token);
+    if (gone.length) await prisma.deviceToken.deleteMany({ where: { token: { in: gone } } });
+    const failed = results.filter(({ result }) => !result.ok && !result.unregistered);
+    if (failed.length) console.error(`Push not delivered to ${failed.length} device(s):`, failed[0].result.reason);
+    return results.filter(({ result }) => result.ok).length;
+  } catch (error) {
+    console.error('Push notification failed:', error.message);
+    return 0;
+  }
+};

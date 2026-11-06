@@ -12,6 +12,7 @@ import { replyWindow, freeformBlockReason } from '../lib/messaging/replyWindow.j
 import { templateView, templateMessage } from '../lib/messaging/whatsappTemplates.js';
 import { lastCustomerMessageAt } from '../lib/messaging/conversations.js';
 import { channelAccountIds } from '../lib/messaging/access.js';
+import { notifyCustomerMessage } from '../lib/push/notifications.js';
 
 export const errorTypes = {
   MISS_REQUEUED_PRAMS: 'MISS_REQUEUED_PRAMS',
@@ -318,6 +319,8 @@ export const saveInboundMessage = async ({ externalChannelId, platform, chatRoom
       include: { recipients: true },
     });
     await publishMessage(message);
+    // Phones are told in the background, so a slow push service doesn't hold up Meta's webhook.
+    notifyCustomerMessage(message);
     return message;
   } catch (error) {
     // The platform retried a message that is already stored.
