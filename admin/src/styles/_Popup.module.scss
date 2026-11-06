@@ -1,9 +1,11 @@
 .popup {
-	@apply fixed top-0 left-0 z-[1000] w-[100vw] h-[100vh];
+	@apply fixed inset-0 z-[1000];
 	background: rgba(0, 0, 0, 0.6);
 
 	&-item {
 		@apply absolute p-[16px] rounded-[4px] top-[50%] left-[50%] bg-white translate-x-[-50%] translate-y-[-50%];
+		// A dialog bigger than the screen scrolls inside itself instead of losing its edges.
+		@apply max-w-[calc(100%-16px)] max-h-[calc(100%-16px)] overflow-auto overscroll-contain;
 		// @apply absolute w-fit h-fit p-[16px] rounded-[4px] top-[50%] left-[50%] bg-white translate-x-[-50%] translate-y-[-50%];
 
 		&-child {
@@ -14,13 +16,13 @@
 
 			&-normal {
 				// @apply w-[648px] h-[384px];
-				@apply w-[632px] h-[368px];
+				@apply w-[632px] h-[368px] max-w-full;
 
 			}
 
 			&-small {
 				// @apply w-[345px] h-[477px];
-				@apply w-[329px] h-[461px];
+				@apply w-[329px] h-[461px] max-w-full;
 			}
 
 			&-fit {

@@ -122,16 +122,28 @@
 	// }
 }
 
+:root {
+	// The browser's toolbars cover part of 100vh on phones, so prefer the height that's really visible.
+	--app-height: 100vh;
+}
+
+@supports (height: 100dvh) {
+	:root {
+		--app-height: 100dvh;
+	}
+}
+
+// The page itself never scrolls: the app shell fills it and each area scrolls on its own.
 html,
 body {
-	@apply fixed;
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+	overscroll-behavior: none;
 	padding: 0;
 	margin: 0;
 	font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen,
 		Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif;
-		// oveflow: hidden;
-		touch-action:none;
-
 }
 
 a {

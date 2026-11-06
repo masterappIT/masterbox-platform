@@ -1,5 +1,5 @@
 .sidebar {
-  @apply h-screen flex flex-col bg-white;
+  @apply h-full flex flex-col bg-white;
   width: 100%;
   min-width: 0;
   box-shadow: 2px 0 4px rgba(0, 0, 0, 0.15);
@@ -30,7 +30,7 @@
   }
 
   &-content {
-    @apply flex flex-col w-full h-full overflow-y-auto;
+    @apply flex flex-col w-full h-full min-h-0 overflow-y-auto overscroll-contain;
     min-width: 0;
     padding: 0 16px;
 

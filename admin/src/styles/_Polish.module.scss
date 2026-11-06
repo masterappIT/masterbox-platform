@@ -146,7 +146,7 @@
 
 	// Tables
 	.table {
-		min-height: calc(100vh - 125px);
+		min-height: calc(var(--app-height) - 125px);
 	}
 
 	.table-row {
@@ -292,7 +292,7 @@
 		flex-direction: column;
 		// The artwork has the canvas colour behind it, so it sits straight on the page.
 		gap: 8px;
-		min-height: calc(100vh - 125px);
+		min-height: calc(var(--app-height) - 125px);
 		text-align: center;
 	}
 
@@ -371,8 +371,8 @@
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	width: 100vw;
-	height: 100vh;
+	width: 100%;
+	height: var(--app-height);
 }
 
 @keyframes polish-shimmer {

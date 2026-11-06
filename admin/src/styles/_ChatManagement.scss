@@ -5,11 +5,11 @@
 .chat-management-header h1 { @apply font-bold mb-1; font-size: 24px; }
 .chat-management-header span { @apply text-black_secondary; font-size: 14px; }
 .chat-management-count { @apply rounded-full bg-white px-3 py-1 shadow-sm; font-size: 14px; }
-.chat-management-grid { @apply grid grid-cols-1 lg:grid-cols-[320px_1fr] bg-white rounded-xl overflow-hidden shadow-sm border border-black_quaternary; min-height: calc(100vh - 220px); }
+.chat-management-grid { @apply grid grid-cols-1 lg:grid-cols-[320px_1fr] bg-white rounded-xl overflow-hidden shadow-sm border border-black_quaternary; min-height: calc(var(--app-height) - 220px); }
 .chat-management-sidebar { @apply border-b lg:border-b-0 lg:border-r border-black_quaternary p-4 flex flex-col; }
 .chat-management-sidebar label { @apply font-bold text-black_secondary mb-2; font-size: 12px; }
 .chat-management-sidebar select { @apply w-full rounded-lg border border-black_quaternary bg-white px-3 py-2 outline-none; font-size: 14px; }
-.chat-management-list { @apply mt-4 overflow-y-auto; }
+.chat-management-list { @apply mt-4 overflow-y-auto overscroll-contain; }
 .chat-management-room { @apply w-full flex items-center gap-3 text-left px-3 py-3 rounded-lg transition-colors; }
 .chat-management-room:hover, .chat-management-room.is-selected { @apply bg-bg_secondary; }
 .chat-management-room small { @apply block text-black_secondary mt-1; font-size: 12px; }
@@ -19,7 +19,7 @@
 .chat-management-conversation-header h2 { @apply font-bold; font-size: 18px; }
 .chat-management-conversation-header span { @apply text-black_secondary; font-size: 12px; }
 .chat-management-status { @apply text-green-600; font-size: 12px; }
-.chat-management-messages { @apply flex-1 overflow-y-auto p-6 space-y-3 bg-bg_tertiary; }
+.chat-management-messages { @apply flex-1 overflow-y-auto overscroll-contain p-6 space-y-3 bg-bg_tertiary; }
 .chat-management-message { @apply max-w-[75%] rounded-2xl rounded-bl-sm bg-white px-4 py-3 shadow-sm; }
 .chat-management-message.is-mine { @apply ml-auto rounded-bl-2xl rounded-br-sm bg-primary text-white; }
 .chat-management-message p { @apply whitespace-pre-wrap break-words; font-size: 14px; }
@@ -33,7 +33,7 @@
 .chat-management-state-error, .chat-management-error, .chat-management-send-error { @apply text-red-600; font-size: 14px; }
 .chat-management-state-error button { @apply mt-2; }
 .chat-management-send-error { @apply px-4 pb-3; }
-@media (max-width: 640px) { .chat-management-header { @apply items-start; } .chat-management-header h1 { font-size: 20px; } .chat-management-header > span { @apply hidden; } .chat-management-grid { min-height: calc(100vh - 170px); } .chat-management-message { @apply max-w-[90%]; } }
+@media (max-width: 640px) { .chat-management-header { @apply items-start; } .chat-management-header h1 { font-size: 20px; } .chat-management-header > span { @apply hidden; } .chat-management-grid { min-height: calc(var(--app-height) - 170px); } .chat-management-message { @apply max-w-[90%]; } }
 .chat-management-actions { @apply flex items-center gap-2; }
 .chat-management-icon-action, .chat-management-refresh { @apply rounded-lg border border-black_quaternary bg-white px-3 py-2 font-bold transition-colors; font-size: 12px; }
 .chat-management-icon-action { @apply flex h-9 w-9 items-center justify-center p-0; font-size: 16px; }

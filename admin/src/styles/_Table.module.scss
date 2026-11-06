@@ -2,7 +2,7 @@
 
 .table {
 	// Stays inside its card and scrolls sideways when the columns don't fit.
-	@apply flex flex-col w-full max-w-full min-h-[683px] overflow-x-auto bg-bg_primary;
+	@apply flex flex-col w-full max-w-full min-h-[683px] overflow-x-auto overscroll-x-contain bg-bg_primary;
 
 	&-top {
 		@apply w-full px-[24px] pt-[24px] flex flex-col justify-center;

@@ -64,20 +64,14 @@ function AppContent({ Component, pageProps }) {
     if (userInfo?._id) store.dispatch(handleMessagesSubscription());
   }, [isSystemPage, token, isAdmin, isPlatformAdmin, isPlatformAdminPage, canPreviewPlatformAdmin, isManagementPage, isCustomBotPage, pathname, router, userInfo?._id]);
 
-  useEffect(() => {
-    const stopScrolling = (e) => e.preventDefault();
-    window.addEventListener('touchmove', stopScrolling, { passive: false });
-    return () => window.removeEventListener('touchmove', stopScrolling);
-  }, []);
-
   return <>
     <Head><link rel='icon' type='image/svg+xml' href='/favicon.svg' /><meta httpEquiv='Expires' content='0' /><meta httpEquiv='Cache-Control' content='no-cache' /><meta httpEquiv='Pragma' content='no-cache' /></Head>
     <ApolloProvider client={client}>
-      <div className='flex flex-row w-screen h-screen overflow-hidden'>
+      <div className='flex flex-row w-full h-[var(--app-height)] overflow-hidden'>
         <div className={`z-[20] hidden sm:block transition-all duration-200 ${sidebarCollapsed ? 'w-[64px] min-w-[64px]' : 'w-[208px] min-w-[208px]'}`} style={showSidebarHeaderBar ? {} : { display: 'none' }}><Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(value => !value)} /></div>
-        <div className='flex flex-col w-full overflow-hidden'>
+        <div className='flex flex-col flex-1 min-w-0 overflow-hidden'>
           <HeaderBar customStyles='z-[10]' showSidebarHeaderBar={showSidebarHeaderBar} />
-          <div className={`${showSidebarHeaderBar ? 'w-full sm:h-[calc(100vh-61px)]' : 'w-[100vw]'} h-[100vh] ${pathname === '/' || pathname === '/messenger' ? 'overflow-hidden' : 'overflow-y-auto overflow-x-hidden'} ${layoutSet && pathname !== '/' && pathname !== '/messenger' ? 'p-[16px] sm:p-[32px] bg-bg_tertiary' : ''} ${UNPOLISHED_PAGES.includes(pathname) ? '' : 'ui-polish'}`}><Component {...pageProps} /></div>
+          <div className={`w-full flex-1 min-h-0 ${pathname === '/' || pathname === '/messenger' ? 'overflow-hidden' : 'overflow-y-auto overflow-x-hidden overscroll-contain'} ${layoutSet && pathname !== '/' && pathname !== '/messenger' ? 'p-[16px] sm:p-[32px] bg-bg_tertiary' : ''} ${UNPOLISHED_PAGES.includes(pathname) ? '' : 'ui-polish'}`}><Component {...pageProps} /></div>
         </div>
       </div>
     </ApolloProvider>

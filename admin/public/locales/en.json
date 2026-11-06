@@ -119,5 +119,6 @@
   "home_bots_empty": "Bots are not available yet",
   "home_bots_hint": "Bots you create will show here once this is available",
   "home_role_admin": "Admin",
-  "home_role_user": "User"
+  "home_role_user": "User",
+  "new_messages": "New messages"
 }

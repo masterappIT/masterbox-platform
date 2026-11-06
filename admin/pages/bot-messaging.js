@@ -48,7 +48,7 @@ const PRESETS = [
 
 function BotList({ onAdd }) {
   return (
-    <section className='pending-card min-h-[calc(100vh-125px)]'>
+    <section className='pending-card min-h-[calc(var(--app-height)-125px)]'>
       <TableTop
         searchPlaceholder='依標題搜尋名稱'
         addTitle='新增BOT'

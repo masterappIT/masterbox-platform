@@ -1,7 +1,7 @@
 @import '_Common.module.scss';
 
 .auth {
-	@apply w-[100vw] min-h-[100vh] pt-[48px] pb-[160px] flex flex-col items-center justify-start space-y-5 bg-imMaster_blue900 bg-cover bg-bottom bg-[url('../../public/svg/authBg.svg')];
+	@apply w-full min-h-[var(--app-height)] pt-[48px] pb-[160px] flex flex-col items-center justify-start space-y-5 bg-imMaster_blue900 bg-cover bg-bottom bg-[url('../../public/svg/authBg.svg')];
 
 	&-language{
 		@apply  w-full flex justify-end pr-[10%] pb-[40px];

@@ -1,5 +1,5 @@
 .drawer {
-	@apply fixed top-0 left-0  w-0 h-[100vh] bg-transparent overflow-visible;
+	@apply fixed inset-y-0 left-0 w-0 bg-transparent overflow-visible;
 
 	&-item {
 		@apply  absolute rounded-[10px] top-[50%] right-0 bg-black ;

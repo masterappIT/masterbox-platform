@@ -39,7 +39,7 @@ function MessageInput({ handlePushMessage, isMobile }) {
 
     return (
         <>
-        {sendError && <ContentText title={sendError} color='alert' customStyles='px-[16px] py-[6px]' />}
+        {sendError && <ContentText title={sendError} color='alert' customStyles='shrink-0 px-[16px] py-[6px]' />}
         <div className={`messenger-room-send`}>
             <div className={`messenger-room-send-inputArea`}>
                 <input

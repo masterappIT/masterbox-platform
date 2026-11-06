@@ -119,5 +119,6 @@
   "home_bots_empty": "對話BOT 尚未開放",
   "home_bots_hint": "功能開放後，這裡會顯示已建立的 BOT",
   "home_role_admin": "管理者",
-  "home_role_user": "使用者"
+  "home_role_user": "使用者",
+  "new_messages": "有新訊息"
 }

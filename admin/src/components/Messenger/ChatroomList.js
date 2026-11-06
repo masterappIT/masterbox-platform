@@ -44,7 +44,7 @@ function ChatroomList({ isMobile, chatRoomsList, componentHandler, setCurrentCom
 
 
 
-      <List customStyles={`messenger-list-chatroom ${(isMobile && currentComponent === 'client') ? 'messenger-list-chatroom-clientItem' : 'messenger-list-chatroom-otherItem'}`}>
+      <List customStyles='messenger-list-chatroom'>
         {(chatRoomsList && chatRoomsList.length) ? chatRoomsList.map(({ channel_id, chat_room_id, platform, users }, i) => {
 
           let customer = users.find(user => user.id !== channel_id)

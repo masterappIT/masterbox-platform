@@ -2,29 +2,32 @@
 
 
 .messenger {
-	@apply flex-1 flex relative h-full sm:h-[calc(100vh-61px)];
+	@apply flex-1 flex relative h-full min-h-0;
 	&-list,
 	&-sideInfo {
-		// @apply h-[100vh] sm:h-[calc(100vh-68px)]
-		@apply h-full sm:h-[calc(100vh-61px)];
+		@apply h-full;
 	}
 	&-list {
 		@apply  w-full sm:w-[20%] sm:w-[280px] sm:max-w-[328px] flex flex-col shadow-[2px_0px_8px_0_rgba(0,0,0,0.15)]  bg-black_white z-[1];
 		&-mobile {
-			@apply w-[100vw] shadow-none ;
+			// Room for the fixed bottom navigation, so it never covers the last chat room.
+			@apply w-full shadow-none pb-[65px];
 		}
 		&-channel {
-			@apply w-full h-[79px]  sm:w-[280px]   sm:h-[100px]  shadow-[0px_2px_2px_0_rgba(57,57,57,0.18)] z-[5] bg-black_white;
+			@apply shrink-0 w-full h-[79px]  sm:w-[280px]   sm:h-[100px]  shadow-[0px_2px_2px_0_rgba(57,57,57,0.18)] z-[5] bg-black_white;
 
 			&-others {
-				@apply absolute z-[1] sm:w-[280px]   top-[80px]  sm:top-[101px] overflow-hidden bg-black_white w-[30%] shadow-[0px_2px_2px_0_rgba(57,57,57,0.18)] transition-all flex flex-col justify-center space-y-1 sm:space-y-0;
+				@apply absolute z-[1] sm:w-[280px]   top-[80px]  sm:top-[101px] overflow-x-hidden overflow-y-auto overscroll-contain bg-black_white w-[30%] shadow-[0px_2px_2px_0_rgba(57,57,57,0.18)] transition-all flex flex-col py-[10px] space-y-1 sm:space-y-0;
+				// Many channels scroll here rather than running off the screen.
+				@apply max-h-[calc(100%-101px)];
 
 				&-show {
 					// @apply h-fit max-h-[calc(100vh-184px)] overflow-y-auto;
 					// @apply h-[calc(104*4)px];
 				}
 				&-mobile {
-					@apply w-[100vw];
+					// Also clears the fixed bottom navigation.
+					@apply w-full max-h-[calc(100%-145px)];
 				}
 				// &-iconFilter {
 				// 		filter: invert(100%) brightness(250%) saturate(0%);
@@ -38,11 +41,11 @@
 			}
 		}
 		&-mobilebar {
-			@apply absolute w-[100vw] z-[100] bg-primary h-[45px] shadow-[0px_2px_6px_0_rgba(0,0,0,0.2)];
+			@apply absolute w-full z-[100] bg-primary h-[45px] shadow-[0px_2px_6px_0_rgba(0,0,0,0.2)];
 		}
 
 		&-chatroom {
-			@apply h-fit  sm:max-h-[calc(100vh-216px)] overflow-y-auto flex-1;
+			@apply flex-1 min-h-0 overflow-y-auto overscroll-contain;
 			.contentText {
 				display: -webkit-box;
 				text-overflow: ellipsis;
@@ -53,15 +56,9 @@
 			&-hidden {
 				@apply hidden;
 			}
-			&-otherItem {
-				@apply h-fit max-h-[calc(100vh-158px)];
-			}
-			&-clientItem {
-				@apply h-fit max-h-[calc(100vh-213px)];
-			}
 		}
 		&-hidden {
-			@apply h-[0px] transition-all;
+			@apply h-[0px] py-0 transition-all;
 		}
 	}
 	// .listUnHidden {
@@ -72,18 +69,38 @@
 	}
 
 	&-room {
-		@apply w-full flex-1 bg-bg_secondary z-[0] sm:px-[24px];
+		@apply w-full flex-1 min-w-0 min-h-0 flex flex-col bg-bg_secondary z-[0] sm:px-[24px];
+
+		// These styles load after Tailwind's utilities, so the flex above would win over .hidden.
+		&.hidden {
+			display: none;
+		}
 
 		.list-item{
 			padding: 0px
 		}
 		&-client {
-			@apply h-[100px] border-b border-black_quaternary;
+			@apply shrink-0 h-[100px] border-b border-black_quaternary;
+		}
+
+		&-body {
+			@apply relative flex-1 min-h-0 flex flex-col;
+		}
+
+		&-newMessages {
+			@apply absolute left-1/2 -translate-x-1/2 bottom-[12px] z-[1] h-[36px] px-[16px] rounded-full bg-white text-black_primary whitespace-nowrap cursor-pointer shadow-[0px_2px_8px_0_rgba(0,0,0,0.25)];
+			font-size: 13px;
+
+			&:focus-visible {
+				@apply outline outline-2 outline-primary_dark;
+			}
 		}
 
 		&-messages {
-			// @apply w-full space-y-[6px] pt-[57px] pb-[12px] sm:py-[20px] px-[12px] h-[calc(100vh-77px)] overflow-y-auto  sm:h-[calc(100vh-250px)] sm:px-[10px];
-			@apply w-full space-y-[25px] pt-[57px] pb-[12px] sm:py-[20px] px-[12px] h-[calc(100vh-77px)] overflow-y-auto  sm:h-[calc(100vh-250px)] sm:px-[0px];
+			@apply w-full flex-1 min-h-0 overflow-y-auto overscroll-contain pt-[57px] pb-[12px] sm:py-[20px] px-[12px] sm:px-[0px];
+			&-list {
+				@apply space-y-[25px];
+			}
 			&::-webkit-scrollbar {
 				@apply w-[3px];
 			}
@@ -92,12 +109,12 @@
 				@apply bg-black_quaternary rounded-[10px] opacity-[.67];
 			}
 			&-null{
-			@apply flex flex-col items-center justify-center w-full h-full;
+			@apply flex flex-col items-center justify-center w-full flex-1 min-h-0;
 		}
 		}
 		
 		&-send {
-			@apply h-[77px] sm:h-[79px] w-full p-[12px] flex justify-center items-center space-x-3 bg-primary sm:bg-transparent  sm:pt-[12px];
+			@apply shrink-0 h-[77px] sm:h-[79px] w-full p-[12px] flex justify-center items-center space-x-3 bg-primary sm:bg-transparent  sm:pt-[12px];
 
 			&-inputArea {
 				@apply h-[45px] w-full rounded-[8px] flex items-center bg-primary justify-between sm:w-[75%] sm:border sm:border-[#D9D9D9] sm:bg-[#FFFFFF];
@@ -132,7 +149,7 @@
 	}
 
 	&-sideInfo {
-		@apply z-[3] absolute right-0 translate-x-[0] bg-black_white flex-none w-[360px] min-w-[320px] max-h-full overflow-y-auto flex flex-col shadow-[-2px_0px_10px_0_rgba(0,0,0,0.15)] transition-all duration-[500ms];
+		@apply z-[3] absolute right-0 translate-x-[0] bg-black_white flex-none w-[360px] min-w-[320px] max-w-full max-h-full overflow-y-auto overscroll-contain flex flex-col shadow-[-2px_0px_10px_0_rgba(0,0,0,0.15)] transition-all duration-[500ms];
 		&-icon {
 			@apply self-end mr-[10px];
 		}
