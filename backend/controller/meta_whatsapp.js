@@ -156,6 +156,37 @@ export const sendWhatsappMessage = (messageData, from, access_token) => metaClie
 })
 
 
+const TEMPLATE_PAGES = 10
+
+/**
+ * 取得 whatsapp 商業帳號已核准的訊息範本，最多讀 10 頁（1000 個）
+ * @param {string} whatsapp_business_account_id - 公司的 whatsapp 商業帳號 ID
+ * @param {string} access_token - 頻道的 access token
+ * @returns {Promise<object[]>} Meta 的範本物件，含 components
+ */
+export const fetchApprovedTemplates = async (whatsapp_business_account_id, access_token) => {
+    const templates = []
+    let after
+    for (let page = 0; page < TEMPLATE_PAGES; page += 1) {
+        const body = await metaClient({
+            endPoints: `${whatsapp_business_account_id}/message_templates`,
+            method: 'GET',
+            queryStrings: {
+                access_token,
+                status: 'APPROVED',
+                fields: 'id,name,language,status,category,components,parameter_format',
+                limit: 100,
+                ...(after ? { after } : {}),
+            },
+        })
+        const result = typeof body === 'string' ? JSON.parse(body) : body
+        templates.push(...(result?.data || []).filter(({ status }) => status === 'APPROVED'))
+        after = result?.paging?.next ? result?.paging?.cursors?.after : null
+        if (!after) break
+    }
+    return templates
+}
+
 /**
  * Whatsapp 發送訊息
  * @param {*} res - 回應api呼叫的起始句

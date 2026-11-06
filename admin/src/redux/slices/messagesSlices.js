@@ -2,7 +2,8 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit'
 import { apolloApiHelpers, client, refreshSession, onSocketReconnected } from '../../graphQL';
 import { SUBSCRIBE_MESSAGE } from '../../graphQL/subscription'
 import { GET_USER_SUBSCRIBED_CHANNELS, CHATROOMS, CHAT_ROOM_PAGE, CHAT_ROOM, MARK_CHAT_ROOM_READ, CUSTOMER_TAGS, ADD_CHAT_ROOM_TAG, REMOVE_CHAT_ROOM_TAG } from '../../graphQL/channel'
-import { SEND_MESSAGE, CHATROOMS_MESSAGES, MESSAGE_PAGE } from '../../graphQL/messages'
+import { SEND_MESSAGE, CHATROOMS_MESSAGES, MESSAGE_PAGE, WHATSAPP_TEMPLATES, SEND_WHATSAPP_TEMPLATE } from '../../graphQL/messages'
+import { QUICK_REPLIES } from '../../graphQL/messageTemplate'
 
 // These lists change on the server, so always read them fresh instead of from Apollo's cache.
 const FRESH = { fetchPolicy: 'no-cache' };
@@ -333,11 +334,46 @@ export const handleSendMessage = createAsyncThunk(
 
     // The caller keeps the agent's text and file and shows why they weren't sent.
     // sentAttachment: the file went out as its own message but the text after it didn't.
+    // templateRequired: WhatsApp's 24 hours ran out, so only a template can go now.
     if (res.error) {
-      return rejectWithValue({ message: res.error, sentAttachment: Boolean(res.extensions?.sentAttachment) })
+      return rejectWithValue({ message: res.error, sentAttachment: Boolean(res.extensions?.sentAttachment), templateRequired: Boolean(res.extensions?.templateRequired) })
     }
 
     dispatch(receiveMessage({ message: res, seen: true }))
+    return res
+  }
+)
+
+/** The approved templates of a WhatsApp conversation's number; rejects with the reason they can't be read. */
+export const loadWhatsappTemplates = createAsyncThunk(
+  'inbox/whatsappTemplates',
+  async ({ id }, { rejectWithValue }) => {
+    const res = await apolloApiHelpers('query', WHATSAPP_TEMPLATES, { id }, FRESH)
+    if (res.error) return rejectWithValue(res.error)
+    return res
+  }
+)
+
+/**
+ * Sends an approved WhatsApp template in the conversation.
+ * @param {{ id: string, templateId: string, values: { key, value }[], headerMediaUrl?: string }} input - id is the conversation's
+ */
+export const sendWhatsappTemplate = createAsyncThunk(
+  'inbox/sendWhatsappTemplate',
+  async ({ id, templateId, values, headerMediaUrl }, { dispatch, rejectWithValue }) => {
+    const res = await apolloApiHelpers('mutation', SEND_WHATSAPP_TEMPLATE, { id, templateId, values, ...(headerMediaUrl ? { headerMediaUrl } : {}) })
+    if (res.error) return rejectWithValue(res.error)
+    dispatch(receiveMessage({ message: res, seen: true }))
+    return res
+  }
+)
+
+// The company's templates, inserted into replies as quick replies. Read again each time the picker opens.
+export const loadQuickReplies = createAsyncThunk(
+  'inbox/quickReplies',
+  async (_, { rejectWithValue }) => {
+    const res = await apolloApiHelpers('query', QUICK_REPLIES, undefined, FRESH)
+    if (res.error) return rejectWithValue(res.error)
     return res
   }
 )
@@ -356,6 +392,8 @@ const initialState = {
   // The conversation the agent has open, whose new messages count as read: { id, platform, channel_id, chat_room_id }.
   openRoom: null,
   customerTags: [],
+  quickReplies: [],
+  quickRepliesStatus: 'idle',
 
   // 'idle' | 'loading' | 'succeeded' | 'failed' — lets the home page tell loading apart from a failed read.
   channelsStatus: 'idle',
@@ -372,6 +410,8 @@ const bumpRoom = (rooms, message, { countUnread }) => {
     lastMessage: message.preview ?? room.lastMessage,
     lastMessageAt: message.createdAt,
     lastMessageInbound: Boolean(message.inbound),
+    // A customer's message restarts Meta's reply window.
+    ...(message.inbound ? { lastCustomerMessageAt: message.createdAt } : {}),
     updatedAt: message.createdAt,
     unreadCount: (room.unreadCount || 0) + (countUnread ? 1 : 0),
   };
@@ -526,6 +566,9 @@ export const messagesSlice = createSlice({
         updateRoom(state, payload.id, { unreadCount: payload.unreadCount });
       })
       .addCase(loadCustomerTags.fulfilled, (state, { payload }) => { state.customerTags = payload })
+      .addCase(loadQuickReplies.pending, (state) => { state.quickRepliesStatus = 'loading' })
+      .addCase(loadQuickReplies.fulfilled, (state, { payload }) => { state.quickReplies = payload; state.quickRepliesStatus = 'succeeded' })
+      .addCase(loadQuickReplies.rejected, (state) => { state.quickRepliesStatus = 'failed' })
       .addCase(addConversationTag.fulfilled, (state, { payload }) => { updateRoom(state, payload.id, { tags: payload.tags }) })
       .addCase(removeConversationTag.fulfilled, (state, { payload }) => { updateRoom(state, payload.id, { tags: payload.tags }) })
   }
@@ -553,6 +596,10 @@ export const selectInbox = (state) => state.messages?.inbox || initialInbox;
 
 const NO_PAGING = {};
 export const selectMessagePaging = (state) => state.messages?.messagePaging || NO_PAGING;
+
+const NO_REPLIES = [];
+export const selectQuickReplies = (state) => state.messages?.quickReplies || NO_REPLIES;
+export const selectQuickRepliesStatus = (state) => state.messages?.quickRepliesStatus || 'idle';
 
 const NO_TAGS = [];
 export const selectCustomerTags = (state) => state.messages?.customerTags || NO_TAGS;

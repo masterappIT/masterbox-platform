@@ -50,6 +50,21 @@ export const onSocketReconnected = (listener) => {
     return () => reconnectListeners.delete(listener);
 };
 
+// 'connecting' | 'connected' | 'disconnected', for pages that show whether live updates are flowing.
+let socketStatus = 'connecting';
+const statusListeners = new Set();
+const setSocketStatus = (status) => {
+    if (status === socketStatus) return;
+    socketStatus = status;
+    statusListeners.forEach((listener) => listener(status));
+};
+export const getSocketStatus = () => socketStatus;
+/** Calls listener with the live connection's status whenever it changes. @returns a function that stops it */
+export const onSocketStatus = (listener) => {
+    statusListeners.add(listener);
+    return () => statusListeners.delete(listener);
+};
+
 const wsLink =
     typeof window !== "undefined"
         ? new GraphQLWsLink(
@@ -64,7 +79,10 @@ const wsLink =
                 retryAttempts: Infinity,
                 retryWait: (retries) => new Promise((resolve) => setTimeout(resolve, Math.min(1000 * 2 ** retries, 10000) + Math.random() * 1000)),
                 on: {
+                    connecting: () => setSocketStatus(socketConnections ? 'disconnected' : 'connecting'),
+                    closed: () => setSocketStatus('disconnected'),
                     connected: () => {
+                        setSocketStatus('connected');
                         socketConnections += 1;
                         if (socketConnections > 1) reconnectListeners.forEach((listener) => listener());
                     },

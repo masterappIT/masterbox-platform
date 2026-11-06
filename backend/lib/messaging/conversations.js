@@ -3,6 +3,7 @@ import prismaClientPackage from '@prisma/client';
 import { ApolloError } from 'apollo-server-errors';
 import { prisma } from '../db/prisma.js';
 import { messagePreview, encodeCursor, decodeCursor, pageSize, searchPattern, customerOf } from './conversationText.js';
+import { replyWindow } from './replyWindow.js';
 
 const { Prisma } = prismaClientPackage;
 
@@ -75,6 +76,7 @@ const roomStats = async (accountId, roomIds) => {
   const rows = await prisma.$queryRaw`
     SELECT r.id AS room_id,
       (SELECT count(DISTINCT m.id) ${roomMessages(now)} AND ${UNREAD})::int AS unread,
+      (SELECT max(m.created_at) ${roomMessages(now)} AND m.created_by IS NULL) AS last_inbound_at,
       lm.id AS last_id, lm.contents AS last_contents, lm.created_at AS last_at,
       lm.created_by AS last_created_by, lm.encryption_mode::text AS last_encryption_mode
     FROM chat_rooms r
@@ -89,10 +91,22 @@ const roomStats = async (accountId, roomIds) => {
 
 const tagView = ({ id, name }) => ({ id, name });
 
+/** Whether the conversation can still be answered, as the GraphQL ReplyWindow type has it. */
+export const replyWindowView = (platform, lastCustomerMessageAt, now = new Date()) => {
+  const window = replyWindow({ platform, lastCustomerMessageAt, now });
+  return {
+    state: window.state,
+    closesAt: window.closesAt,
+    templateRequired: window.templateRequired,
+    humanAgentAvailable: window.humanAgentAvailable,
+  };
+};
+
 /** How a conversation is shown, with the account's unread count. */
 const roomView = (room, stats) => {
   const key = room.chatRoomId || room.id;
   const customer = customerOf(room);
+  const lastCustomerMessageAt = stats?.last_inbound_at || null;
   return {
     id: room.id,
     title: customer?.name || key,
@@ -107,6 +121,8 @@ const roomView = (room, stats) => {
     lastMessageAt: stats?.last_at || null,
     lastMessageInbound: stats?.last_id ? !stats.last_created_by : null,
     unreadCount: stats?.unread || 0,
+    lastCustomerMessageAt,
+    replyWindow: replyWindowView(room.platform, lastCustomerMessageAt),
     createdAt: room.createdAt,
     updatedAt: room.updatedAt,
   };
@@ -202,6 +218,15 @@ export const listMessages = async (account, room, { first, before, after } = {})
     hasOlder: newerThan ? null : more,
     hasNewer: newerThan ? more : false,
   };
+};
+
+/** When the customer last wrote in the conversation, which is what Meta's reply windows count from. */
+export const lastCustomerMessageAt = async (room) => {
+  const [row] = await prisma.$queryRaw`
+    SELECT max(m.created_at) AS created_at FROM messages m JOIN message_recipients mr ON mr.message_id = m.id
+    WHERE m.company_id = ${room.companyId} AND m.created_by IS NULL
+      AND mr.to_chat_room_id @> ARRAY[${room.chatRoomId || room.id}]::text[] AND mr.channel_id = ${room.channelId}`;
+  return row?.created_at || null;
 };
 
 /**

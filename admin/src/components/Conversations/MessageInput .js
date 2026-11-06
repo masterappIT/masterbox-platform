@@ -3,7 +3,14 @@ import PropTypes from 'prop-types'
 import Button from "../../stories/components/Button";
 import Icon from "../../stories/components/Icon";
 import ContentText from "../../stories/components/ContentText";
+import { useSelector } from 'react-redux';
 import EmojiPicker from './EmojiPicker';
+import QuickReplyPicker from './QuickReplyPicker';
+import ReplyWindowNotice from './ReplyWindowNotice';
+import WhatsappTemplateDialog from './WhatsappTemplateDialog';
+import { replyWindowOf, canSendFreeform } from '../../utils/replyWindow';
+import useNow from '../../utils/useNow';
+import { selectUserInfo } from '../../redux/slices/userSlices';
 import { checkAttachment, ACCEPT_ATTRIBUTE } from '../../utils/attachmentRules';
 import { uploadAttachment, toMessageAttachment } from '../../utils/uploadAttachment';
 
@@ -35,7 +42,8 @@ function AttachmentPreview({ attachment, progress, isBusy, onRemove }) {
     )
 }
 
-function MessageInput({ handlePushMessage, isMobile, platform }) {
+// room: the open conversation, for Meta's reply window and its WhatsApp templates.
+function MessageInput({ handlePushMessage, isMobile, platform, room }) {
 
     const [message, setMessage] = useState('');
     const [attachment, setAttachment] = useState(null);
@@ -45,6 +53,17 @@ function MessageInput({ handlePushMessage, isMobile, platform }) {
     const [sendError, setSendError] = useState('');
     const [pickError, setPickError] = useState('');
     const [isEmojiOpen, setIsEmojiOpen] = useState(false);
+    // 'button' or 'slash': typing / in an empty box opens it too, and Esc gives the / back.
+    const [quickReplyOpenedBy, setQuickReplyOpenedBy] = useState(null);
+    const [isTemplateOpen, setIsTemplateOpen] = useState(false);
+    // The send failed because WhatsApp's 24 hours ran out while the agent was typing.
+    const [needsTemplate, setNeedsTemplate] = useState(false);
+    const userInfo = useSelector(selectUserInfo);
+    const isAdmin = String(userInfo?.role || '').toLowerCase() === 'admin';
+    const now = useNow();
+    const replyState = room ? replyWindowOf(room, now) : null;
+    const canWrite = !replyState || canSendFreeform(replyState);
+    const isWhatsapp = platform === 'whatsapp' && Boolean(room?.id);
     const textareaRef = useRef(null);
     const fileInputRef = useRef(null);
     // Where the cursor was, so an emoji goes there even after the text box lost focus.
@@ -75,18 +94,44 @@ function MessageInput({ handlePushMessage, isMobile, platform }) {
         if (textarea) selectionRef.current = { start: textarea.selectionStart, end: textarea.selectionEnd };
     }
 
-    function insertEmoji(emoji) {
+    // Puts text where the cursor was, replacing any selection, and leaves the cursor after it.
+    function insertText(text) {
         if (isBusy) return;
         const textarea = textareaRef.current;
         const { start, end } = document.activeElement === textarea
             ? { start: textarea.selectionStart, end: textarea.selectionEnd }
             : selectionRef.current;
         const safeStart = Math.min(start, message.length), safeEnd = Math.min(Math.max(end, safeStart), message.length);
-        caretAfterRenderRef.current = safeStart + emoji.length;
-        setMessage(message.slice(0, safeStart) + emoji + message.slice(safeEnd));
+        caretAfterRenderRef.current = safeStart + text.length;
+        setMessage(message.slice(0, safeStart) + text + message.slice(safeEnd));
     }
 
     const closeEmoji = useCallback(() => setIsEmojiOpen(false), []);
+
+    const quickReplyRef = useRef(null);
+    quickReplyRef.current = quickReplyOpenedBy;
+    const closeQuickReply = useCallback((reason) => {
+        const openedBy = quickReplyRef.current;
+        setQuickReplyOpenedBy(null);
+        if (reason !== 'escape') return;
+        if (openedBy === 'slash') {
+            caretAfterRenderRef.current = 1;
+            setMessage((current) => current || '/');
+        }
+        textareaRef.current?.focus();
+    }, []);
+
+    function handleChange(event) {
+        const { value } = event.target;
+        // A / in an empty box is the shortcut for quick replies.
+        if (!message && value === '/' && canWrite) {
+            selectionRef.current = { start: 0, end: 0 };
+            setIsEmojiOpen(false);
+            setQuickReplyOpenedBy('slash');
+            return;
+        }
+        setMessage(value);
+    }
 
     function pickFile(file) {
         if (!file || isBusy) return;
@@ -119,10 +164,15 @@ function MessageInput({ handlePushMessage, isMobile, platform }) {
 
     async function send() {
         if (isBusy) return;
+        if (!canWrite) {
+            if (isWhatsapp) setIsTemplateOpen(true);
+            return;
+        }
         const text = message.trim();
         if (!text && !attachment) return;
         setSendError('');
         setPickError('');
+        setNeedsTemplate(false);
         setIsEmojiOpen(false);
         try {
             // A file uploaded on an earlier try is sent again without uploading it twice.
@@ -143,6 +193,7 @@ function MessageInput({ handlePushMessage, isMobile, platform }) {
         } catch (error) {
             // The file went out on its own and only the text failed, so only the text is left to send.
             if (error?.sentAttachment) removeAttachment();
+            setNeedsTemplate(Boolean(error?.templateRequired));
             setSendError(`${error?.sentAttachment ? '' : '訊息未送出：'}${error?.message || error}`);
         } finally {
             setStatus('idle');
@@ -163,15 +214,20 @@ function MessageInput({ handlePushMessage, isMobile, platform }) {
         pickFile(file);
     }
 
-    const buttonTitle = status === 'uploading' ? `上傳中 ${progress ?? 0}%` : status === 'sending' ? '發送中…' : '發送';
+    const buttonTitle = !canWrite && isWhatsapp ? '使用範本' : status === 'uploading' ? `上傳中 ${progress ?? 0}%` : status === 'sending' ? '發送中…' : '發送';
     const iconSize = isMobile ? 'small' : 'medium';
+    const templateButton = isWhatsapp && <button type='button' className='messenger-room-send-retry' onClick={() => setIsTemplateOpen(true)}>使用範本發送</button>;
+    const placeholder = canWrite ? '寫下一些訊息吧，輸入 / 插入快速回覆'
+        : replyState?.state === 'unsupported' ? '目前無法回覆這個平台的訊息' : '已超過回覆期限，請改用 WhatsApp 範本';
 
     return (
         <>
+        {replyState && <ReplyWindowNotice window={replyState} platform={platform} now={now} action={replyState.templateRequired ? templateButton : null} />}
         {(sendError || pickError) && (
             <div className='shrink-0 flex items-center gap-[8px] px-[16px] py-[6px]'>
                 <ContentText title={sendError || pickError} color='alert' customStyles='flex-1' />
-                {sendError && <button type='button' className='messenger-room-send-retry' onClick={send} disabled={isBusy}>重試</button>}
+                {sendError && needsTemplate && templateButton}
+                {sendError && !needsTemplate && <button type='button' className='messenger-room-send-retry' onClick={send} disabled={isBusy}>重試</button>}
             </div>
         )}
         {attachment && (
@@ -185,12 +241,13 @@ function MessageInput({ handlePushMessage, isMobile, platform }) {
                     ref={textareaRef}
                     className={`messenger-room-send-inputArea-input`}
                     rows={1}
-                    placeholder="寫下一些訊息吧"
-                    title="Enter 送出，Shift+Enter 換行"
+                    placeholder={placeholder}
+                    title="Enter 送出，Shift+Enter 換行，輸入 / 插入快速回覆"
                     value={message}
                     readOnly={isBusy}
+                    disabled={!canWrite}
                     aria-label='訊息'
-                    onChange={(event) => setMessage(event.target.value)}
+                    onChange={handleChange}
                     onKeyDown={handleKeyDown}
                     onSelect={rememberSelection}
                     onBlur={rememberSelection}
@@ -200,20 +257,34 @@ function MessageInput({ handlePushMessage, isMobile, platform }) {
                 <div className="messenger-room-send-inputArea-iconArea">
                     <button type='button' data-emoji-toggle aria-label='插入表情' aria-expanded={isEmojiOpen} className='messenger-room-send-inputArea-iconArea-button'
                         onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => setIsEmojiOpen(open => !open)} disabled={isBusy}>
+                        onClick={() => { setQuickReplyOpenedBy(null); setIsEmojiOpen(open => !open); }} disabled={isBusy || !canWrite}>
                         <Icon name='emoji' customStyles='messenger-room-send-inputArea-iconArea-icon' size={iconSize} />
                     </button>
-                    <button type='button' aria-label='附加檔案' className='messenger-room-send-inputArea-iconArea-button' onClick={openFilePicker} disabled={isBusy}>
+                    <button type='button' data-quick-reply-toggle aria-label='插入快速回覆' title='插入快速回覆（也可以在空白輸入框輸入 /）' aria-expanded={Boolean(quickReplyOpenedBy)}
+                        className='messenger-room-send-inputArea-iconArea-button messenger-room-send-quickReply'
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => { setIsEmojiOpen(false); setQuickReplyOpenedBy(open => (open ? null : 'button')); }} disabled={isBusy || !canWrite}>
+                        <img src='/design/ui/action-text.svg' alt='' width={22} height={22} />
+                    </button>
+                    {isWhatsapp && (
+                        <button type='button' aria-label='使用 WhatsApp 範本發送' title='使用 WhatsApp 已核准的範本發送' className='messenger-room-send-inputArea-iconArea-button'
+                            onClick={() => setIsTemplateOpen(true)} disabled={isBusy}>
+                            <img src='/svg/whatsapp.svg' alt='' width={22} height={22} />
+                        </button>
+                    )}
+                    <button type='button' aria-label='附加檔案' className='messenger-room-send-inputArea-iconArea-button' onClick={openFilePicker} disabled={isBusy || !canWrite}>
                         <Icon name='attach' customStyles='messenger-room-send-inputArea-iconArea-icon' size={iconSize} />
                     </button>
                     <input ref={fileInputRef} type='file' accept={ACCEPT_ATTRIBUTE} hidden
                         onChange={(event) => { pickFile(event.target.files?.[0]); event.target.value = ''; }} />
                 </div>
-                {isEmojiOpen && <EmojiPicker onSelect={insertEmoji} onClose={closeEmoji} />}
+                {isEmojiOpen && <EmojiPicker onSelect={insertText} onClose={closeEmoji} />}
+                {quickReplyOpenedBy && <QuickReplyPicker platform={platform} isAdmin={isAdmin} onPick={insertText} onClose={closeQuickReply} />}
             </div>
-            <Button title={isMobile ? '' : buttonTitle} rounded='large' customStyles={isMobile ? { height: '44px', padding: '0px', opacity: isBusy ? 0.6 : 1 } : { height: '44px', opacity: isBusy ? 0.6 : 1, minWidth: '96px' }} startElement={<Icon name='send' size='small' />}
+            <Button title={isMobile ? '' : buttonTitle} disabled={!canWrite && !isWhatsapp} rounded='large' customStyles={isMobile ? { height: '44px', padding: '0px', opacity: isBusy ? 0.6 : 1 } : { height: '44px', opacity: isBusy ? 0.6 : 1, minWidth: '96px' }} startElement={<Icon name='send' size='small' />}
                 onClick={() => send()} />
         </div>
+        {isTemplateOpen && room?.id && <WhatsappTemplateDialog room={room} onClose={() => setIsTemplateOpen(false)} onSent={() => { setSendError(''); setNeedsTemplate(false); }} />}
         </>
     )
 }
@@ -223,6 +294,7 @@ MessageInput.propTypes = {
     isMobile: PropTypes.bool,
     // fb, ig or whatsapp: decides which files can be attached
     platform: PropTypes.string,
+    room: PropTypes.shape({ id: PropTypes.string, platform: PropTypes.string, lastCustomerMessageAt: PropTypes.string, replyWindow: PropTypes.object }),
 }
 
 export default MessageInput

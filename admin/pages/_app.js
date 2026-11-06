@@ -71,7 +71,7 @@ function AppContent({ Component, pageProps }) {
         <div className={`z-[20] hidden sm:block transition-all duration-200 ${sidebarCollapsed ? 'w-[64px] min-w-[64px]' : 'w-[208px] min-w-[208px]'}`} style={showSidebarHeaderBar ? {} : { display: 'none' }}><Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(value => !value)} /></div>
         <div className='flex flex-col flex-1 min-w-0 overflow-hidden'>
           <HeaderBar customStyles='z-[10]' showSidebarHeaderBar={showSidebarHeaderBar} />
-          <div className={`w-full flex-1 min-h-0 ${pathname === '/' || pathname === '/messenger' ? 'overflow-hidden' : 'overflow-y-auto overflow-x-hidden overscroll-contain'} ${layoutSet && pathname !== '/' && pathname !== '/messenger' ? 'p-[16px] sm:p-[32px] bg-bg_tertiary' : ''} ${UNPOLISHED_PAGES.includes(pathname) ? '' : 'ui-polish'}`}><Component {...pageProps} /></div>
+          <div className={`w-full flex-1 min-h-0 ${pathname === '/' ? 'overflow-hidden' : 'overflow-y-auto overflow-x-hidden overscroll-contain'} ${layoutSet && pathname !== '/' ? 'p-[16px] sm:p-[32px] bg-bg_tertiary' : ''} ${UNPOLISHED_PAGES.includes(pathname) ? '' : 'ui-polish'}`}><Component {...pageProps} /></div>
         </div>
       </div>
     </ApolloProvider>

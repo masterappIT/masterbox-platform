@@ -1,6 +1,6 @@
 import { ApolloError } from 'apollo-server-errors';
 import { prisma } from '../../lib/db/prisma.js';
-import { requireAdmin } from '../../middleware/auth.js';
+import { requireAdmin, withAuth } from '../../middleware/auth.js';
 
 const parseContents = (value) => {
   try { return typeof value === 'string' ? JSON.parse(value) : value; }
@@ -15,6 +15,13 @@ const scoped = async (id, companyId) => {
 
 export default {
   Query: {
+    // Every agent inserts these as quick replies; only admins manage them.
+    async quickReplies(_, __, { account, isAuth }) {
+      withAuth(Boolean(isAuth || account));
+      if (!account?.company_id) throw new ApolloError('Invalid account', 'UNAUTHENTICATED');
+      const templates = await prisma.messageTemplate.findMany({ where: { companyId: account.company_id }, orderBy: { name: 'asc' } });
+      return templates.map(view);
+    },
     async messageTemplates(_, __, context) {
       const admin = requireAdmin(context);
       const templates = await prisma.messageTemplate.findMany({ where: { companyId: admin.company_id }, orderBy: { updatedAt: 'desc' } });

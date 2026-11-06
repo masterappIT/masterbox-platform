@@ -23,6 +23,9 @@ const imgList = [
   { img: "attach", action: "" },
 ];
 
+// Who on the company's side sent a reply, when it wasn't the agent looking at it, and whether it was a template.
+const senderNote = ({ isMine, template }) => [isMine === false ? '同事回覆' : null, template?.name ? `WhatsApp 範本：${template.name}` : null].filter(Boolean).join('・') || null;
+
 // Within this distance of the end still counts as being at the latest message.
 const AT_BOTTOM_THRESHOLD_PX = 48;
 // Within this distance of the top, earlier messages start loading.
@@ -172,7 +175,7 @@ export default function Conversations({ isCustomerSideInfo, setIsCustomerSideInf
                   {onLoadOlder && messages?.length > 0 && (loadingOlder || !hasOlder) && (
                     <div className='messenger-room-older'>{loadingOlder ? t('loading_older_messages') : t('no_older_messages')}</div>
                   )}
-                  {messages?.length > 0 && messages.map(({ _id, channel_id, sender, contents, createdAt, platform, delivery_error }, i) => {
+                  {messages?.length > 0 && messages.map(({ _id, channel_id, sender, contents, createdAt, platform, delivery_error, isMine }, i) => {
                     const day = dayKey(createdAt)
                     const startsDay = i === 0 || dayKey(messages[i - 1].createdAt) !== day
                     const isCompany = channel_id === sender.replaceAll('"', '')
@@ -180,7 +183,7 @@ export default function Conversations({ isCustomerSideInfo, setIsCustomerSideInf
                       <React.Fragment key={_id || i}>
                         {startsDay && <div className='messenger-room-day' data-anchor='' role='separator'><span>{dayLabel(createdAt, { t, language })}</span></div>}
                         <div data-anchor=''>
-                          <ChatBubble contents={platform === 'whatsapp' ? contents?.text?.body ?? contents?.text : contents?.text} attachments={contents?.attachments} deliveryError={delivery_error} showAvatar={!isCompany} name={customerInfo?.avatar || customerName} time={timeLabel(createdAt, { language })} justifyItem={isCompany ? 'end' : 'start'} />
+                          <ChatBubble contents={platform === 'whatsapp' ? contents?.text?.body ?? contents?.text : contents?.text} attachments={contents?.attachments} deliveryError={delivery_error} note={isCompany ? senderNote({ isMine, template: contents?.template }) : null} showAvatar={!isCompany} name={customerInfo?.avatar || customerName} time={timeLabel(createdAt, { language })} justifyItem={isCompany ? 'end' : 'start'} />
                         </div>
                       </React.Fragment>
                     )
@@ -190,7 +193,7 @@ export default function Conversations({ isCustomerSideInfo, setIsCustomerSideInf
               {hasNewMessages && <button type='button' className='messenger-room-newMessages' onClick={scrollToLatest}>{t('new_messages')}</button>}
             </div>
 
-            <MessageInput handlePushMessage={handleSendMessage} isMobile={isMobile} platform={currentChatroom.platform || currentChannel?.platform} />
+            <MessageInput handlePushMessage={handleSendMessage} isMobile={isMobile} platform={currentChatroom.platform || currentChannel?.platform} room={currentChatroom} />
           </>
         ) : (
           <div className="messenger-room-messages-null">

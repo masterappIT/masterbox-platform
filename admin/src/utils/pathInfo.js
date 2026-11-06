@@ -82,7 +82,7 @@ export const pathInfo=[
     // },
   ]
 
-  const TITLE_ONLY_PATHS = { '/messenger': 'messenger', '/user-management/add/[id]': 'add_user', '/user-management/edit/[id]': 'edit_user' }
+  const TITLE_ONLY_PATHS = { '/user-management/add/[id]': 'add_user', '/user-management/edit/[id]': 'edit_user' }
 
 export const isPathActive = (path, pathName) => pathName === path || (path !== '/' && pathName.startsWith(`${path}/`))
 

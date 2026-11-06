@@ -58,7 +58,7 @@ function Attachment({ type, payload, caption, filename }) {
 
 
 
-function ChatBubble({ contents, attachments, deliveryError, name, time, showAvatar, justifyItem }) {
+function ChatBubble({ contents, attachments, deliveryError, note, name, time, showAvatar, justifyItem }) {
 
     // The conversation passes the time already formatted in the admin's language.
     const newTime = typeof time === 'string' && Number.isNaN(Date.parse(time)) ? time : new Date(time).toLocaleTimeString('en-US', {
@@ -75,7 +75,7 @@ function ChatBubble({ contents, attachments, deliveryError, name, time, showAvat
             <div className={`flex flex-col flex-1 items-${justifyItem} align`}>
                 <Bubble contents={<>{contents}{attachments?.map((attachment, i) => <Attachment key={i} {...attachment} />)}</>} color={justifyItem === 'start' && 'secondary'} />
                 {deliveryError && <ContentText title={`未送達：${deliveryError}`} size='small' color='alert' customStyles='mt-[3px]' />}
-                <ContentText title={newTime} size='small' color='black-tertiary' customStyles='mt-[3px]'/>
+                <ContentText title={note ? `${note}・${newTime}` : newTime} size='small' color='black-tertiary' customStyles='mt-[3px]'/>
             </div>
         </div>
     )
@@ -85,6 +85,8 @@ ChatBubble.propTypes = {
     contents: PropTypes.node,
     attachments: PropTypes.array,
     deliveryError: PropTypes.string,
+    // a short line beside the time, such as who sent it
+    note: PropTypes.string,
     name: PropTypes.string,
     time: PropTypes.string,
     showAvatar: PropTypes.bool,

@@ -1,7 +1,7 @@
 import { ApolloError } from 'apollo-server-errors';
 import { prisma } from '../../lib/db/prisma.js';
 import { pubsub } from '../../config/redis.js';
-import { handleSendMessage, messageView, publishMessage, SEND_MESSAGE } from '../../utils/utils.js';
+import { handleSendMessage, messageView, publishMessage, SEND_MESSAGE, listWhatsappTemplates, sendWhatsappTemplate } from '../../utils/utils.js';
 import { withAuth, requireAdmin } from '../../middleware/auth.js';
 import { findAccountRoom, roomViews, listRooms, listMessages, markRoomRead, companyTags, addRoomTag, removeRoomTag } from '../../lib/messaging/conversations.js';
 
@@ -85,11 +85,11 @@ export default {
           await prisma.chatRoom.update({ where: { id: room.id }, data: { updatedAt: new Date() } });
           await publishMessage(message);
           await markReadAfterSending(account, message);
-          return messageView(message, room.chatRoomId || room.id);
+          return messageView(message, room.chatRoomId || room.id, accountId);
         }
         const message = await handleSendMessage(account.account_id, roomId, input.contents, input.channel_id);
         await markReadAfterSending(account, message);
-        return messageView(message, roomId);
+        return messageView(message, roomId, accountId);
       } catch (error) {
         if (error instanceof ApolloError) throw error;
         throw new ApolloError(error.message || 'setMessage failed', 'SEND_FAILED');
@@ -103,7 +103,7 @@ export default {
       const readAt = new Date();
       const updated = await prisma.message.update({ where: { id: message.id }, data: { readAt: message.readAt || readAt, expiresAt: message.readAt || !message.disappearingAfterSeconds ? message.expiresAt : new Date(readAt.getTime() + message.disappearingAfterSeconds * 1000) }, include: { recipients: true } });
       await publishMessage(updated);
-      return messageView(updated);
+      return messageView(updated, undefined, account.account_id);
     },
     async markChatRoomRead(_, { id, messageId }, context) {
       const account = signedIn(context);
@@ -122,6 +122,13 @@ export default {
       const room = await findAccountRoom(account, { id });
       await removeRoomTag(account, room, tagId);
       return oneRoomView(account, room);
+    },
+    async sendWhatsappTemplate(_, { id, templateId, values, header_media_url }, context) {
+      const account = signedIn(context);
+      const room = await findAccountRoom(account, { id });
+      const message = await sendWhatsappTemplate(account.account_id, room, { templateId, values: values || [], headerMediaUrl: header_media_url });
+      await markReadAfterSending(account, message);
+      return messageView(message, room.chatRoomId || room.id, account.account_id);
     },
   },
   Query: {
@@ -159,17 +166,21 @@ export default {
       const account = signedIn(context);
       const room = await findAccountRoom(account, { id });
       const page = await listMessages(account, room, { first, before, after });
-      return { ...page, messages: page.messages.map(message => messageView(message, room.chatRoomId || room.id)) };
+      return { ...page, messages: page.messages.map(message => messageView(message, room.chatRoomId || room.id, account.account_id)) };
     },
     async customerTags(_, __, context) {
       return companyTags(signedIn(context));
+    },
+    async whatsappTemplates(_, { id }, context) {
+      const account = signedIn(context);
+      return listWhatsappTemplates(await findAccountRoom(account, { id }));
     },
     async messages(_, { conversationId, roomId }, { account, isAuth }) {
       withAuth(Boolean(isAuth || account));
       if (!account?.company_id) return [];
       const target = conversationId || roomId;
       const messages = await prisma.message.findMany({ where: visibleMessageWhere(account.company_id, target), include: { recipients: true }, orderBy: { createdAt: 'asc' } });
-      return messages.map(message => messageView(message, target));
+      return messages.map(message => messageView(message, target, account.account_id));
     },
   },
   Subscription: {

@@ -65,6 +65,13 @@ const ROOM_FIELDS = `
     lastMessageAt
     lastMessageInbound
     unreadCount
+    lastCustomerMessageAt
+    replyWindow {
+      state
+      closesAt
+      templateRequired
+      humanAgentAvailable
+    }
     createdAt
     updatedAt
 `;

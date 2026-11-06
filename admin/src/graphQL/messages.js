@@ -9,6 +9,7 @@ export const MESSAGE_FIELDS = `
     to_chat_room_id
     sentAt
     inbound
+    isMine
     delivery_error
     preview
     cursor
@@ -18,6 +19,45 @@ export const MESSAGE_FIELDS = `
 export const SEND_MESSAGE = gql`
 mutation SendMessage($messageInput: MessageInput) {
   appSendMessage(MessageInput: $messageInput) {
+    ${MESSAGE_FIELDS}
+  }
+}
+`;
+
+// The approved templates of a WhatsApp conversation's number, read from Meta.
+export const WHATSAPP_TEMPLATES = gql`
+query WhatsappTemplates($id: ID!) {
+  whatsappTemplates(id: $id) {
+    id
+    name
+    language
+    category
+    header_format
+    header_text
+    body_text
+    footer_text
+    buttons {
+      type
+      text
+      url
+      phone_number
+    }
+    variables {
+      key
+      component
+      name
+      label
+      example
+    }
+    supported
+    unsupported_reason
+  }
+}
+`;
+
+export const SEND_WHATSAPP_TEMPLATE = gql`
+mutation SendWhatsappTemplate($id: ID!, $templateId: ID!, $values: [WhatsappTemplateValue!], $headerMediaUrl: String) {
+  sendWhatsappTemplate(id: $id, templateId: $templateId, values: $values, header_media_url: $headerMediaUrl) {
     ${MESSAGE_FIELDS}
   }
 }

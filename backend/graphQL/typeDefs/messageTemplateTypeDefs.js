@@ -18,6 +18,8 @@ export default gql`
   }
   extend type Query {
     messageTemplates: [MessageTemplate!]!
+    "The company's templates, for any agent to insert into a reply."
+    quickReplies: [MessageTemplate!]!
   }
   extend type Mutation {
     createMessageTemplate(input: MessageTemplateInput!): MessageTemplate!

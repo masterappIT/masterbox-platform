@@ -47,8 +47,9 @@ export const replyParts = (platform, { text, attachment, sendType }) => {
  * The request body Meta's send API takes for one part of a reply.
  * @param {string} platform - fb, ig or whatsapp
  * @param {string} recipientId - the customer's id on the platform
+ * @param {{ messagingTag?: string }} [options] - Messenger and Instagram replies after the 24-hour window go with a tag, such as HUMAN_AGENT
  */
-export const metaPayload = (platform, recipientId, { text, attachment, sendType }) => {
+export const metaPayload = (platform, recipientId, { text, attachment, sendType }, { messagingTag } = {}) => {
   if (platform === 'whatsapp') {
     const base = { messaging_product: 'whatsapp', recipient_type: 'individual', to: recipientId };
     if (!attachment) return { ...base, type: 'text', text: { body: text } };
@@ -60,6 +61,7 @@ export const metaPayload = (platform, recipientId, { text, attachment, sendType 
     return { ...base, type: sendType, [sendType]: media };
   }
   const message = attachment ? { attachment: { type: sendType, payload: { url: attachment.payload.url } } } : { text };
+  if (messagingTag) return { recipient: { id: recipientId }, messaging_type: 'MESSAGE_TAG', tag: messagingTag, message };
   return { recipient: { id: recipientId }, messaging_type: 'RESPONSE', message };
 };
 

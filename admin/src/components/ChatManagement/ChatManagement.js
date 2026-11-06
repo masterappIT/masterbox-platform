@@ -1,133 +1,187 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { gql, NetworkStatus, useMutation, useQuery } from '@apollo/client';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useDispatch, useSelector, shallowEqual } from 'react-redux';
+import { useRouter } from 'next/router';
+import Conversations from '../Conversations/Conversations';
+import CustomerPanel from '../Messenger/CustomerPanel';
+import StatusMessage from '../Messenger/StatusMessage';
+import { customerOfRoom } from '../Messenger/ChatroomList';
+import {
+  getUserSubscribedChannels, selectChannels, selectChannelsStatus, loadInbox, loadMoreInbox, selectInbox,
+  openConversation, loadOlderMessages, selectMessages, selectMessagePaging, messagesKey, setOpenRoom,
+  markConversationRead, loadCustomerTags, selectCustomerTags, addConversationTag, removeConversationTag,
+  handleSendMessage, catchUpAfterReconnect,
+} from '../../redux/slices/messagesSlices';
+import { MessageFactory } from '../../utils/MessageFactory';
+import useSocketStatus from '../../utils/useSocketStatus';
 
-const ROOMS_QUERY = gql`query ChatManagementRooms { chatRooms { id title platform channel_id lastMessage updatedAt } }`;
-const MESSAGES_QUERY = gql`query ChatManagementMessages($roomId: ID) { messages(roomId: $roomId) { _id contents platform channel_id to_chat_room_id isMine sentAt } }`;
-const SEND_MESSAGE = gql`mutation ChatManagementSendMessage($messageInput: MessageInput) { appSendMessage(MessageInput: $messageInput) { _id contents platform channel_id to_chat_room_id sentAt } }`;
-
-const getName = (user) => `${user?.first_name || ''}${user?.last_name || ''}`.trim() || '未命名客戶';
-const messageText = (contents) => {
-  try {
-    const parsed = typeof contents === 'string' ? JSON.parse(contents) : contents;
-    return parsed?.text?.body || parsed?.text || parsed?.message || '';
-  } catch (error) {
-    return contents || '';
-  }
+const PLATFORM_NAMES = { fb: 'Facebook', ig: 'Instagram', whatsapp: 'WhatsApp', line: 'LINE', wechat: 'WeChat' };
+const NO_MESSAGES = [];
+const CONNECTION = {
+  connected: { label: '即時連線中', className: 'is-connected', hint: '新訊息會立即出現' },
+  connecting: { label: '連線中…', className: 'is-connecting', hint: '正在建立即時連線' },
+  disconnected: { label: '連線中斷，重新連線中…', className: 'is-disconnected', hint: '恢復連線後會自動補上這段期間的訊息' },
 };
 
+// The same inbox as the home page, in the compact Chat Box layout: one live list of every channel's conversations.
 export default function ChatManagement() {
+  const dispatch = useDispatch();
+  const router = useRouter();
+  const channels = useSelector(selectChannels);
+  const channelsStatus = useSelector(selectChannelsStatus);
+  const inbox = useSelector(selectInbox);
+  const messages = useSelector(selectMessages, shallowEqual);
+  const messagePaging = useSelector(selectMessagePaging);
+  const customerTags = useSelector(selectCustomerTags);
+  const connection = useSocketStatus();
   const [selectedRoom, setSelectedRoom] = useState(null);
-  const [draft, setDraft] = useState('');
-  const [localMessages, setLocalMessages] = useState([]);
-  const [lastUpdated, setLastUpdated] = useState(null);
+  const [isPanelShown, setIsPanelShown] = useState(false);
+  // Persisted statuses describe an earlier visit, so only trust them once this visit has asked.
+  const [requested, setRequested] = useState({ channels: false, inbox: false });
+  const hasChannels = channels.length > 0;
 
-  const roomsQuery = useQuery(ROOMS_QUERY, {
-    variables: {},
-    pollInterval: 15000,
-    notifyOnNetworkStatusChange: true,
-  });
-  const rooms = useMemo(() => roomsQuery.data?.chatRooms || [], [roomsQuery.data]);
+  const fetchChannels = () => {
+    setRequested((value) => ({ ...value, channels: true }));
+    dispatch(getUserSubscribedChannels());
+  };
+  const fetchInbox = () => {
+    setRequested((value) => ({ ...value, inbox: true }));
+    dispatch(loadInbox({}));
+  };
 
   useEffect(() => {
-    setSelectedRoom((current) => rooms.find((room) => room.id === current?.id) || rooms[0] || null);
-  }, [rooms]);
+    fetchChannels();
+    dispatch(loadCustomerTags());
+    return () => { dispatch(setOpenRoom(null)); };
+  }, []);
 
-  const messagesQuery = useQuery(MESSAGES_QUERY, {
-    skip: !selectedRoom,
-    variables: { roomId: selectedRoom?.title || selectedRoom?.id },
-    pollInterval: 5000,
-    notifyOnNetworkStatusChange: true,
-    onCompleted: () => setLastUpdated(new Date()),
+  useEffect(() => { if (hasChannels) fetchInbox(); }, [hasChannels]);
+
+  // The home page may have left a filter on the shared list; this page shows every conversation.
+  const rooms = Object.keys(inbox.filter || {}).length ? [] : inbox.rooms;
+  const currentRoom = useMemo(() => (selectedRoom && (rooms.find(({ id }) => id === selectedRoom.id) || selectedRoom)) || null, [selectedRoom, rooms]);
+  const currentChannel = currentRoom ? (channels.find(({ account }) => account === currentRoom.channel_id) || { account: currentRoom.channel_id, platform: currentRoom.platform }) : null;
+
+  const selectRoom = (room) => {
+    if (!room?.id) return;
+    setSelectedRoom(room);
+    dispatch(openConversation(room));
+  };
+
+  // New messages in the open conversation count as read while it is on screen, as on the home page.
+  const openId = currentRoom?.id || null;
+  useEffect(() => {
+    dispatch(setOpenRoom(currentRoom));
+    if (openId) dispatch(markConversationRead({ id: openId }));
+  }, [openId]);
+  const openIdRef = useRef(null);
+  openIdRef.current = openId;
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible' && openIdRef.current) dispatch(markConversationRead({ id: openIdRef.current })); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, []);
+
+  const key = currentRoom ? messagesKey(currentRoom) : null;
+  const conversation = (key && messages[key]) || NO_MESSAGES;
+  const paging = (key && messagePaging[key]) || {};
+
+  function handlePushMessage(toChatRoomId, message, recipient) {
+    const data = new MessageFactory(toChatRoomId, currentRoom.platform, currentRoom.channel_id).createContents({ message, recipient });
+    return dispatch(handleSendMessage(data)).unwrap();
+  }
+
+  const changeTags = (action) => dispatch(action).unwrap().then((room) => {
+    setSelectedRoom((selected) => (selected?.id === room.id ? { ...selected, tags: room.tags } : selected));
   });
-  const serverMessages = useMemo(() => messagesQuery.data?.messages || [], [messagesQuery.data]);
-  const messages = useMemo(
-    () => [...serverMessages, ...localMessages.filter((item) => item.roomId === selectedRoom?.id)],
-    [serverMessages, localMessages, selectedRoom],
-  );
-  const [sendMessage, sendState] = useMutation(SEND_MESSAGE);
-  const customer = null;
-  const isRefreshing = messagesQuery.networkStatus === NetworkStatus.refetch || messagesQuery.networkStatus === NetworkStatus.poll;
 
-  const refreshConversation = async () => {
-    if (!selectedRoom || isRefreshing) return;
-    await Promise.all([messagesQuery.refetch(), roomsQuery.refetch()]);
-  };
-
-  const submit = async (event) => {
-    event.preventDefault();
-    const text = draft.trim();
-    if (!text || !selectedRoom || sendState.loading) return;
-    const optimisticId = `local-${Date.now()}`;
-    const input = {
-      to_chat_room_id: selectedRoom.id,
-      platform: selectedRoom.platform,
-      channel_id: selectedRoom.channel_id,
-      contents: text,
-    };
-    setDraft('');
-    setLocalMessages((items) => [...items, {
-      _id: optimisticId,
-      roomId: selectedRoom.id,
-      sender: selectedRoom.channel_id,
-      contents: text,
-      sentAt: new Date().toISOString(),
-    }]);
-    try {
-      await sendMessage({ variables: { messageInput: input } });
-      await messagesQuery.refetch();
-      setLocalMessages((items) => items.filter((item) => item._id !== optimisticId));
-    } catch (error) {
-      setLocalMessages((items) => items.filter((item) => item._id !== optimisticId));
-      setDraft(text);
+  const status = (() => {
+    if (!hasChannels) {
+      if (!requested.channels || ['idle', 'loading'].includes(channelsStatus)) return 'loading';
+      return channelsStatus === 'failed' ? 'failed' : 'no_channels';
     }
-  };
+    if (rooms.length) return 'ready';
+    if (!requested.inbox || ['idle', 'loading'].includes(inbox.status)) return 'loading';
+    return inbox.status === 'failed' ? 'failed' : 'no_rooms';
+  })();
+  const statusMessage = {
+    loading: { title: '正在讀取對話…' },
+    failed: { title: '無法載入對話', description: '請檢查網路連線後重試。', action: { title: '重試', onClick: hasChannels ? fetchInbox : fetchChannels } },
+    no_channels: { title: '還沒有串接任何頻道', description: '串接 Facebook、Instagram 或 WhatsApp 後，客戶的訊息會出現在這裡。', action: { title: '前往社群平台管理', onClick: () => router.push('/channels-management') } },
+    no_rooms: { title: '目前沒有對話', description: '客戶傳訊息給你的頻道後，對話會立即出現在這裡。' },
+  }[status];
 
-  if (roomsQuery.loading && !rooms.length) return <section className="chat-management-state"><strong>載入對話管理</strong><span>正在取得對話…</span></section>;
-  if (roomsQuery.error) return <section className="chat-management-state chat-management-state-error"><strong>無法載入對話</strong><span>{roomsQuery.error.message}</span><button type="button" onClick={() => roomsQuery.refetch()}>重試</button></section>;
+  const live = CONNECTION[connection] || CONNECTION.connecting;
+  const refresh = () => {
+    if (hasChannels) dispatch(catchUpAfterReconnect());
+    else fetchChannels();
+  };
 
   return (
     <main className="chat-management">
       <header className="chat-management-header">
         <div><p className="chat-management-eyebrow">MASTERBOX</p><h1>Chat Box</h1><span>集中管理各社群頻道的客戶訊息</span></div>
-        <span className="chat-management-count">{rooms.length} 個對話</span>
+        <div className="chat-management-header-side">
+          <span className={`chat-management-status ${live.className}`} title={live.hint} role="status">● {live.label}</span>
+          <button type="button" className="chat-management-refresh" onClick={refresh} disabled={inbox.status === 'loading'}>重新整理</button>
+          <span className="chat-management-count">{inbox.hasMore ? `${rooms.length}+` : rooms.length} 個對話</span>
+        </div>
       </header>
       <div className="chat-management-grid">
         <aside className="chat-management-sidebar">
-          <label htmlFor="channel-select">對話</label>
-          <div className="chat-management-list">
-            {rooms.length ? rooms.map((room) => (
-              <button type="button" className={`chat-management-room ${selectedRoom?.id === room.id ? 'is-selected' : ''}`} key={room.id} onClick={() => { setSelectedRoom(room); setLocalMessages([]); }}>
-                <span className="chat-management-avatar">{getName({ first_name: room.title }).slice(0, 1)}</span>
-                <span><strong>{room.title || '未命名對話'}</strong><small>{room.platform} · {room.id}</small></span>
-              </button>
-            )) : <p className="chat-management-muted">目前沒有對話。</p>}
+          <label>對話</label>
+          <div className="chat-management-list" onScroll={(event) => {
+            const list = event.currentTarget;
+            if (inbox.hasMore && !inbox.loadingMore && list.scrollHeight - list.scrollTop - list.clientHeight < 120) dispatch(loadMoreInbox());
+          }}>
+            {status !== 'ready' ? <StatusMessage {...statusMessage} compact /> : rooms.map((room) => {
+              const customer = customerOfRoom(room);
+              const name = customer.name || '未命名客戶';
+              return (
+                <button type="button" className={`chat-management-room ${currentRoom?.id === room.id ? 'is-selected' : ''}`} key={room.id} onClick={() => selectRoom(room)}>
+                  <span className="chat-management-avatar">{customer.avatar ? <img src={customer.avatar} alt="" /> : name.slice(0, 1)}</span>
+                  <span className="chat-management-room-text">
+                    <strong>{name}</strong>
+                    <small>{PLATFORM_NAMES[room.platform] || room.platform}{room.channel_name ? ` · ${room.channel_name}` : ''}</small>
+                    {room.lastMessage && <small className="chat-management-room-last">{room.lastMessageInbound === false ? '回覆：' : ''}{room.lastMessage}</small>}
+                  </span>
+                  {room.unreadCount > 0 && <span className="chat-management-unread" aria-label={`${room.unreadCount} 則未讀`}>{room.unreadCount > 99 ? '99+' : room.unreadCount}</span>}
+                </button>
+              );
+            })}
+            {inbox.loadingMore && <p className="chat-management-muted">載入更多對話…</p>}
+            {inbox.loadMoreFailed && <button type="button" className="chat-management-more" onClick={() => dispatch(loadMoreInbox())}>載入失敗，重試</button>}
           </div>
         </aside>
         <section className="chat-management-conversation">
-          {selectedRoom ? <>
-            <div className="chat-management-conversation-header">
-              <div><h2>{selectedRoom.title || '未命名對話'}</h2><span>{selectedRoom.platform} · {selectedRoom.id}</span></div>
-              <div className="chat-management-actions">
-                <button type="button" className="chat-management-icon-action" disabled title="語音通話即將推出" aria-label="語音通話即將推出">☎</button>
-                <button type="button" className="chat-management-icon-action" disabled title="視訊通話即將推出" aria-label="視訊通話即將推出">▣</button>
-                <button type="button" className="chat-management-refresh" onClick={refreshConversation} disabled={isRefreshing}>{isRefreshing ? '更新中…' : '重新整理'}</button>
-                <span className="chat-management-status">● 已連線</span>
-              </div>
+          {currentRoom ? (
+            <div className="messenger chat-management-room-view">
+              <Conversations
+                key={currentRoom.id}
+                isCustomerSideInfo={isPanelShown}
+                setIsCustomerSideInfo={setIsPanelShown}
+                componentHandler={{ current: 'conversations' }}
+                currentComponent="conversations"
+                isMobile={false}
+                messages={conversation}
+                selectedChatroomID={currentRoom.chat_room_id}
+                currentChannel={currentChannel}
+                currentChatroom={currentRoom}
+                channels={channels}
+                handlePushMessage={handlePushMessage}
+                onLoadOlder={() => dispatch(loadOlderMessages(currentRoom))}
+                hasOlder={Boolean(paging.hasOlder)}
+                loadingOlder={Boolean(paging.loadingOlder)}
+              />
+              <CustomerPanel
+                room={currentRoom}
+                isShown={isPanelShown}
+                onClose={() => setIsPanelShown(false)}
+                tagSuggestions={customerTags}
+                onAddTag={(name) => changeTags(addConversationTag({ id: currentRoom.id, name }))}
+                onRemoveTag={(tagId) => changeTags(removeConversationTag({ id: currentRoom.id, tagId }))}
+              />
             </div>
-            <div className="chat-management-security" aria-label="對話安全設定">
-              <span><strong>加密</strong><small>傳輸層加密</small></span>
-              <span><strong>消失訊息</strong><small>未啟用</small></span>
-              <span className="chat-management-sync"><strong>自動更新</strong><small>{lastUpdated ? `最近 ${lastUpdated.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })}` : '每 5 秒'}</small></span>
-            </div>
-            <div className="chat-management-messages">
-              {messagesQuery.loading && !messages.length ? <p className="chat-management-muted">載入訊息中…</p> : messagesQuery.error ? <p className="chat-management-error">無法載入訊息。請重試。</p> : messages.length ? messages.map((message) => {
-                const mine = message.isMine;
-                return <div className={`chat-management-message ${mine ? 'is-mine' : ''}`} key={message._id || `${message.sentAt}-${message.sender}`}><p>{messageText(message.contents)}</p><time>{message.sentAt ? new Date(message.sentAt).toLocaleString('zh-TW', { hour: '2-digit', minute: '2-digit' }) : ''}</time></div>;
-              }) : <p className="chat-management-muted">尚未有訊息，開始一段對話吧。</p>}
-            </div>
-            <form className="chat-management-compose" onSubmit={submit}><input aria-label="訊息內容" value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="輸入訊息…" disabled={sendState.loading} /><button type="submit" disabled={!draft.trim() || sendState.loading}>{sendState.loading ? '傳送中…' : '發送'}</button></form>
-            {sendState.error && <p className="chat-management-error chat-management-send-error">訊息傳送失敗：{sendState.error.message}</p>}
-          </> : <div className="chat-management-empty"><h2>選擇一個對話</h2><p>從左側選擇客戶，即可查看訊息並回覆。</p></div>}
+          ) : <div className="chat-management-empty"><h2>選擇一個對話</h2><p>從左側選擇客戶，即可查看訊息並回覆。</p></div>}
         </section>
       </div>
     </main>

@@ -15,7 +15,11 @@ const nextConfig = {
     GRAPHQL_WS_CONNECTION_PRODUCTION: process.env.GRAPHQL_WS_CONNECTION_PRODUCTION,
     API_CONNECTION_DEV: process.env.API_CONNECTION_DEV || 'http://localhost:4000',
     API_CONNECTION_PRODUCTION: process.env.API_CONNECTION_PRODUCTION,
-    NEXT_PUBLIC_ENABLE_DEV_BYPASS: process.env.NEXT_PUBLIC_ENABLE_DEV_BYPASS || 'false',  }
+    NEXT_PUBLIC_ENABLE_DEV_BYPASS: process.env.NEXT_PUBLIC_ENABLE_DEV_BYPASS || 'false',  },
+  // /messenger was a second copy of the inbox; bookmarks to it, with any ?room=, open the inbox at /.
+  async redirects() {
+    return [{ source: '/messenger', destination: '/', permanent: false }]
+  },
 }
 
 
