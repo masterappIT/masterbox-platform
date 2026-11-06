@@ -6,6 +6,14 @@ import 'package:masterbox_flutter/services/graphql_service.dart';
 
 import 'support/fake_backend.dart';
 
+const uploaded = UploadedFile(
+  url: 'https://api.example/files/a.png',
+  filename: 'a.png',
+  mimeType: 'image/png',
+  size: 1,
+  kind: 'image',
+);
+
 void main() {
   test('sends the token exactly as the backend expects it', () async {
     final backend = FakeBackend({
@@ -193,16 +201,44 @@ void main() {
       });
     });
 
-    test('attachments stay in MasterBox', () async {
+    test(
+      'sends an uploaded file to the customer, as the admin site does',
+      () async {
+        final backend = okBackend();
+        await backend.service().sendMessage(
+          conversation: ChatConversation.fromJson(roomJson()),
+          contents: '看這個',
+          attachment: uploaded,
+        );
+        final input = inputOf(backend);
+        expect(input['platform'], 'fb');
+        final message = jsonDecode(input['contents'] as String)['message'];
+        expect(message['text'], '看這個');
+        expect(message['attachments'], [
+          {
+            'type': 'image',
+            'payload': {'url': 'https://api.example/files/a.png'},
+            'filename': 'a.png',
+            'mime_type': 'image/png',
+            'size': 1,
+          },
+        ]);
+      },
+    );
+
+    test('a MasterBox room keeps the file in its own record', () async {
       final backend = okBackend();
       await backend.service().sendMessage(
-        conversation: ChatConversation.fromJson(roomJson()),
+        conversation: const ChatConversation(
+          id: 'demo',
+          title: 'demo',
+          lastMessage: '',
+        ),
         contents: '看這個',
-        attachment: const {'name': 'a.png', 'size': 1, 'type': 'file'},
+        attachment: uploaded,
       );
       final input = inputOf(backend);
       expect(input['platform'], 'app');
-      expect(input['to_chat_room_id'], 'room-row-1');
       expect(
         jsonDecode(input['contents'] as String)['attachments'],
         hasLength(1),
@@ -243,15 +279,35 @@ void main() {
     });
   });
 
-  test('reads messages by the room id they are stored under', () async {
-    final backend = FakeBackend({
-      'Messages': {'messages': <Object>[]},
-    });
-    await backend.service().fetchMessages('psid-1');
-    final request = backend.requests.single;
-    expect(request.variables, {'roomId': 'psid-1'});
-    expect(request.query, contains('messages(roomId: \$roomId)'));
-  });
+  test(
+    'reads a page of messages by the conversation, older ones by cursor',
+    () async {
+      final backend = FakeBackend({
+        'MessagePage': {
+          'messagePage': {
+            'messages': [
+              {'_id': 'm1', 'contents': '嗨', 'cursor': 'c1', 'inbound': true},
+            ],
+            'hasOlder': true,
+            'hasNewer': false,
+          },
+        },
+      });
+      final page = await backend.service().fetchMessagePage(
+        ChatConversation.fromJson(roomJson()),
+        before: 'c9',
+      );
+      final request = backend.requests.single;
+      expect(request.variables, {
+        'id': 'room-row-1',
+        'first': 30,
+        'before': 'c9',
+      });
+      expect(page.hasOlder, isTrue);
+      expect(page.messages.single.cursor, 'c1');
+      expect(page.messages.single.isMine, isFalse);
+    },
+  );
 
   test('sorts conversations newest first', () async {
     final backend = FakeBackend({
@@ -278,9 +334,13 @@ void main() {
 
     final record = ok();
     await record.service().sendMessage(
-      conversation: room,
+      conversation: const ChatConversation(
+        id: 'demo',
+        title: 'demo',
+        lastMessage: '',
+      ),
       contents: '紀錄',
-      attachment: const {'name': 'a.png', 'size': 1, 'type': 'file'},
+      attachment: uploaded,
       disappearingSeconds: 30,
     );
     expect(input(record)['disappearing_after_seconds'], 30);

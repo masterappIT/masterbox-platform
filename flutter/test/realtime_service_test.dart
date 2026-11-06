@@ -52,9 +52,13 @@ void main() {
 
       socket.receive({'type': 'connection_ack'});
       await settle();
-      final subscribe = socket.fakeSink.sent.last;
-      expect(subscribe['type'], 'subscribe');
-      expect(subscribe['payload']['query'], contains('sendMessage'));
+      final subscriptions = socket.fakeSink.sent
+          .where((message) => message['type'] == 'subscribe')
+          .map((message) => message['payload']['query'] as String)
+          .toList();
+      expect(subscriptions, hasLength(2));
+      expect(subscriptions[0], contains('sendMessage'));
+      expect(subscriptions[1], contains('chatRoomUpdated'));
 
       socket.receive({
         'id': '1',
@@ -107,4 +111,48 @@ void main() {
     await settle();
     expect(sockets, hasLength(1));
   });
+
+  test('passes on changed conversations', () async {
+    final realtime = service();
+    final rooms = <Map<String, dynamic>>[];
+    realtime.roomUpdates.listen(rooms.add);
+    realtime.start();
+    sockets.single
+      ..receive({'type': 'connection_ack'})
+      ..receive({
+        'id': '2',
+        'type': 'next',
+        'payload': {
+          'data': {
+            'chatRoomUpdated': {'id': 'room-1'},
+          },
+        },
+      });
+    await settle();
+    expect(rooms.single['id'], 'room-1');
+    realtime.stop();
+  });
+
+  test(
+    'says when it is back after dropping, so missed messages are fetched',
+    () async {
+      final realtime = service();
+      var reconnects = 0;
+      realtime.reconnects.listen((_) => reconnects++);
+      realtime.start();
+      sockets.single.receive({'type': 'connection_ack'});
+      await settle();
+      expect(realtime.isConnected, isTrue);
+      expect(reconnects, 0, reason: 'the first connection is not a reconnect');
+
+      sockets.single.drop();
+      await settle();
+      expect(realtime.isConnected, isFalse);
+      sockets.last.receive({'type': 'connection_ack'});
+      await settle();
+      expect(sockets, hasLength(2));
+      expect(reconnects, 1);
+      realtime.stop();
+    },
+  );
 }

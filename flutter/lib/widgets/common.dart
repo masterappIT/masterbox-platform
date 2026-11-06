@@ -222,12 +222,20 @@ class ConversationTile extends StatelessWidget {
     required this.onTap,
     this.avatarUrl,
     this.platform,
+    this.unreadCount = 0,
+    this.detail,
     super.key,
   });
   final String name, preview, time;
   final VoidCallback onTap;
   final String? avatarUrl;
   final String? platform;
+
+  /// Customer messages the account hasn't read; shown as a badge.
+  final int unreadCount;
+
+  /// A second line, such as the channel and the agent.
+  final String? detail;
   @override
   Widget build(BuildContext context) => Card(
     margin: const EdgeInsets.only(bottom: 8),
@@ -240,29 +248,89 @@ class ConversationTile extends StatelessWidget {
         name,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontWeight: FontWeight.w600),
+        style: TextStyle(
+          fontWeight: unreadCount > 0 ? FontWeight.w800 : FontWeight.w600,
+        ),
       ),
       subtitle: Padding(
         padding: const EdgeInsets.only(top: 4),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (platform != null) ...[
-              Icon(platformIcon(platform), size: 14, color: primaryColor),
-              const SizedBox(width: 4),
-            ],
-            Expanded(
-              child: Text(
-                preview,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+            Row(
+              children: [
+                if (platform != null) ...[
+                  Icon(platformIcon(platform), size: 14, color: primaryColor),
+                  const SizedBox(width: 4),
+                ],
+                Expanded(
+                  child: Text(
+                    preview,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: unreadCount > 0
+                        ? TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface,
+                            fontWeight: FontWeight.w600,
+                          )
+                        : null,
+                  ),
+                ),
+              ],
             ),
+            if (detail != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  detail!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+              ),
           ],
         ),
       ),
-      trailing: Text(
-        time,
-        style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+      trailing: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Text(
+            time,
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          ),
+          if (unreadCount > 0) ...[
+            const SizedBox(height: 4),
+            UnreadBadge(count: unreadCount),
+          ],
+        ],
+      ),
+    ),
+  );
+}
+
+class UnreadBadge extends StatelessWidget {
+  const UnreadBadge({required this.count, super.key});
+  final int count;
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: '$count 則未讀',
+    excludeSemantics: true,
+    child: Container(
+      constraints: const BoxConstraints(minWidth: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.redAccent,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        count > 99 ? '99+' : '$count',
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     ),
   );

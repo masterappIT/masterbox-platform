@@ -39,8 +39,16 @@ class ChatConversation {
     this.chatRoomId,
     this.platform,
     this.channelId,
+    this.channelName,
     this.customer,
     this.updatedAt,
+    this.lastMessageAt,
+    this.lastMessageInbound,
+    this.unreadCount = 0,
+    this.lastCustomerMessageAt,
+    this.humanAgentAvailable = false,
+    this.assignee,
+    this.tags = const [],
   });
   final String id;
   final String title;
@@ -50,18 +58,75 @@ class ChatConversation {
   final String? chatRoomId;
   final String? platform;
   final String? channelId;
+  final String? channelName;
   final RoomCustomer? customer;
   final DateTime? updatedAt;
+  final DateTime? lastMessageAt;
+  final bool? lastMessageInbound;
+
+  /// Customer messages the signed-in account hasn't read.
+  final int unreadCount;
+
+  /// What Meta's reply windows count from.
+  final DateTime? lastCustomerMessageAt;
+
+  /// Meta approved the 7-day human agent window, as the server says.
+  final bool humanAgentAvailable;
+
+  /// The agent handling the conversation; null while it is unassigned.
+  final RoomAgent? assignee;
+  final List<String> tags;
 
   /// Messages are stored against the platform's room id, not the row id.
   String get messageRoomId => chatRoomId?.isNotEmpty == true ? chatRoomId! : id;
 
+  /// Whether a live message belongs here: messages carry the platform's room id
+  /// and the channel, and the same id can exist in two channels.
+  bool holds(ChatMessage message) =>
+      message.roomId == messageRoomId &&
+      (message.channelId == null ||
+          channelId == null ||
+          message.channelId == channelId);
+
+  ChatConversation copyWith({
+    String? lastMessage,
+    DateTime? updatedAt,
+    DateTime? lastMessageAt,
+    bool? lastMessageInbound,
+    int? unreadCount,
+    DateTime? lastCustomerMessageAt,
+  }) => ChatConversation(
+    id: id,
+    title: title,
+    lastMessage: lastMessage ?? this.lastMessage,
+    encryptionMode: encryptionMode,
+    disappearingMessageSeconds: disappearingMessageSeconds,
+    chatRoomId: chatRoomId,
+    platform: platform,
+    channelId: channelId,
+    channelName: channelName,
+    customer: customer,
+    updatedAt: updatedAt ?? this.updatedAt,
+    lastMessageAt: lastMessageAt ?? this.lastMessageAt,
+    lastMessageInbound: lastMessageInbound ?? this.lastMessageInbound,
+    unreadCount: unreadCount ?? this.unreadCount,
+    lastCustomerMessageAt: lastCustomerMessageAt ?? this.lastCustomerMessageAt,
+    humanAgentAvailable: humanAgentAvailable,
+    assignee: assignee,
+    tags: tags,
+  );
+
   factory ChatConversation.fromJson(Map<String, dynamic> json) {
     final channelId = json['channel_id'] as String?;
-    final customer = _customerFrom(json['users'], channelId);
+    final customer =
+        _customerFromField(json['customer']) ??
+        _customerFrom(json['users'], channelId);
     final platform = json['platform'] as String?;
     final fallbackTitle =
         '${json['title'] ?? json['name'] ?? json['chat_room_name'] ?? '聊天室'}';
+    final window = json['replyWindow'];
+    final assignee = json['assignee'];
+    final tags = json['tags'];
     return ChatConversation(
       id: '${json['id'] ?? json['_id'] ?? json['chat_room_id'] ?? ''}',
       title: customer?.name.isNotEmpty == true
@@ -79,10 +144,51 @@ class ChatConversation {
       chatRoomId: json['chat_room_id'] as String?,
       platform: platform,
       channelId: channelId,
+      channelName: json['channel_name'] as String?,
       customer: customer,
       updatedAt: parseServerDate(json['updatedAt']),
+      lastMessageAt: parseServerDate(json['lastMessageAt']),
+      lastMessageInbound: json['lastMessageInbound'] as bool?,
+      unreadCount: (json['unreadCount'] as num?)?.toInt() ?? 0,
+      lastCustomerMessageAt: parseServerDate(json['lastCustomerMessageAt']),
+      humanAgentAvailable:
+          window is Map && window['humanAgentAvailable'] == true,
+      assignee: assignee is Map<String, dynamic>
+          ? RoomAgent.fromJson(assignee)
+          : null,
+      tags: tags is List
+          ? tags
+                .whereType<Map>()
+                .map((tag) => '${tag['name'] ?? ''}')
+                .where((name) => name.isNotEmpty)
+                .toList()
+          : const [],
     );
   }
+}
+
+/// An agent of the company, as colleagues see them.
+class RoomAgent {
+  const RoomAgent({required this.id, required this.name});
+  final String id;
+  final String name;
+
+  factory RoomAgent.fromJson(Map<String, dynamic> json) => RoomAgent(
+    id: '${json['id'] ?? ''}',
+    name: '${json['name'] ?? json['email'] ?? ''}',
+  );
+}
+
+/// The server's own reading of the customer, when it sends one.
+RoomCustomer? _customerFromField(Object? value) {
+  if (value is! Map) return null;
+  final id = value['id'];
+  if (id is! String || id.isEmpty) return null;
+  return RoomCustomer(
+    id: id,
+    name: '${value['name'] ?? ''}'.trim(),
+    avatarUrl: value['avatar'] as String?,
+  );
 }
 
 /// The room's users include the channel itself; the customer is the other one.
@@ -232,8 +338,15 @@ class ChatMessage {
     this.deliveryError,
     this.sendError,
     this.roomId,
+    this.channelId,
+    this.platform,
     this.disappearingSeconds,
     this.readAt,
+    this.cursor,
+    this.preview,
+    this.inbound = false,
+    this.pending,
+    this.templateRequired = false,
   });
   final String id;
   final String text;
@@ -250,8 +363,27 @@ class ChatMessage {
   /// Why this device could not send the message.
   final String? sendError;
   final String? roomId;
+  final String? channelId;
+  final String? platform;
   final int? disappearingSeconds;
   final DateTime? readAt;
+
+  /// Where this message is in its conversation, for paging and catching up.
+  final String? cursor;
+
+  /// One line for the conversation list, such as the text or [圖片].
+  final String? preview;
+
+  /// From the customer, rather than from the team.
+  final bool inbound;
+
+  /// The file this device is sending with the message, until the server has it.
+  final PendingAttachment? pending;
+
+  /// The send failed because WhatsApp now only takes an approved template.
+  final bool templateRequired;
+
+  bool get isLocal => id.startsWith('local-');
 
   /// The countdown starts once someone has been shown the message.
   bool get needsViewedMark => disappearingSeconds != null && readAt == null;
@@ -261,9 +393,13 @@ class ChatMessage {
     bool? sending,
     String? id,
     String? sendError,
+    String? text,
+    PendingAttachment? pending,
+    bool clearPending = false,
+    bool? templateRequired,
   }) => ChatMessage(
     id: id ?? this.id,
-    text: text,
+    text: text ?? this.text,
     sentAt: sentAt,
     isMine: isMine,
     failed: failed ?? this.failed,
@@ -273,8 +409,15 @@ class ChatMessage {
     deliveryError: deliveryError,
     sendError: sendError,
     roomId: roomId,
+    channelId: channelId,
+    platform: platform,
     disappearingSeconds: disappearingSeconds,
     readAt: readAt,
+    cursor: cursor,
+    preview: preview,
+    inbound: inbound,
+    pending: clearPending ? null : (pending ?? this.pending),
+    templateRequired: templateRequired ?? this.templateRequired,
   );
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
@@ -312,18 +455,207 @@ class ChatMessage {
     }
     final inbound = json['inbound'];
     return ChatMessage(
-      id: '${json['id'] ?? json['_id'] ?? ''}',
+      id: '${json['_id'] ?? json['id'] ?? ''}',
       text: text,
       sentAt: parseServerDate(json['sentAt']) ?? DateTime.now(),
+      // The team's replies, whoever sent them, sit on the right as on the admin site.
       isMine: inbound is bool ? !inbound : json['isMine'] == true,
       attachments: attachments,
       deliveryError: json['delivery_error'] as String?,
       roomId: json['to_chat_room_id'] as String?,
+      channelId: json['channel_id'] as String?,
+      platform: json['platform'] as String?,
       disappearingSeconds: json['disappearing_after_seconds'] as int?,
       readAt: parseServerDate(json['readAt']),
+      cursor: json['cursor'] as String?,
+      preview: json['preview'] as String?,
+      inbound: inbound == true,
     );
   }
 }
+
+/// A file picked for a reply: read into memory so it can be uploaded again if
+/// the send fails, and checked against the platform before anything is sent.
+class PendingAttachment {
+  const PendingAttachment({
+    required this.name,
+    required this.bytes,
+    required this.mime,
+    required this.kind,
+    this.uploaded,
+  });
+  final String name;
+  final List<int> bytes;
+  final String mime;
+
+  /// image, video, audio or file
+  final String kind;
+
+  /// Set once it is on the server, so a retry doesn't upload it twice.
+  final UploadedFile? uploaded;
+
+  int get size => bytes.length;
+
+  PendingAttachment withUpload(UploadedFile file) => PendingAttachment(
+    name: name,
+    bytes: bytes,
+    mime: mime,
+    kind: kind,
+    uploaded: file,
+  );
+}
+
+/// A file the server stored, as POST /api/uploads answers.
+class UploadedFile {
+  const UploadedFile({
+    required this.url,
+    required this.filename,
+    required this.mimeType,
+    required this.size,
+    required this.kind,
+  });
+  final String url;
+  final String filename;
+  final String mimeType;
+  final int size;
+  final String kind;
+
+  factory UploadedFile.fromJson(Map<String, dynamic> json) => UploadedFile(
+    url: '${json['url'] ?? ''}',
+    filename: '${json['filename'] ?? ''}',
+    mimeType: '${json['mime_type'] ?? ''}',
+    size: (json['size'] as num?)?.toInt() ?? 0,
+    kind: '${json['kind'] ?? 'file'}',
+  );
+
+  /// How it appears in a message's contents, as the admin site sends it.
+  Map<String, dynamic> toMessageAttachment() => {
+    'type': kind,
+    'payload': {'url': url},
+    'filename': filename,
+    'mime_type': mimeType,
+    'size': size,
+  };
+}
+
+class WhatsappTemplateVariable {
+  const WhatsappTemplateVariable({
+    required this.key,
+    required this.component,
+    required this.name,
+    required this.label,
+    this.example,
+  });
+
+  /// Sent back as the key of a value, such as body:1 or header:media.
+  final String key;
+
+  /// header, header_media, body, button or coupon.
+  final String component;
+  final String name;
+  final String label;
+  final String? example;
+
+  factory WhatsappTemplateVariable.fromJson(Map<String, dynamic> json) =>
+      WhatsappTemplateVariable(
+        key: '${json['key'] ?? ''}',
+        component: '${json['component'] ?? ''}',
+        name: '${json['name'] ?? ''}',
+        label: '${json['label'] ?? ''}',
+        example: json['example'] as String?,
+      );
+}
+
+/// An approved WhatsApp template of the conversation's number.
+class WhatsappTemplate {
+  const WhatsappTemplate({
+    required this.id,
+    required this.name,
+    required this.language,
+    required this.bodyText,
+    required this.supported,
+    this.category,
+    this.headerFormat,
+    this.headerText,
+    this.footerText,
+    this.buttons = const [],
+    this.variables = const [],
+    this.unsupportedReason,
+  });
+  final String id;
+  final String name;
+  final String language;
+  final String? category;
+
+  /// TEXT, IMAGE, VIDEO, DOCUMENT or LOCATION; null without a header.
+  final String? headerFormat;
+  final String? headerText;
+  final String bodyText;
+  final String? footerText;
+  final List<String> buttons;
+  final List<WhatsappTemplateVariable> variables;
+  final bool supported;
+  final String? unsupportedReason;
+
+  WhatsappTemplateVariable? get mediaVariable =>
+      variables.where((v) => v.component == 'header_media').firstOrNull;
+  List<WhatsappTemplateVariable> get textVariables =>
+      variables.where((v) => v.component != 'header_media').toList();
+
+  factory WhatsappTemplate.fromJson(Map<String, dynamic> json) {
+    final buttons = json['buttons'];
+    final variables = json['variables'];
+    return WhatsappTemplate(
+      id: '${json['id'] ?? ''}',
+      name: '${json['name'] ?? ''}',
+      language: '${json['language'] ?? ''}',
+      category: json['category'] as String?,
+      headerFormat: json['header_format'] as String?,
+      headerText: json['header_text'] as String?,
+      bodyText: '${json['body_text'] ?? ''}',
+      footerText: json['footer_text'] as String?,
+      buttons: buttons is List
+          ? buttons
+                .whereType<Map>()
+                .map(
+                  (b) =>
+                      '${b['text'] ?? (b['type'] == 'COPY_CODE' ? '複製優惠碼' : b['type'] ?? '')}',
+                )
+                .toList()
+          : const [],
+      variables: variables is List
+          ? variables
+                .whereType<Map<String, dynamic>>()
+                .map(WhatsappTemplateVariable.fromJson)
+                .toList()
+          : const [],
+      supported: json['supported'] != false,
+      unsupportedReason: json['unsupported_reason'] as String?,
+    );
+  }
+}
+
+const whatsappTemplateCategories = {
+  'MARKETING': '行銷',
+  'UTILITY': '交易通知',
+  'AUTHENTICATION': '驗證碼',
+};
+
+final _placeholder = RegExp(r'\{\{\s*([A-Za-z0-9_]+)\s*\}\}');
+
+/// The template text with what has been filled in; blanks stay as {{1}}.
+String fillTemplateText(
+  String text,
+  String component,
+  Map<String, String> values,
+) => text.replaceAllMapped(_placeholder, (match) {
+  final value = values['$component:${match.group(1)}']?.trim();
+  return value?.isNotEmpty == true ? value! : match.group(0)!;
+});
+
+/// A template's messages, inserted into a reply as one quick reply.
+String quickReplyText(MessageTemplate template) =>
+    template.messages.join('\n\n');
 
 // ---- Admin features ----
 

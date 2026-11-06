@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:masterbox_flutter/main.dart';
 import 'package:masterbox_flutter/models/app_models.dart';
 import 'package:masterbox_flutter/pages/channels_page.dart';
 import 'package:masterbox_flutter/pages/company_page.dart';
+import 'package:masterbox_flutter/pages/conversation_page.dart';
 import 'package:masterbox_flutter/pages/overview_page.dart';
 import 'package:masterbox_flutter/pages/templates_page.dart';
 import 'package:masterbox_flutter/pages/users_page.dart';
@@ -12,6 +14,31 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'support/fake_backend.dart';
 
 Widget _app(Widget page) => MaterialApp(home: page);
+
+final _myRooms = [
+  roomJson(),
+  roomJson(
+    id: 'room-row-2',
+    chatRoomId: 'psid-2',
+    platform: 'ig',
+    channelId: 'channel-2',
+    customerId: 'customer-2',
+    firstName: '阿明',
+    lastName: null,
+  ),
+];
+
+/// A page of messages, as messagePage answers.
+Map<String, Object?> _page(List<Map<String, dynamic>> messages) => {
+  'messagePage': {
+    'messages': [
+      for (final (index, message) in messages.indexed)
+        {'cursor': 'c$index', ...message},
+    ],
+    'hasOlder': false,
+    'hasNewer': false,
+  },
+};
 
 Map<String, Object?> _inbox({List<Map<String, dynamic>>? messages}) => {
   'GetUserSubscribedChannels': {
@@ -44,6 +71,32 @@ Map<String, Object?> _inbox({List<Map<String, dynamic>>? messages}) => {
     ],
   },
   'Messages': {'messages': messages ?? const []},
+  // The server lists only this account's channels, narrowed by the filter.
+  'ChatRoomPage': (Map<String, dynamic> variables) {
+    final channel = (variables['filter'] as Map?)?['channel_id'];
+    return {
+      'chatRoomPage': {
+        'rooms': _myRooms
+            .where((room) => channel == null || room['channel_id'] == channel)
+            .toList(),
+        'nextCursor': null,
+        'hasMore': false,
+      },
+    };
+  },
+  'ChatRoom': (Map<String, dynamic> variables) => {
+    'chatRoom': _myRooms
+        .where(
+          (room) =>
+              room['id'] == variables['id'] ||
+              room['chat_room_id'] == variables['chatRoomId'],
+        )
+        .firstOrNull,
+  },
+  'MessagePage': _page(messages ?? const []),
+  'MarkChatRoomRead': {
+    'markChatRoomRead': {'id': 'room-row-1', 'unreadCount': 0},
+  },
   'Users': {
     'listAccounts': {
       'items': [
@@ -281,6 +334,9 @@ void main() {
         ..._inbox(),
         'GetUserSubscribedChannels': {'getUserSubscribedChannels': <Object>[]},
         'ChatRooms': {'chatRooms': <Object>[]},
+        'ChatRoomPage': {
+          'chatRoomPage': {'rooms': <Object>[], 'hasMore': false},
+        },
       });
       await tester.pumpWidget(
         MasterBoxApp(graphQL: backend.service(token: null)),
@@ -450,7 +506,10 @@ void main() {
           },
         ],
       );
-      expect(backend.named('Messages').first.variables, {'roomId': 'psid-1'});
+      expect(backend.named('MessagePage').first.variables, {
+        'id': 'room-row-1',
+        'first': 30,
+      });
       expect(find.text('請問有貨嗎'), findsOneWidget);
       expect(find.text('有的'), findsOneWidget);
       expect(find.text('未送達：已超過 24 小時回覆期限'), findsOneWidget);
@@ -480,42 +539,63 @@ void main() {
     });
 
     _screenTest('a sent reply shows once, from the server', (tester) async {
-      var sent = false;
-      final backend = await open(
-        tester,
-        overrides: {
-          'SendMessage': (Map<String, dynamic> _) {
-            sent = true;
-            return {
-              'appSendMessage': {'_id': 'm-new'},
-            };
-          },
-          'Messages': (Map<String, dynamic> _) => {
-            'messages': sent
-                ? [
-                    {
-                      '_id': 'm-new',
-                      'contents': '{"message":{"text":"您好"}}',
-                      'inbound': false,
-                      'sentAt': '2026-11-05T10:02:00.000Z',
-                    },
-                  ]
-                : <Object>[],
-          },
-        },
+      final sockets = <FakeSocket>[];
+      await _signIn(tester, role: 'admin');
+      final stored = {
+        '_id': 'm-new',
+        'contents': '{"message":{"text":"您好"}}',
+        'to_chat_room_id': 'psid-1',
+        'channel_id': 'channel-1',
+        'inbound': false,
+        'cursor': 'c-new',
+        'sentAt': '2026-11-05T10:02:00.000Z',
+      };
+      final backend = FakeBackend({
+        ..._inbox(),
+        'SendMessage': {'appSendMessage': stored},
+      });
+      await tester.pumpWidget(
+        MasterBoxApp(
+          graphQL: backend.service(
+            token: null,
+            socketConnector: (_, _) {
+              final socket = FakeSocket();
+              sockets.add(socket);
+              return socket;
+            },
+          ),
+        ),
       );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Chat'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('小美王'));
+      await tester.pumpAndSettle();
+
       await tester.enterText(find.byType(TextField), '您好');
       await tester.tap(find.byKey(const ValueKey('send-message')));
+      await tester.pumpAndSettle();
+      // The socket sends the same message to every open page.
+      sockets.single.receiveMessage(stored);
       await tester.pumpAndSettle();
 
       expect(backend.named('SendMessage'), hasLength(1));
       expect(find.text('您好'), findsOneWidget);
+      expect(find.text('傳送中…'), findsNothing);
     });
 
-    _screenTest('pressing enter sends', (tester) async {
+    _screenTest('enter sends and shift+enter does not, as on the admin site', (
+      tester,
+    ) async {
       final backend = await open(tester);
       await tester.enterText(find.byType(TextField), '您好');
-      await tester.testTextInput.receiveAction(TextInputAction.send);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pumpAndSettle();
+      expect(backend.named('SendMessage'), isEmpty);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
       expect(backend.named('SendMessage'), hasLength(1));
     });
@@ -604,7 +684,7 @@ void main() {
       );
     });
 
-    _screenTest('room settings are honest and stay on this device', (
+    _screenTest('room settings only offer what the platform allows', (
       tester,
     ) async {
       await openRoom(tester);
@@ -613,16 +693,17 @@ void main() {
       expect(find.textContaining('端對端加密需要雙方都支援'), findsOneWidget);
       expect(find.textContaining('傳給客戶的訊息會留在 Facebook'), findsOneWidget);
 
-      await tester.tap(find.byType(DropdownButtonFormField<int>));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('5 分鐘後刪除').last);
-      await tester.pumpAndSettle();
+      // The platform keeps its own copy, so a timer here would be a promise
+      // MasterBox can't keep.
+      expect(
+        tester
+            .widget<DropdownButton<int>>(find.byType(DropdownButton<int>))
+            .onChanged,
+        isNull,
+      );
       await tester.tap(find.text('儲存設定'));
       await tester.pumpAndSettle();
-
-      expect(find.text('消失訊息：5 分鐘'), findsOneWidget);
-      final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getInt('room_disappearing_psid-1'), 300);
+      expect(find.textContaining('消失訊息：'), findsNothing);
     });
 
     _screenTest('showing a disappearing message starts its countdown once', (
@@ -631,24 +712,22 @@ void main() {
       final backend = await openRoom(
         tester,
         overrides: {
-          'Messages': {
-            'messages': [
-              {
-                '_id': 'gone-soon',
-                'contents': '紀錄',
-                'inbound': false,
-                'sentAt': '2026-11-05T10:00:00.000Z',
-                'disappearing_after_seconds': 30,
-                'readAt': null,
-              },
-              {
-                '_id': 'normal',
-                'contents': '一般',
-                'inbound': true,
-                'sentAt': '2026-11-05T10:00:00.000Z',
-              },
-            ],
-          },
+          'MessagePage': _page([
+            {
+              '_id': 'gone-soon',
+              'contents': '紀錄',
+              'inbound': false,
+              'sentAt': '2026-11-05T10:00:00.000Z',
+              'disappearing_after_seconds': 30,
+              'readAt': null,
+            },
+            {
+              '_id': 'normal',
+              'contents': '一般',
+              'inbound': true,
+              'sentAt': '2026-11-05T10:00:00.000Z',
+            },
+          ]),
           'MarkMessageRead': {
             'markMessageRead': {'_id': 'gone-soon'},
           },

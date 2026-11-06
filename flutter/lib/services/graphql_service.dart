@@ -7,10 +7,21 @@ import '../models/app_models.dart';
 import 'realtime_service.dart';
 
 class GraphQLException implements Exception {
-  const GraphQLException(this.message, {this.statusCode, this.code});
+  const GraphQLException(
+    this.message, {
+    this.statusCode,
+    this.code,
+    this.extensions = const {},
+  });
   final String message;
   final int? statusCode;
   final String? code;
+
+  /// What the server added to the error, such as templateRequired when
+  /// WhatsApp's 24 hours ran out, or sentAttachment when only the file went out.
+  final Map<String, dynamic> extensions;
+  bool get templateRequired => extensions['templateRequired'] == true;
+  bool get sentAttachment => extensions['sentAttachment'] == true;
   @override
   String toString() => message;
 }
@@ -37,6 +48,83 @@ const _teamAccountFields =
     '_id email role company_id enabled info { name avatar mobile }';
 const _templateFields =
     'id name category platform contents createdAt updatedAt';
+const _messageFields =
+    '_id contents platform channel_id to_chat_room_id sentAt inbound isMine delivery_error preview cursor disappearing_after_seconds readAt';
+const _roomFields =
+    'id title platform channel_id channel_name chat_room_id users { id name first_name last_name avatar } customer { id name avatar username phone } tags { id name } lastMessage lastMessageAt lastMessageInbound unreadCount lastCustomerMessageAt replyWindow { state closesAt templateRequired humanAgentAvailable } assignee { id name email role } assignedAt createdAt updatedAt';
+const _whatsappTemplateFields =
+    'id name language category header_format header_text body_text footer_text buttons { type text url phone_number } variables { key component name label example } supported unsupported_reason';
+
+/// A page of the conversation list.
+class RoomListPage {
+  const RoomListPage({
+    required this.rooms,
+    required this.nextCursor,
+    required this.hasMore,
+  });
+  final List<ChatConversation> rooms;
+  final String? nextCursor;
+  final bool hasMore;
+}
+
+/// What the conversation list is narrowed to, as the server's ChatRoomFilter.
+class ConversationFilter {
+  const ConversationFilter({
+    this.search = '',
+    this.channelId,
+    this.unreadOnly = false,
+    this.assignment = 'all',
+  });
+  final String search;
+  final String? channelId;
+  final bool unreadOnly;
+
+  /// all, mine or unassigned
+  final String assignment;
+
+  /// Whether a conversation the server just sent belongs in the list. Searches
+  /// only match on the server, so new conversations wait for the next search.
+  bool admits(ChatConversation room, {String? myId}) =>
+      search.trim().isEmpty &&
+      (channelId == null || room.channelId == channelId) &&
+      (!unreadOnly || room.unreadCount > 0) &&
+      switch (assignment) {
+        'mine' => room.assignee?.id == myId,
+        'unassigned' => room.assignee == null,
+        _ => true,
+      };
+
+  Map<String, dynamic> toJson() => {
+    if (search.trim().isNotEmpty) 'search': search.trim(),
+    'channel_id': ?channelId,
+    if (unreadOnly) 'unread_only': true,
+    if (assignment != 'all') 'assignment': assignment,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is ConversationFilter &&
+      other.search.trim() == search.trim() &&
+      other.channelId == channelId &&
+      other.unreadOnly == unreadOnly &&
+      other.assignment == assignment;
+
+  @override
+  int get hashCode =>
+      Object.hash(search.trim(), channelId, unreadOnly, assignment);
+}
+
+/// A page of a conversation's messages, oldest first.
+class MessagePage {
+  const MessagePage({
+    required this.messages,
+    required this.hasOlder,
+    required this.hasNewer,
+  });
+  final List<ChatMessage> messages;
+  final bool hasOlder;
+  final bool hasNewer;
+}
 
 const _friendlyErrors = {
   'INVALID_CREDENTIALS': '電子信箱或密碼錯誤',
@@ -99,13 +187,25 @@ class GraphQLService {
   String? openRoomId;
   Future<bool>? _pendingRefresh;
   RealtimeService? _realtime;
-  StreamSubscription<Map<String, dynamic>>? _realtimeListener;
+  final _realtimeListeners = <StreamSubscription<Object?>>[];
   final _messageEvents = StreamController<ChatMessage>.broadcast();
+  final _roomEvents = StreamController<ChatConversation>.broadcast();
+  final _reconnects = StreamController<void>.broadcast();
 
   bool get isAuthenticated => token != null && token!.isNotEmpty;
 
   /// Messages as they arrive over the socket, for pages to refresh on.
   Stream<ChatMessage> get messageEvents => _messageEvents.stream;
+
+  /// Conversations that changed for this account, such as their agent or tags.
+  Stream<ChatConversation> get roomEvents => _roomEvents.stream;
+
+  /// The live connection came back; anything sent meanwhile was missed and
+  /// should be caught up on.
+  Stream<void> get reconnects => _reconnects.stream;
+
+  /// Whether live updates are arriving right now.
+  bool get isLive => _realtime?.isConnected ?? false;
 
   Uri get _socketUrl {
     final url = Uri.parse(endpoint);
@@ -122,11 +222,26 @@ class GraphQLService {
       },
       connector: socketConnector,
     );
-    _realtimeListener ??= realtime.events.listen(
-      (json) => _messageEvents.add(ChatMessage.fromJson(json)),
-    );
+    if (_realtimeListeners.isEmpty) {
+      _realtimeListeners
+        ..add(
+          realtime.events.listen(
+            (json) => _messageEvents.add(ChatMessage.fromJson(json)),
+          ),
+        )
+        ..add(
+          realtime.roomUpdates.listen(
+            (json) => _roomEvents.add(ChatConversation.fromJson(json)),
+          ),
+        )
+        ..add(realtime.reconnects.listen((_) => _reconnects.add(null)));
+    }
     realtime.start();
   }
+
+  /// A message this device just sent, shown to every page at once rather than
+  /// when the socket echoes it.
+  void announceSent(ChatMessage message) => _messageEvents.add(message);
 
   void stopRealtime() => _realtime?.stop();
 
@@ -251,20 +366,24 @@ class GraphQLService {
     return true;
   }
 
-  /// Replies go out through the conversation's platform, as they do in the admin
-  /// inbox. The platform's refusal comes back as an error, so nothing looks sent
-  /// when it wasn't. Attachments can't be delivered to customers yet, so they are
-  /// only stored in MasterBox.
-  Future<bool> sendMessage({
+  /// Replies go out through the conversation's platform, as they do in the
+  /// admin inbox, file and all. The platform's refusal comes back as an error,
+  /// so nothing looks sent when it wasn't.
+  /// @returns the stored message, or the last one when it went as two
+  Future<ChatMessage?> sendMessage({
     required ChatConversation conversation,
     required String contents,
-    Map<String, dynamic>? attachment,
+    UploadedFile? attachment,
     int disappearingSeconds = 0,
   }) async {
     final platform = conversation.platform;
     final Map<String, dynamic> input;
-    if (attachment == null && platform != null && platform != 'app') {
-      final message = {'text': contents};
+    if (platform != null && platform != 'app') {
+      final message = {
+        if (contents.isNotEmpty) 'text': contents,
+        if (attachment != null)
+          'attachments': [attachment.toMessageAttachment()],
+      };
       final recipient = conversation.customer?.id;
       input = {
         'to_chat_room_id': conversation.messageRoomId,
@@ -292,20 +411,281 @@ class GraphQLService {
             ? contents
             : jsonEncode({
                 'text': contents,
-                'attachments': [attachment],
+                'attachments': [attachment.toMessageAttachment()],
               }),
       };
     }
     final result = await _request(
-      r'''mutation SendMessage($messageInput: MessageInput) {
-      appSendMessage(MessageInput: $messageInput) { _id delivery_error }
+      '''mutation SendMessage(\$messageInput: MessageInput) {
+      appSendMessage(MessageInput: \$messageInput) { $_messageFields }
     }''',
       {'messageInput': input},
     );
-    if (_map(result, const ['data', 'appSendMessage']) == null) {
-      throw const GraphQLException('訊息傳送失敗');
+    final value = _map(result, const ['data', 'appSendMessage']);
+    if (value == null) throw const GraphQLException('訊息傳送失敗');
+    return ChatMessage.fromJson({
+      'to_chat_room_id': conversation.messageRoomId,
+      'channel_id': conversation.channelId,
+      ...value,
+    });
+  }
+
+  /// Uploads a file about to be sent. The server applies [platform]'s limits.
+  /// [onProgress] gets 0–100 as the file goes out.
+  Future<UploadedFile> uploadAttachment(
+    PendingAttachment file, {
+    required String? platform,
+    void Function(int percent)? onProgress,
+  }) async {
+    Future<http.Response> send() async {
+      final request = http.StreamedRequest(
+        'POST',
+        Uri.parse('$realtimeEndpoint/api/uploads')
+            .replace(queryParameters: {'platform': platform ?? ''}),
+      );
+      request.headers['Content-Type'] = file.mime;
+      request.headers['X-File-Name'] = Uri.encodeComponent(file.name);
+      if (isAuthenticated) request.headers['Authorization'] = 'Bearer $token';
+      request.contentLength = file.size;
+      final response = _client.send(request).timeout(_uploadTimeout);
+      const chunk = 64 * 1024;
+      for (var offset = 0; offset < file.size; offset += chunk) {
+        final end = offset + chunk < file.size ? offset + chunk : file.size;
+        request.sink.add(file.bytes.sublist(offset, end));
+        onProgress?.call((end * 99) ~/ (file.size == 0 ? 1 : file.size));
+        await Future<void>.delayed(Duration.zero);
+      }
+      unawaited(request.sink.close());
+      return http.Response.fromStream(await response);
     }
-    return true;
+
+    http.Response response;
+    try {
+      response = await send();
+      if (response.statusCode == 401 && await refresh()) {
+        response = await send();
+      }
+    } on http.ClientException {
+      throw const GraphQLException('上傳失敗，請檢查網路連線後重試');
+    } on TimeoutException {
+      throw const GraphQLException('上傳逾時，請檢查網路連線後重試');
+    }
+    Object? body;
+    try {
+      body = jsonDecode(utf8.decode(response.bodyBytes));
+    } on FormatException {
+      body = null;
+    }
+    if (response.statusCode == 201 &&
+        body is Map<String, dynamic> &&
+        body['url'] is String) {
+      onProgress?.call(100);
+      return UploadedFile.fromJson(body);
+    }
+    if (response.statusCode == 401) {
+      onSessionExpired?.call();
+      throw const GraphQLException('登入已失效，請重新登入', statusCode: 401);
+    }
+    final error = body is Map ? body['error'] : null;
+    throw GraphQLException(
+      error is String && error.isNotEmpty
+          ? error
+          : '上傳失敗（${response.statusCode}）',
+      statusCode: response.statusCode,
+    );
+  }
+
+  /// A page of the account's conversations, newest message first. The server
+  /// only lists the channels the account works in.
+  Future<RoomListPage> fetchConversationPage({
+    ConversationFilter filter = const ConversationFilter(),
+    String? after,
+    int first = 30,
+  }) async {
+    final result = await _request(
+      '''query ChatRoomPage(\$first: Int, \$after: String, \$filter: ChatRoomFilter) {
+      chatRoomPage(first: \$first, after: \$after, filter: \$filter) {
+        rooms { $_roomFields }
+        nextCursor hasMore
+      }
+    }''',
+      {'first': first, 'after': after, 'filter': filter.toJson()},
+    );
+    final page = _map(result, const ['data', 'chatRoomPage']);
+    return RoomListPage(
+      rooms: _list(result, const [
+        'data',
+        'chatRoomPage',
+        'rooms',
+      ]).map(ChatConversation.fromJson).toList(),
+      nextCursor: page?['nextCursor'] as String?,
+      hasMore: page?['hasMore'] == true,
+    );
+  }
+
+  /// One conversation, by its id or by the room and channel a message carries.
+  /// Null when it doesn't exist or is in a channel this account doesn't work in.
+  Future<ChatConversation?> fetchConversation({
+    String? id,
+    String? chatRoomId,
+    String? channelId,
+  }) async {
+    final result = await _request(
+      '''query ChatRoom(\$id: ID, \$chatRoomId: String, \$channelId: ID) {
+      chatRoom(id: \$id, chat_room_id: \$chatRoomId, channel_id: \$channelId) { $_roomFields }
+    }''',
+      {'id': ?id, 'chatRoomId': ?chatRoomId, 'channelId': ?channelId},
+    );
+    final value = _map(result, const ['data', 'chatRoom']);
+    return value == null ? null : ChatConversation.fromJson(value);
+  }
+
+  /// The newest messages by default, older ones with [before], newer ones
+  /// with [after] (both are message cursors).
+  Future<MessagePage> fetchMessagePage(
+    ChatConversation conversation, {
+    String? before,
+    String? after,
+    int first = 30,
+  }) async {
+    final result = await _request(
+      '''query MessagePage(\$id: ID!, \$first: Int, \$before: String, \$after: String) {
+      messagePage(id: \$id, first: \$first, before: \$before, after: \$after) {
+        messages { $_messageFields }
+        hasOlder hasNewer
+      }
+    }''',
+      {
+        'id': conversation.id,
+        'first': first,
+        'before': ?before,
+        'after': ?after,
+      },
+    );
+    final page = _map(result, const ['data', 'messagePage']);
+    final messages = _list(result, const [
+      'data',
+      'messagePage',
+      'messages',
+    ]).map(ChatMessage.fromJson).toList();
+    for (final message in messages.where((item) => item.needsViewedMark)) {
+      _markViewedOnce(message.id);
+    }
+    return MessagePage(
+      messages: messages,
+      hasOlder: page?['hasOlder'] == true,
+      hasNewer: page?['hasNewer'] == true,
+    );
+  }
+
+  final _markedViewed = <String>{};
+
+  // Disappearing messages count down once someone has been shown them.
+  void _markViewedOnce(String messageId) {
+    if (!_markedViewed.add(messageId)) return;
+    unawaited(
+      markMessageRead(messageId).catchError((Object _) {
+        _markedViewed.remove(messageId);
+      }),
+    );
+  }
+
+  /// Marks the conversation read for this account, up to [messageId] or its
+  /// newest message. Returns the unread count left.
+  Future<int> markConversationRead(String id, {String? messageId}) async {
+    final result = await _request(
+      r'''mutation MarkChatRoomRead($id: ID!, $messageId: ID) {
+      markChatRoomRead(id: $id, messageId: $messageId) { id unreadCount }
+    }''',
+      {'id': id, 'messageId': ?messageId},
+    );
+    final value = _map(result, const ['data', 'markChatRoomRead']);
+    return (value?['unreadCount'] as num?)?.toInt() ?? 0;
+  }
+
+  /// The approved templates of a WhatsApp conversation's number, read from Meta.
+  Future<List<WhatsappTemplate>> fetchWhatsappTemplates(String roomId) async {
+    final result = await _request(
+      '''query WhatsappTemplates(\$id: ID!) {
+      whatsappTemplates(id: \$id) { $_whatsappTemplateFields }
+    }''',
+      {'id': roomId},
+    );
+    return _list(result, const [
+      'data',
+      'whatsappTemplates',
+    ]).map(WhatsappTemplate.fromJson).toList();
+  }
+
+  Future<ChatMessage> sendWhatsappTemplate({
+    required ChatConversation conversation,
+    required String templateId,
+    required Map<String, String> values,
+    String? headerMediaUrl,
+  }) async {
+    final result = await _request(
+      '''mutation SendWhatsappTemplate(\$id: ID!, \$templateId: ID!, \$values: [WhatsappTemplateValue!], \$headerMediaUrl: String) {
+      sendWhatsappTemplate(id: \$id, templateId: \$templateId, values: \$values, header_media_url: \$headerMediaUrl) { $_messageFields }
+    }''',
+      {
+        'id': conversation.id,
+        'templateId': templateId,
+        'values': [
+          for (final entry in values.entries)
+            {'key': entry.key, 'value': entry.value},
+        ],
+        'headerMediaUrl': ?headerMediaUrl,
+      },
+    );
+    final value = _map(result, const ['data', 'sendWhatsappTemplate']);
+    if (value == null) throw const GraphQLException('範本未送出');
+    return ChatMessage.fromJson({
+      'to_chat_room_id': conversation.messageRoomId,
+      'channel_id': conversation.channelId,
+      ...value,
+    });
+  }
+
+  /// The company's templates, which any agent can insert into a reply.
+  Future<List<MessageTemplate>> fetchQuickReplies() async {
+    final result = await _request(
+      r'''query QuickReplies { quickReplies { id name platform contents } }''',
+      const {},
+    );
+    return _list(result, const [
+      'data',
+      'quickReplies',
+    ]).map(MessageTemplate.fromJson).toList();
+  }
+
+  // ---- Push notifications ----
+
+  Future<bool> pushNotificationsAvailable() async {
+    final result = await _request(
+      r'''query PushNotificationsAvailable { pushNotificationsAvailable }''',
+      const {},
+    );
+    final data = result['data'];
+    return data is Map && data['pushNotificationsAvailable'] == true;
+  }
+
+  /// [platform] is ios or android.
+  Future<void> registerPushDevice(String deviceToken, String platform) async {
+    await _request(
+      r'''mutation RegisterPushDevice($token: String!, $platform: String!) {
+      registerPushDevice(token: $token, platform: $platform)
+    }''',
+      {'token': deviceToken, 'platform': platform},
+    );
+  }
+
+  Future<void> unregisterPushDevice(String deviceToken) async {
+    await _request(
+      r'''mutation UnregisterPushDevice($token: String!) {
+      unregisterPushDevice(token: $token)
+    }''',
+      {'token': deviceToken},
+    );
   }
 
   Future<CallSession> startCall({
@@ -393,19 +773,6 @@ class GraphQLService {
           (b.updatedAt ?? DateTime(0)).compareTo(a.updatedAt ?? DateTime(0)),
     );
     return rooms;
-  }
-
-  Future<List<ChatMessage>> fetchMessages(String roomId) async {
-    final result = await _request(
-      r'''query Messages($roomId: ID) {
-      messages(roomId: $roomId) { id _id contents to_chat_room_id sentAt inbound delivery_error disappearing_after_seconds readAt }
-    }''',
-      {'roomId': roomId},
-    );
-    return _list(result, const [
-      'data',
-      'messages',
-    ]).map(ChatMessage.fromJson).toList();
   }
 
   // ---- Channels ----
@@ -636,6 +1003,7 @@ class GraphQLService {
   }
 
   static const _timeout = Duration(seconds: 20);
+  static const _uploadTimeout = Duration(minutes: 5);
 
   /// [public] requests go without a token: the backend rejects the whole request
   /// when it carries an expired one, which would also block refreshing it.
@@ -702,6 +1070,7 @@ class GraphQLService {
         _friendlyErrors[code] ?? message,
         statusCode: response.statusCode,
         code: code,
+        extensions: extensions is Map<String, dynamic> ? extensions : const {},
       );
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {

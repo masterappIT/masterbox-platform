@@ -20,12 +20,22 @@ class FakeBackend {
   final Map<String, (int, Object?)> rest;
   final restCalls = <String>[];
 
+  /// Every REST request, with its headers and query.
+  final restRequests = <http.Request>[];
+
   http.Client get client => MockClient((request) async {
     if (request.url.path.startsWith('/api/')) {
-      restCalls.add('${request.url.path} ${request.body}');
+      restRequests.add(request);
+      restCalls.add(
+        '${request.url.path} ${utf8.decode(request.bodyBytes, allowMalformed: true)}',
+      );
       for (final entry in rest.entries) {
         if (request.url.path.endsWith(entry.key)) {
-          return http.Response(jsonEncode(entry.value.$2), entry.value.$1);
+          return http.Response.bytes(
+            utf8.encode(jsonEncode(entry.value.$2)),
+            entry.value.$1,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          );
         }
       }
       return http.Response('{}', 404);
@@ -51,7 +61,7 @@ class FakeBackend {
           'errors': [
             {
               'message': answer.message,
-              'extensions': {'code': answer.code},
+              'extensions': {'code': answer.code, ...answer.extensions},
             },
           ],
         }),
@@ -124,6 +134,9 @@ class FakeSocket implements WebSocketChannel {
   void receive(Map<String, dynamic> message) =>
       incoming.add(jsonEncode(message));
 
+  /// The server ends the connection.
+  void drop() => incoming.close();
+
   void receiveMessage(Map<String, dynamic> message) => receive({
     'id': '1',
     'type': 'next',
@@ -143,10 +156,16 @@ class FakeSocket implements WebSocketChannel {
 }
 
 class FakeError {
-  const FakeError(this.message, {this.code = 'INTERNAL', this.status = 200});
+  const FakeError(
+    this.message, {
+    this.code = 'INTERNAL',
+    this.status = 200,
+    this.extensions = const {},
+  });
   final String message;
   final String code;
   final int status;
+  final Map<String, Object?> extensions;
 }
 
 Map<String, dynamic> roomJson({

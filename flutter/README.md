@@ -28,3 +28,22 @@ The web build calls the API from the browser, so its origin must be listed in th
 flutter analyze
 flutter test
 ```
+
+## Push notifications
+
+The phone gets a notification when a customer writes in a conversation the signed-in account works in: its agent when it is assigned, otherwise everyone with access to the channel. Tapping it opens the conversation. Signing out, or switching push off in Settings, stops them on that phone.
+
+Notifications go through Firebase Cloud Messaging; Firebase hands the iOS ones to APNs with the APNs key uploaded to the Firebase project. Nothing about the Firebase project is kept in this repository, which is public:
+
+- **App**: the project settings are given at build time. Copy `firebase-defines.example.json` to `firebase-defines.json` (ignored by git), fill it in from the Firebase console (Project settings → Your apps), and build with `--dart-define-from-file=firebase-defines.json`. A build without them works as before, only without push, and Settings says so.
+- **Server**: the Firebase service account key, mounted into the API container; `FCM_SERVICE_ACCOUNT_FILE` points at it (see `backend/.env.example`). Without it the API logs `Push notifications are off` and the app says the server has no push set up.
+
+```bash
+flutter build ipa --build-number 17 \
+  --dart-define=GRAPHQL_ENDPOINT=https://api.masterbox.masterappinc.com/graphql \
+  --dart-define=REALTIME_ENDPOINT=https://api.masterbox.masterappinc.com \
+  --dart-define=ADMIN_URL=https://admin.masterbox.masterappinc.com \
+  --dart-define-from-file=firebase-defines.json
+```
+
+The MasterBox Push APNs key only covers production, so iOS notifications arrive in TestFlight and App Store builds, not in builds run from Xcode onto a phone.

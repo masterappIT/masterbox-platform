@@ -1,18 +1,17 @@
 import 'dart:async';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import 'services/graphql_service.dart';
 import 'services/dynamic_island_service.dart';
+import 'services/push_service.dart';
 import 'models/app_models.dart';
-import 'call_page.dart';
 import 'pages/channels_page.dart';
+import 'pages/conversation_page.dart';
+import 'pages/inbox_page.dart';
 import 'pages/manage_page.dart';
 import 'pages/users_page.dart';
 import 'widgets/common.dart';
@@ -22,10 +21,13 @@ const authBlue = primaryColor;
 void main() => runApp(const MasterBoxApp());
 
 class MasterBoxApp extends StatefulWidget {
-  const MasterBoxApp({this.graphQL, super.key});
+  const MasterBoxApp({this.graphQL, this.pushClient, super.key});
 
   /// Tests pass a service with a stubbed connection.
   final GraphQLService? graphQL;
+
+  /// Tests pass a stand-in for the phone's push service.
+  final PushClient? pushClient;
 
   @override
   State<MasterBoxApp> createState() => _MasterBoxAppState();
@@ -61,10 +63,17 @@ class _MasterBoxAppState extends State<MasterBoxApp> {
       themeMode: themeMode,
       theme: _masterBoxTheme(Brightness.light),
       darkTheme: _masterBoxTheme(Brightness.dark),
-      home: AppRoot(onThemeModeChanged: setThemeMode, graphQL: widget.graphQL),
+      home: AppRoot(
+        onThemeModeChanged: setThemeMode,
+        graphQL: widget.graphQL,
+        pushClient: widget.pushClient,
+      ),
       onUnknownRoute: (settings) => MaterialPageRoute(
-        builder: (_) =>
-            AppRoot(onThemeModeChanged: setThemeMode, graphQL: widget.graphQL),
+        builder: (_) => AppRoot(
+          onThemeModeChanged: setThemeMode,
+          graphQL: widget.graphQL,
+          pushClient: widget.pushClient,
+        ),
       ),
     );
   }
@@ -143,19 +152,33 @@ ThemeData _masterBoxTheme(Brightness brightness) {
 }
 
 class AppRoot extends StatefulWidget {
-  const AppRoot({required this.onThemeModeChanged, this.graphQL, super.key});
+  const AppRoot({
+    required this.onThemeModeChanged,
+    this.graphQL,
+    this.pushClient,
+    super.key,
+  });
   final ValueChanged<bool> onThemeModeChanged;
   final GraphQLService? graphQL;
+  final PushClient? pushClient;
   @override
   State<AppRoot> createState() => _AppRootState();
 }
 
+/// The settings switch for push notifications on this phone.
+const pushPreferenceKey = 'push_notifications';
+
 class _AppRootState extends State<AppRoot> {
   bool signedIn = false;
   bool restoring = false;
+  bool _signingOut = false;
   late final GraphQLService graphQL = (widget.graphQL ?? GraphQLService())
     ..onTokensChanged = _saveSession
     ..onSessionExpired = handleLogout;
+  late final PushService push = PushService(
+    graphQL: graphQL,
+    client: widget.pushClient,
+  );
 
   @override
   void initState() {
@@ -166,7 +189,14 @@ class _AppRootState extends State<AppRoot> {
   @override
   void dispose() {
     graphQL.stopRealtime();
+    push.dispose();
     super.dispose();
+  }
+
+  /// Registers this phone for the signed-in account, unless switched off.
+  Future<void> _startPush() async {
+    final prefs = await SharedPreferences.getInstance();
+    await push.start(enabled: prefs.getBool(pushPreferenceKey) ?? true);
   }
 
   Future<void> restoreSession() async {
@@ -198,6 +228,7 @@ class _AppRootState extends State<AppRoot> {
       signedIn = graphQL.isAuthenticated;
       restoring = false;
     });
+    if (signedIn) unawaited(_startPush());
   }
 
   Future<void> _saveSession() async {
@@ -225,6 +256,7 @@ class _AppRootState extends State<AppRoot> {
     await _saveSession();
     if (!mounted) return;
     setState(() => signedIn = true);
+    unawaited(_startPush());
   }
 
   Future<void> handleLogin(String email, String password) async {
@@ -240,6 +272,16 @@ class _AppRootState extends State<AppRoot> {
   }
 
   Future<void> handleLogout() async {
+    // An expired session also lands here, and so would the request that
+    // removes this phone's token if it fails the same way.
+    if (_signingOut) return;
+    _signingOut = true;
+    try {
+      // While still signed in, so the server forgets this phone.
+      await push.signOut();
+    } finally {
+      _signingOut = false;
+    }
     graphQL.clearSession();
     final prefs = await SharedPreferences.getInstance();
     for (final key in const [
@@ -264,6 +306,7 @@ class _AppRootState extends State<AppRoot> {
     return signedIn
         ? MainShell(
             graphQL: graphQL,
+            push: push,
             onThemeModeChanged: widget.onThemeModeChanged,
             onLogout: handleLogout,
           )
@@ -623,11 +666,13 @@ class _LoginPageState extends State<LoginPage>
 class MainShell extends StatefulWidget {
   const MainShell({
     required this.graphQL,
+    required this.push,
     required this.onThemeModeChanged,
     required this.onLogout,
     super.key,
   });
   final GraphQLService graphQL;
+  final PushService push;
   final ValueChanged<bool> onThemeModeChanged;
   final VoidCallback onLogout;
   @override
@@ -638,6 +683,7 @@ class _MainShellState extends State<MainShell> {
   int index = 0;
 
   StreamSubscription<ChatMessage>? _newMessages;
+  StreamSubscription<String>? _tappedNotifications;
   final _announced = <String>{};
 
   bool get _isAdmin => widget.graphQL.account?.isAdmin == true;
@@ -646,17 +692,28 @@ class _MainShellState extends State<MainShell> {
   void initState() {
     super.initState();
     _newMessages = widget.graphQL.messageEvents.listen(_announce);
+    _tappedNotifications = widget.push.openRoomRequests.listen(
+      (id) => _openRoom(id: id),
+    );
+    // The notification that launched the app, tapped before this was showing.
+    final launched = widget.push.takePendingRoom();
+    if (launched != null) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _openRoom(id: launched),
+      );
+    }
     widget.graphQL.startRealtime();
   }
 
   @override
   void dispose() {
     _newMessages?.cancel();
+    _tappedNotifications?.cancel();
     super.dispose();
   }
 
-  /// The settings page's notification switch. Works while the app is open;
-  /// there is no push service behind it yet.
+  /// The settings page's in-app notification switch, for new messages while
+  /// the app is open; push notifications cover the time it isn't.
   Future<void> _announce(ChatMessage message) async {
     if (message.isMine || message.roomId == widget.graphQL.openRoomId) return;
     // A message is sent again whenever it changes, such as being read.
@@ -673,27 +730,52 @@ class _MainShellState extends State<MainShell> {
         ),
         action: SnackBarAction(
           label: '查看',
-          onPressed: () => _openRoom(message.roomId),
+          onPressed: () => _openRoom(
+            chatRoomId: message.roomId,
+            channelId: message.channelId,
+          ),
         ),
       ),
     );
   }
 
-  Future<void> _openRoom(String? roomId) async {
+  /// Opens a conversation by its id (from a notification) or by the room and
+  /// channel a message carries. The server only answers for conversations in
+  /// this account's channels.
+  Future<void> _openRoom({
+    String? id,
+    String? chatRoomId,
+    String? channelId,
+  }) async {
+    final messenger = ScaffoldMessenger.of(context);
     try {
-      final rooms = await widget.graphQL.fetchConversations();
-      final room = rooms.where((item) => item.messageRoomId == roomId);
-      if (mounted && room.isNotEmpty) _openConversation(room.first);
+      final room = await widget.graphQL.fetchConversation(
+        id: id,
+        chatRoomId: id == null ? chatRoomId : null,
+        channelId: id == null ? channelId : null,
+      );
+      if (!mounted) return;
+      if (room == null) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('找不到這個對話，或你已沒有這個頻道的權限')),
+        );
+        return;
+      }
+      // Already open: nothing to do.
+      if (widget.graphQL.openRoomId == room.messageRoomId) return;
+      setState(() => index = 1);
+      await _openConversation(room);
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('目前無法開啟對話，請稍後再試')));
+        messenger.showSnackBar(const SnackBar(content: Text('目前無法開啟對話，請稍後再試')));
       }
     }
   }
 
-  void _openConversation(ChatConversation conversation) {
-    Navigator.of(context).push(
+  Future<void> _openConversation(ChatConversation conversation) async {
+    // A conversation opened from a notification replaces the one on screen.
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => ConversationPage(
           graphQL: widget.graphQL,
@@ -742,6 +824,7 @@ class _MainShellState extends State<MainShell> {
         ),
       SettingsPage(
         graphQL: widget.graphQL,
+        push: widget.push,
         onThemeModeChanged: widget.onThemeModeChanged,
         onLogout: widget.onLogout,
       ),
@@ -1144,287 +1227,16 @@ class _ClientPageState extends State<ClientPage> {
   }
 }
 
-class ChatPage extends StatefulWidget {
-  const ChatPage({
-    required this.graphQL,
-    this.onOpenConversation,
-    this.onManageChannels,
-    super.key,
-  });
-  final GraphQLService graphQL;
-  final ValueChanged<ChatConversation>? onOpenConversation;
-  final VoidCallback? onManageChannels;
-  @override
-  State<ChatPage> createState() => _ChatPageState();
-}
-
-class _ChatPageState extends State<ChatPage> {
-  final searchController = TextEditingController();
-  final searchFocus = FocusNode();
-
-  String query = '';
-  late Future<List<ChatConversation>> conversations;
-  List<SocialChannel>? channels;
-  String? selectedChannelId;
-  Timer? _pollTimer;
-  StreamSubscription<ChatMessage>? _messageEvents;
-  bool _pollInFlight = false;
-  int _pollFailures = 0;
-  String? _connectionMessage;
-
-  @override
-  void initState() {
-    super.initState();
-    conversations = widget.graphQL.fetchConversations();
-    _loadChannels();
-    _pollTimer = Timer.periodic(
-      const Duration(seconds: 15),
-      (_) => _refreshConversations(),
-    );
-    _messageEvents = widget.graphQL.messageEvents.listen(
-      (_) => _refreshConversations(),
-    );
-  }
-
-  Future<void> _loadChannels() async {
-    try {
-      final result = await widget.graphQL.fetchChannels();
-      if (mounted) setState(() => channels = result);
-    } catch (_) {
-      // The conversations' own error says the connection is down.
-    }
-  }
-
-  Future<void> _refreshConversations() async {
-    if (_pollInFlight) return;
-    _pollInFlight = true;
-    try {
-      final latest = await widget.graphQL.fetchConversations();
-      _pollFailures = 0;
-      if (mounted) {
-        setState(() {
-          conversations = Future.value(latest);
-          _connectionMessage = null;
-        });
-      }
-    } catch (error) {
-      _pollFailures++;
-      if (mounted) {
-        setState(() => _connectionMessage = '連線暫時中斷，將自動重試（第 $_pollFailures 次）');
-      }
-    } finally {
-      _pollInFlight = false;
-    }
-  }
-
-  Future<void> _refreshAll() async {
-    await Future.wait([_refreshConversations(), _loadChannels()]);
-  }
-
-  @override
-  void dispose() {
-    _pollTimer?.cancel();
-    _messageEvents?.cancel();
-    searchFocus.dispose();
-    searchController.dispose();
-    super.dispose();
-  }
-
-  void _clearSearch() {
-    searchController.clear();
-    setState(() => query = '');
-  }
-
-  void _open(ChatConversation room) {
-    final open = widget.onOpenConversation;
-    if (open != null) {
-      open(room);
-      return;
-    }
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) =>
-            ConversationPage(graphQL: widget.graphQL, conversation: room),
-      ),
-    );
-  }
-
-  /// The company's rooms narrowed to the channels this account can use, as the
-  /// admin inbox does. Until the channels are known, nothing is hidden.
-  List<ChatConversation> _visibleRooms(List<ChatConversation> rooms) {
-    final known = channels;
-    final search = query.trim().toLowerCase();
-    return rooms.where((room) {
-      if (known != null &&
-          room.platform != null &&
-          !known.any((channel) => channel.id == room.channelId)) {
-        return false;
-      }
-      if (selectedChannelId != null && room.channelId != selectedChannelId) {
-        return false;
-      }
-      return room.title.toLowerCase().contains(search);
-    }).toList();
-  }
-
-  Widget _channelFilter(List<SocialChannel> items) => SizedBox(
-    height: 48,
-    child: ListView(
-      scrollDirection: Axis.horizontal,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(right: 8),
-          child: ChoiceChip(
-            label: const Text('全部頻道'),
-            selected: selectedChannelId == null,
-            onSelected: (_) => setState(() => selectedChannelId = null),
-          ),
-        ),
-        for (final channel in items)
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: ChoiceChip(
-              avatar: Icon(platformIcon(channel.platform), size: 16),
-              label: Text(channel.name),
-              selected: selectedChannelId == channel.id,
-              onSelected: (_) => setState(() => selectedChannelId = channel.id),
-            ),
-          ),
-      ],
-    ),
-  );
-
-  Widget _noRooms() {
-    final known = channels;
-    if (known != null && known.isEmpty) {
-      return EmptyState(
-        icon: Icons.hub_outlined,
-        message: '還沒有可用的社群平台',
-        detail: widget.onManageChannels != null
-            ? '連接 Facebook、Instagram 等社群平台後，客戶傳來的訊息就會出現在這裡。'
-            : '請聯絡公司管理員連接社群平台，並開放給你的帳號使用。',
-        actionLabel: widget.onManageChannels != null ? '前往社群平台管理' : null,
-        onAction: widget.onManageChannels,
-      );
-    }
-    return const EmptyState(
-      icon: Icons.chat_bubble_outline,
-      message: '目前還沒有對話',
-      detail: '客戶傳訊息到這個社群平台後，對話就會出現在這裡。',
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final known = channels;
-    return PageFrame(
-      title: 'Chat',
-      subtitle: '所有聊天室',
-      action: IconButton(
-        onPressed: searchFocus.requestFocus,
-        tooltip: '搜尋聊天室',
-        icon: const Icon(Icons.search, color: Colors.white),
-      ),
-      child: RefreshIndicator(
-        onRefresh: _refreshAll,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            TextField(
-              controller: searchController,
-              focusNode: searchFocus,
-              onChanged: (value) => setState(() => query = value),
-              decoration: InputDecoration(
-                hintText: '搜尋聊天室',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: IconButton(
-                  onPressed: _clearSearch,
-                  icon: const Icon(Icons.clear),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            if (known != null && known.isNotEmpty) _channelFilter(known),
-            const SizedBox(height: 8),
-            if (_connectionMessage != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  _connectionMessage!,
-                  style: const TextStyle(color: Colors.orange),
-                ),
-              ),
-            FutureBuilder<List<ChatConversation>>(
-              future: conversations,
-              builder: (context, snapshot) {
-                // A refresh swaps the future; keep showing the list meanwhile.
-                if (snapshot.connectionState == ConnectionState.waiting &&
-                    !snapshot.hasData) {
-                  return const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: CircularProgressIndicator(),
-                    ),
-                  );
-                }
-                if (snapshot.hasError) {
-                  return ErrorRetry(
-                    message: '${snapshot.error}',
-                    onRetry: _refreshConversations,
-                  );
-                }
-                final rooms = _visibleRooms(snapshot.data ?? const []);
-                if (rooms.isEmpty && query.trim().isEmpty) {
-                  return _noRooms();
-                }
-                if (rooms.isEmpty) {
-                  return const EmptyState(
-                    icon: Icons.chat_bubble_outline,
-                    message: '找不到聊天室',
-                    detail: '目前沒有可顯示的對話',
-                  );
-                }
-                return Column(
-                  children: rooms
-                      .map(
-                        (room) => ConversationTile(
-                          name: room.title,
-                          preview: room.lastMessage.isNotEmpty
-                              ? room.lastMessage
-                              : (known
-                                        ?.where(
-                                          (channel) =>
-                                              channel.id == room.channelId,
-                                        )
-                                        .firstOrNull
-                                        ?.name ??
-                                    platformLabel(room.platform)),
-                          time: formatRelativeTime(room.updatedAt),
-                          avatarUrl: room.customer?.avatarUrl,
-                          platform: room.platform,
-                          onTap: () => _open(room),
-                        ),
-                      )
-                      .toList(),
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class SettingsPage extends StatefulWidget {
   const SettingsPage({
     required this.graphQL,
     required this.onThemeModeChanged,
     required this.onLogout,
+    this.push,
     super.key,
   });
   final GraphQLService graphQL;
+  final PushService? push;
   final ValueChanged<bool> onThemeModeChanged;
   final VoidCallback onLogout;
   @override
@@ -1433,6 +1245,7 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   bool notifications = true;
+  bool pushEnabled = true;
   bool darkMode = false;
   bool? apiReachable;
 
@@ -1451,6 +1264,7 @@ class _SettingsPageState extends State<SettingsPage> {
       if (!mounted) return;
       setState(() {
         notifications = prefs.getBool('notifications') ?? true;
+        pushEnabled = prefs.getBool(pushPreferenceKey) ?? true;
         darkMode = prefs.getBool('dark_mode') ?? false;
       });
     });
@@ -1490,6 +1304,32 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  /// Push can only be switched where the phone, the build and the server
+  /// allow it; otherwise the switch says why.
+  Widget _pushSwitch(PushService push) => ValueListenableBuilder<PushState>(
+    valueListenable: push.state,
+    builder: (context, state, _) {
+      final available = switch (state) {
+        PushState.unsupportedPlatform ||
+        PushState.notConfigured ||
+        PushState.serverNotConfigured => false,
+        _ => true,
+      };
+      return SwitchListTile(
+        title: const Text('手機推播通知'),
+        subtitle: Text(pushStateLabel(state)),
+        value: available && pushEnabled,
+        onChanged: available && state != PushState.checking
+            ? (v) {
+                setState(() => pushEnabled = v);
+                _save(pushPreferenceKey, v);
+                push.setEnabled(v);
+              }
+            : null,
+      );
+    },
+  );
+
   Future<void> _confirmLogout() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -1522,7 +1362,7 @@ class _SettingsPageState extends State<SettingsPage> {
           child: Column(
             children: [
               SwitchListTile(
-                title: const Text('訊息通知'),
+                title: const Text('App 內訊息提示'),
                 subtitle: const Text('App 開啟時，收到新訊息會跳出提示'),
                 value: notifications,
                 onChanged: (v) {
@@ -1530,6 +1370,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   _save('notifications', v);
                 },
               ),
+              if (widget.push != null) _pushSwitch(widget.push!),
               SwitchListTile(
                 title: const Text('深色模式'),
                 value: darkMode,
@@ -1655,722 +1496,6 @@ class _SettingsPageState extends State<SettingsPage> {
                 onTap: _confirmLogout,
               ),
             ],
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-class ConversationPage extends StatefulWidget {
-  const ConversationPage({
-    required this.graphQL,
-    required this.conversation,
-    super.key,
-  });
-  final GraphQLService graphQL;
-  final ChatConversation conversation;
-  @override
-  State<ConversationPage> createState() => _ConversationPageState();
-}
-
-class _ConversationPageState extends State<ConversationPage> {
-  final controller = TextEditingController();
-  final localMessages = <ChatMessage>[];
-  final imagePicker = ImagePicker();
-  PlatformFile? pendingFile;
-  late Future<List<ChatMessage>> messages;
-  Timer? _pollTimer;
-  bool _pollInFlight = false;
-  int _pollFailures = 0;
-  String? _connectionMessage;
-
-  late EncryptionMode _encryptionMode;
-  late int _disappearingSeconds;
-  final _scroll = ScrollController();
-  StreamSubscription<ChatMessage>? _messageEvents;
-  int _shownMessages = 0;
-  int _localCounter = 0;
-  final _markedViewed = <String>{};
-
-  @override
-  void initState() {
-    super.initState();
-    _encryptionMode = widget.conversation.encryptionMode;
-    _disappearingSeconds = widget.conversation.disappearingMessageSeconds;
-    widget.graphQL.openRoomId = widget.conversation.messageRoomId;
-    messages = _fetchMessages();
-    _loadDisappearing();
-
-    _pollTimer = Timer.periodic(
-      const Duration(seconds: 10),
-      (_) => _refreshMessages(),
-    );
-    _messageEvents = widget.graphQL.messageEvents
-        .where((message) => message.roomId == widget.conversation.messageRoomId)
-        .listen((_) => _refreshMessages());
-  }
-
-  Future<void> _refreshMessages() async {
-    if (_pollInFlight) return;
-    _pollInFlight = true;
-    try {
-      final latest = await _fetchMessages();
-      _pollFailures = 0;
-      if (mounted) {
-        setState(() {
-          messages = Future.value(latest);
-          _connectionMessage = null;
-        });
-      }
-    } catch (_) {
-      _pollFailures++;
-      if (mounted) {
-        setState(() => _connectionMessage = '連線暫時中斷，將自動重試（第 $_pollFailures 次）');
-      }
-    } finally {
-      _pollInFlight = false;
-    }
-  }
-
-  @override
-  void dispose() {
-    _pollTimer?.cancel();
-    _messageEvents?.cancel();
-    if (widget.graphQL.openRoomId == widget.conversation.messageRoomId) {
-      widget.graphQL.openRoomId = null;
-    }
-    _scroll.dispose();
-    controller.dispose();
-    super.dispose();
-  }
-
-  Future<void> _retry(ChatMessage message) async {
-    void replace(ChatMessage updated) {
-      final index = localMessages.indexWhere((item) => item.id == message.id);
-      if (index >= 0) localMessages[index] = updated;
-    }
-
-    if (mounted) {
-      setState(() => replace(message.copyWith(failed: false, sending: true)));
-    }
-    try {
-      await widget.graphQL.sendMessage(
-        conversation: widget.conversation,
-        contents: message.text,
-        attachment: message.attachment,
-        disappearingSeconds: _disappearingSeconds,
-      );
-      // The server now has it, so the list below shows it from there.
-      final latest = await _fetchMessages();
-      if (mounted) {
-        setState(() {
-          localMessages.removeWhere((item) => item.id == message.id);
-          messages = Future.value(latest);
-        });
-      }
-    } catch (error) {
-      if (mounted) {
-        setState(
-          () => replace(
-            message.copyWith(failed: true, sending: false, sendError: '$error'),
-          ),
-        );
-      }
-    }
-  }
-
-  void _send() {
-    final text = controller.text.trim();
-    final file = pendingFile;
-    if (text.isEmpty && file == null) return;
-    final attachment = file == null
-        ? null
-        : <String, dynamic>{
-            'name': file.name,
-            'size': file.size,
-
-            'type': 'file',
-          };
-    final outgoing = ChatMessage(
-      id: 'local-${_localCounter++}',
-      text: text,
-      sentAt: DateTime.now(),
-      isMine: true,
-      sending: true,
-      attachment: attachment,
-    );
-    setState(() {
-      localMessages.add(outgoing);
-      controller.clear();
-      pendingFile = null;
-    });
-    _retry(outgoing);
-  }
-
-  Future<List<ChatMessage>> _fetchMessages() async {
-    final latest = await widget.graphQL.fetchMessages(
-      widget.conversation.messageRoomId,
-    );
-    for (final message in latest.where((item) => item.needsViewedMark)) {
-      if (_markedViewed.add(message.id)) {
-        unawaited(
-          widget.graphQL.markMessageRead(message.id).catchError((Object _) {
-            _markedViewed.remove(message.id);
-          }),
-        );
-      }
-    }
-    return latest;
-  }
-
-  String get _disappearingKey =>
-      'room_disappearing_${widget.conversation.messageRoomId}';
-
-  // The backend applies this per message, so the choice is kept on the device.
-  Future<void> _loadDisappearing() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getInt(_disappearingKey);
-    if (saved != null && mounted) {
-      setState(() => _disappearingSeconds = saved);
-    }
-  }
-
-  /// Keeps the newest message in view, as the admin inbox does.
-  void _scrollToEndIfNew(int count) {
-    if (count == _shownMessages) return;
-    _shownMessages = count;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scroll.hasClients) {
-        _scroll.jumpTo(_scroll.position.maxScrollExtent);
-      }
-    });
-  }
-
-  Future<void> _openAttachment(String url) async {
-    final opened = await launchUrl(
-      Uri.parse(url),
-      mode: LaunchMode.externalApplication,
-    );
-    if (!opened && mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('無法開啟附件')));
-    }
-  }
-
-  void _showCustomerInfo() {
-    final room = widget.conversation;
-    final customer = room.customer;
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (_) => SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              PersonAvatar(
-                name: room.title,
-                imageUrl: customer?.avatarUrl,
-                radius: 36,
-              ),
-              const SizedBox(height: 10),
-              Text(
-                room.title,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 8),
-              ListTile(
-                leading: Icon(platformIcon(room.platform), color: primaryColor),
-                title: const Text('社群平台'),
-                subtitle: Text(platformLabel(room.platform)),
-              ),
-              if (customer != null)
-                ListTile(
-                  leading: const Icon(
-                    Icons.badge_outlined,
-                    color: primaryColor,
-                  ),
-                  title: const Text('帳號ID'),
-                  subtitle: Text(customer.id),
-                ),
-              ListTile(
-                leading: const Icon(Icons.schedule, color: primaryColor),
-                title: const Text('最後互動時間'),
-                subtitle: Text(formatDateTime(room.updatedAt)),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _attachmentView(MessageAttachment attachment) {
-    final url = attachment.safeUrl;
-    final fallback = Text(
-      '[${attachment.label}'
-      '${attachment.filename == null ? '' : '：${attachment.filename}'}]'
-      '${attachment.caption == null ? '' : ' ${attachment.caption}'}',
-    );
-    if (url == null) return fallback;
-    if (attachment.isImage) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(6),
-        child: Image.network(
-          url,
-          width: 220,
-          fit: BoxFit.cover,
-          webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
-          // Meta's attachment links expire.
-          errorBuilder: (_, _, _) => fallback,
-        ),
-      );
-    }
-    return TextButton(
-      onPressed: () => _openAttachment(url),
-      child: Text('查看${attachment.label}'),
-    );
-  }
-
-  Future<void> _showAttachmentOptions() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const ListTile(
-              leading: Icon(Icons.attach_file),
-              title: Text('新增附件'),
-              subtitle: Text('選擇後可在送出前預覽'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('選擇圖片'),
-              onTap: () async {
-                final navigator = Navigator.of(context);
-                final image = await imagePicker.pickImage(
-                  source: ImageSource.gallery,
-                );
-                if (image != null) {
-                  final size = await image.length();
-                  if (!mounted) return;
-                  setState(
-                    () => pendingFile = PlatformFile(
-                      name: image.name,
-                      path: image.path,
-                      size: size,
-                    ),
-                  );
-                  navigator.pop();
-                }
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.insert_drive_file_outlined),
-              title: const Text('選擇檔案'),
-              onTap: () async {
-                final navigator = Navigator.of(context);
-                final result = await FilePicker.platform.pickFiles(
-                  withData: false,
-                );
-                if (result != null && result.files.isNotEmpty) {
-                  if (!mounted) return;
-                  setState(() => pendingFile = result.files.single);
-                  navigator.pop();
-                }
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Customers on a social platform have no way to join, so say so first.
-  Future<bool> _confirmInternalCall() async {
-    final platform = widget.conversation.platform;
-    if (platform == null) return true;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('這是 MasterBox 內部通話'),
-        content: Text('客戶無法從 ${platformLabel(platform)} 加入，也不會收到來電。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('繼續'),
-          ),
-        ],
-      ),
-    );
-    return confirmed == true;
-  }
-
-  Future<void> _startCall(String kind) async {
-    if (!await _confirmInternalCall()) return;
-    CallSession? call;
-    try {
-      call = await widget.graphQL.startCall(
-        conversationId: widget.conversation.id,
-        kind: kind,
-      );
-      final token = await widget.graphQL.fetchLiveKitToken(callId: call.id);
-      if (!mounted) return;
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) =>
-              CallPage(graphQL: widget.graphQL, call: call!, token: token),
-        ),
-      );
-    } catch (error) {
-      // A call that never connected shouldn't stay open on the server.
-      if (call != null) {
-        unawaited(widget.graphQL.reportCallEvent(call.id, 'call.ended'));
-      }
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$error')));
-      }
-    }
-  }
-
-  Future<void> _showChatSettings() async {
-    var seconds = _disappearingSeconds;
-    final saved = await showModalBottomSheet<bool>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) => SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                DropdownButtonFormField<EncryptionMode>(
-                  initialValue: EncryptionMode.standard,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: '加密模式',
-                    helperText: '目前傳輸時會加密。端對端加密需要雙方都支援，尚未開放。',
-                    helperMaxLines: 2,
-                  ),
-                  items: const [
-                    DropdownMenuItem(
-                      value: EncryptionMode.standard,
-                      child: Text('傳輸加密'),
-                    ),
-                    DropdownMenuItem(
-                      value: EncryptionMode.endToEnd,
-                      enabled: false,
-                      child: Text('端對端加密（尚未開放）'),
-                    ),
-                  ],
-                  onChanged: (_) {},
-                ),
-                const SizedBox(height: 14),
-                DropdownButtonFormField<int>(
-                  initialValue: disappearingOptions.contains(seconds)
-                      ? seconds
-                      : 0,
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                    labelText: '消失訊息',
-                    helperText: widget.conversation.platform == null
-                        ? '訊息顯示後開始倒數，時間到就不再顯示。'
-                        : '只套用於留在 MasterBox 的附件紀錄，顯示後開始倒數。'
-                              '傳給客戶的訊息會留在 '
-                              '${platformLabel(widget.conversation.platform)}，無法消失。',
-                    helperMaxLines: 3,
-                  ),
-                  items: disappearingOptions
-                      .map(
-                        (item) => DropdownMenuItem(
-                          value: item,
-                          child: Text(
-                            item == 0 ? '關閉' : '${disappearingLabel(item)}後刪除',
-                          ),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (value) =>
-                      setSheetState(() => seconds = value ?? seconds),
-                ),
-                const SizedBox(height: 12),
-                FilledButton(
-                  onPressed: () => Navigator.pop(sheetContext, true),
-                  child: const Text('儲存設定'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-    if (saved == true && mounted) {
-      setState(() => _disappearingSeconds = seconds);
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt(_disappearingKey, seconds);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: Text(widget.conversation.title),
-      actions: [
-        if (widget.conversation.platform != null)
-          IconButton(
-            onPressed: _showCustomerInfo,
-            tooltip: '客戶資訊',
-            icon: const Icon(Icons.person_outline),
-          ),
-        IconButton(
-          onPressed: () => _startCall('voice'),
-          tooltip: '語音通話',
-          icon: const Icon(Icons.call),
-        ),
-        IconButton(
-          onPressed: () => _startCall('video'),
-          tooltip: '視訊通話',
-          icon: const Icon(Icons.videocam),
-        ),
-        IconButton(
-          onPressed: _showChatSettings,
-          tooltip: '聊天室設定',
-          icon: const Icon(Icons.security),
-        ),
-      ],
-    ),
-    body: Column(
-      children: [
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          child: Row(
-            children: [
-              Icon(
-                _encryptionMode == EncryptionMode.endToEnd
-                    ? Icons.lock
-                    : Icons.shield_outlined,
-                size: 16,
-              ),
-              const SizedBox(width: 8),
-              Expanded(child: Text(_encryptionMode.label)),
-              if (_disappearingSeconds > 0)
-                Text(
-                  '消失訊息：${disappearingLabel(_disappearingSeconds)}',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-            ],
-          ),
-        ),
-        if (_connectionMessage != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                _connectionMessage!,
-                style: const TextStyle(color: Colors.orange),
-              ),
-            ),
-          ),
-        Expanded(
-          child: FutureBuilder<List<ChatMessage>>(
-            future: messages,
-            builder: (context, snapshot) {
-              if (snapshot.hasError && localMessages.isEmpty) {
-                return ErrorRetry(
-                  message: '${snapshot.error}',
-                  onRetry: () {
-                    setState(() {
-                      messages = widget.graphQL.fetchMessages(
-                        widget.conversation.messageRoomId,
-                      );
-                    });
-                  },
-                );
-              }
-              final items = [
-                ...(snapshot.data ?? const <ChatMessage>[]),
-                ...localMessages,
-              ];
-              if (items.isEmpty) {
-                return const EmptyState(
-                  icon: Icons.forum_outlined,
-                  message: '尚無訊息',
-                );
-              }
-              _scrollToEndIfNew(items.length);
-              return ListView.builder(
-                controller: _scroll,
-                padding: const EdgeInsets.all(16),
-                itemCount: items.length,
-                itemBuilder: (_, i) {
-                  final message = items[i];
-                  return Align(
-                    alignment: message.isMine
-                        ? Alignment.centerRight
-                        : Alignment.centerLeft,
-                    child: GestureDetector(
-                      onLongPress: message.failed
-                          ? () => _retry(message)
-                          : null,
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxWidth: MediaQuery.sizeOf(context).width * 0.8,
-                        ),
-                        child: Card(
-                          color: message.failed
-                              ? Colors.red.withValues(alpha: 0.15)
-                              : (message.isMine
-                                    ? primaryColor.withValues(alpha: 0.2)
-                                    : Theme.of(context)
-                                          .colorScheme
-                                          .surfaceContainerHighest),
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                if (message.text.isNotEmpty ||
-                                    message.attachments.isEmpty)
-                                  Text(
-                                    message.text.isEmpty ? '附件' : message.text,
-                                  ),
-                                for (final attachment in message.attachments)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: _attachmentView(attachment),
-                                  ),
-                                if (message.attachment != null)
-                                  Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: Text(
-                                      '附件：${message.attachment!['name']} (${message.attachment!['size']} bytes)',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall,
-                                    ),
-                                  ),
-                                if (message.sending)
-                                  const Padding(
-                                    padding: EdgeInsets.only(top: 4),
-                                    child: SizedBox(
-                                      width: 12,
-                                      height: 12,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    ),
-                                  ),
-                                if (message.deliveryError != null)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: Text(
-                                      '未送達：${message.deliveryError}',
-                                      style: const TextStyle(
-                                        color: Colors.red,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ),
-                                if (message.failed && message.sendError != null)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: Text(
-                                      '訊息未送出：${message.sendError}',
-                                      style: const TextStyle(
-                                        color: Colors.red,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ),
-                                if (!message.sending && !message.failed)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: Text(
-                                      formatTime(message.sentAt),
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall,
-                                    ),
-                                  ),
-                                if (message.failed)
-                                  TextButton(
-                                    onPressed: () => _retry(message),
-                                    child: const Text('重試'),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
-          ),
-        ),
-        SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-            child: Column(
-              children: [
-                if (pendingFile != null)
-                  Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.attach_file),
-                      title: Text(pendingFile!.name),
-                      subtitle: Text(
-                        '${pendingFile!.size} bytes\n'
-                        '目前只會記錄檔名：檔案不會上傳，也不會傳給客戶',
-                      ),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => setState(() => pendingFile = null),
-                      ),
-                    ),
-                  ),
-                Row(
-                  children: [
-                    IconButton(
-                      onPressed: _showAttachmentOptions,
-                      tooltip: '新增附件',
-                      icon: const Icon(Icons.attach_file),
-                    ),
-                    Expanded(
-                      child: TextField(
-                        controller: controller,
-                        textInputAction: TextInputAction.send,
-                        onSubmitted: (_) => _send(),
-                        decoration: const InputDecoration(hint: Text('輸入訊息…')),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton.filled(
-                      key: const ValueKey('send-message'),
-                      onPressed: _send,
-                      icon: const Icon(Icons.send),
-                    ),
-                  ],
-                ),
-              ],
-            ),
           ),
         ),
       ],

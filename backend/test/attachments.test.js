@@ -31,6 +31,25 @@ describe('attachment rules', () => {
     assert.equal(admin, backend);
   });
 
+  const flutterRules = path.join(here, '../../flutter/lib/models/attachment_rules.dart');
+  test('the Flutter app copy matches the backend', { skip: !fs.existsSync(flutterRules) && 'the Flutter app is not in this checkout' }, async () => {
+    const dart = fs.readFileSync(flutterRules, 'utf8');
+    const copy = JSON.parse(dart.match(/attachmentRulesJson = r'''([\s\S]*?)'''/)[1]);
+    const rules = await import('../lib/storage/attachmentRules.js');
+    assert.equal(copy.maxUploadBytes, rules.MAX_UPLOAD_BYTES);
+    assert.deepEqual(copy.fileTypes, rules.FILE_TYPES);
+    assert.deepEqual(copy.kindLabels, rules.KIND_LABELS);
+    assert.deepEqual(copy.platforms, rules.PLATFORM_RULES);
+    // The aliases and extensions aren't exported, so the backend's own reading of them is the reference.
+    for (const [alias, mime] of Object.entries(copy.mimeAliases)) assert.equal(resolveFileType(alias)?.mime, mime, alias);
+    for (const [ext, mime] of Object.entries(copy.extensions)) assert.equal(resolveFileType('', `a.${ext}`)?.mime, mime, ext);
+    const backendSource = fs.readFileSync(path.join(here, '../lib/storage/attachmentRules.js'), 'utf8');
+    const aliasBlock = backendSource.slice(backendSource.indexOf('const MIME_ALIASES'), backendSource.indexOf('};', backendSource.indexOf('const MIME_ALIASES')));
+    assert.equal(Object.keys(copy.mimeAliases).length, [...aliasBlock.matchAll(/': '/g)].length, 'every alias is copied');
+    const accepted = rules.ACCEPT_ATTRIBUTE.split(',').filter(item => item.startsWith('.')).map(item => item.slice(1));
+    assert.deepEqual(Object.keys(copy.extensions).sort(), accepted.sort(), 'every extension is copied');
+  });
+
   test('types come from the MIME type, or the extension when it is missing', () => {
     assert.equal(resolveFileType('image/jpg').mime, 'image/jpeg');
     assert.equal(resolveFileType('audio/ogg; codecs=opus').mime, 'audio/ogg');

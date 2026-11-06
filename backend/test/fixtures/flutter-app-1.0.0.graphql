@@ -1,0 +1,99 @@
+# The GraphQL the Flutter app 1.0.0 (build 16 and earlier) sends, frozen from flutter/lib/services at 067f154.
+# Installed copies keep sending these, so backend/test/flutterCompat.test.js checks them against the schema.
+
+mutation Login($email: String, $password: String) {
+  loginAccount(LoginInput: {email: $email, password: $password}) {
+  token refreshToken _id email company_id role info { name avatar }
+  }
+  }
+
+mutation RegisterCompanyAccount($input: CompanyAccountRegisterInput!) {
+  registerCompanyAccount(input: $input) {
+  token refreshToken _id email company_id role info { name avatar }
+  }
+  }
+
+mutation RefreshToken($refreshToken: String!, $account_id: String!, $company_id: String!) {
+  refreshToken(refreshTokenInput: {refreshToken: $refreshToken, company_id: $company_id, account_id: $account_id}) {
+  token refreshToken _id email company_id role info { name avatar }
+  }
+  }
+
+mutation SendMessage($messageInput: MessageInput) {
+  appSendMessage(MessageInput: $messageInput) { _id delivery_error }
+  }
+
+mutation MarkMessageRead($messageId: ID!) {
+  markMessageRead(messageId: $messageId) { _id }
+  }
+
+query Users {
+  listAccounts { items { _id email info { name avatar } } }
+  }
+
+query ChatRooms {
+  chatRooms {
+  id title lastMessage platform channel_id chat_room_id updatedAt
+  users { id name first_name last_name avatar }
+  }
+  }
+
+query Messages($roomId: ID) {
+  messages(roomId: $roomId) { id _id contents to_chat_room_id sentAt inbound delivery_error disappearing_after_seconds readAt }
+  }
+
+query GetUserSubscribedChannels {
+  getUserSubscribedChannels { platform name channel_id enabled }
+  }
+
+mutation SetChannelEnabled($channelId: ID!, $enabled: Boolean!) {
+  setChannelEnabled(channel_id: $channelId, enabled: $enabled) { channel_id enabled }
+  }
+
+mutation CreateMetaConnectUrl($returnUrl: String!) {
+  createMetaConnectUrl(return_url: $returnUrl)
+  }
+
+query ListAccounts($input: AccountListInput) {
+  listAccounts(input: $input) { items { _id email role company_id enabled info { name avatar mobile } } total }
+  }
+
+mutation CreateAccount($input: AccountCreateInput!, $company_id: String!) {
+  createAccount(input: $input, company_id: $company_id) { _id }
+  }
+
+mutation UpdateAccount($_id: String!, $input: AccountUpdateInput!) {
+  updateAccount(_id: $_id, input: $input) { _id email role company_id enabled info { name avatar mobile } }
+  }
+
+mutation DeleteAccount($_id: String!) { deleteAccount(_id: $_id) }
+
+query MessageTemplates { messageTemplates { id name category platform contents createdAt updatedAt } }
+
+mutation CreateMessageTemplate($input: MessageTemplateInput!) {
+  createMessageTemplate(input: $input) { id }
+  }
+
+mutation UpdateMessageTemplate($id: ID!, $input: MessageTemplateInput!) {
+  updateMessageTemplate(id: $id, input: $input) { id }
+  }
+
+mutation DeleteMessageTemplate($id: ID!) { deleteMessageTemplate(id: $id) }
+
+query Company($id: String) {
+  findCompanyById(_id: $id) {
+  _id email chinese_name english_name logo mobile country pin_number address
+  subscription { name period { start end } }
+  principal_info { first_name last_name cn_name mobile }
+  }
+  }
+
+mutation UpdateCompanyInfo($updateCompanyInput: UpdateCompanyInfoInput) {
+  updateCompanyInfo(UpdateCompanyInput: $updateCompanyInput)
+  }
+
+query Ping { __typename }
+
+subscription MessageEvents {
+  sendMessage { _id contents platform to_chat_room_id channel_id sentAt inbound delivery_error }
+  }

@@ -8,9 +8,15 @@ typedef SocketConnector = WebSocketChannel Function(
   Iterable<String> protocols,
 );
 
-/// Follows the backend's `sendMessage` subscription over graphql-ws, the same
-/// feed the admin inbox uses. Polling stays on as the fallback, so a dropped
-/// socket only delays updates until the next reconnect.
+const _messageFields =
+    '_id contents platform channel_id to_chat_room_id sentAt inbound isMine delivery_error preview cursor disappearing_after_seconds readAt';
+const _roomFields =
+    'id title platform channel_id channel_name chat_room_id users { id name first_name last_name avatar } customer { id name avatar username phone } tags { id name } lastMessage lastMessageAt lastMessageInbound unreadCount lastCustomerMessageAt replyWindow { state closesAt templateRequired humanAgentAvailable } assignee { id name email role } assignedAt createdAt updatedAt';
+
+/// Follows the backend's live feeds over graphql-ws, the same ones the admin
+/// inbox uses: new and changed messages, and conversations that changed (such
+/// as their agent). A dropped socket reconnects by itself and says so on
+/// [reconnects], so pages can catch up on what was sent meanwhile.
 class RealtimeService {
   RealtimeService({
     required this.url,
@@ -23,8 +29,14 @@ class RealtimeService {
            ((url, protocols) =>
                WebSocketChannel.connect(url, protocols: protocols));
 
-  static const subscription = r'''subscription MessageEvents {
-    sendMessage { _id contents platform to_chat_room_id channel_id sentAt inbound delivery_error }
+  static const subscription =
+      '''subscription MessageEvents {
+    sendMessage { $_messageFields }
+  }''';
+
+  static const roomSubscription =
+      '''subscription ChatRoomUpdates {
+    chatRoomUpdated { $_roomFields }
   }''';
 
   final Uri url;
@@ -34,12 +46,25 @@ class RealtimeService {
   final SocketConnector _connector;
 
   final _events = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomUpdates = StreamController<Map<String, dynamic>>.broadcast();
+  final _reconnects = StreamController<void>.broadcast();
   WebSocketChannel? _channel;
   StreamSubscription<dynamic>? _listener;
   Timer? _retry;
   bool _running = false;
+  bool _connected = false;
+  bool _everConnected = false;
 
+  /// Messages as the server sends them.
   Stream<Map<String, dynamic>> get events => _events.stream;
+
+  /// Conversations as the server sends them after a change.
+  Stream<Map<String, dynamic>> get roomUpdates => _roomUpdates.stream;
+
+  /// The connection is back after being down; updates may have been missed.
+  Stream<void> get reconnects => _reconnects.stream;
+
+  bool get isConnected => _connected;
 
   void start() {
     if (_running) return;
@@ -49,12 +74,14 @@ class RealtimeService {
 
   void stop() {
     _running = false;
+    _everConnected = false;
     _retry?.cancel();
     _retry = null;
     _closeSocket();
   }
 
   void _closeSocket() {
+    _connected = false;
     _listener?.cancel();
     _listener = null;
     _channel?.sink.close();
@@ -102,13 +129,24 @@ class RealtimeService {
           'type': 'subscribe',
           'payload': {'query': subscription},
         });
+        _send({
+          'id': '2',
+          'type': 'subscribe',
+          'payload': {'query': roomSubscription},
+        });
+        _connected = true;
+        if (_everConnected) _reconnects.add(null);
+        _everConnected = true;
       case 'ping':
         _send({'type': 'pong'});
       case 'next':
         final payload = decoded['payload'];
         final data = payload is Map ? payload['data'] : null;
-        final message = data is Map ? data['sendMessage'] : null;
+        if (data is! Map) return;
+        final message = data['sendMessage'];
         if (message is Map<String, dynamic>) _events.add(message);
+        final room = data['chatRoomUpdated'];
+        if (room is Map<String, dynamic>) _roomUpdates.add(room);
       case 'error':
         // The subscription is refused when the token has expired.
         _closeSocket();
