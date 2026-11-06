@@ -52,6 +52,9 @@ const _messageFields =
     '_id contents platform channel_id to_chat_room_id sentAt inbound isMine delivery_error preview cursor disappearing_after_seconds readAt';
 const _roomFields =
     'id title platform channel_id channel_name chat_room_id users { id name first_name last_name avatar } customer { id name avatar username phone } tags { id name } lastMessage lastMessageAt lastMessageInbound unreadCount lastCustomerMessageAt replyWindow { state closesAt templateRequired humanAgentAvailable } assignee { id name email role } assignedAt createdAt updatedAt';
+const _whatsappWebFields =
+    'channel_id state qr phone name error updated_at progress { chats_total chats_done messages }';
+const _channelConnectionFields = 'state message checked_at';
 const _whatsappTemplateFields =
     'id name language category header_format header_text body_text footer_text buttons { type text url phone_number } variables { key component name label example } supported unsupported_reason';
 
@@ -810,14 +813,155 @@ class GraphQLService {
 
   // ---- Channels ----
 
-  Future<List<SocialChannel>> fetchChannels() async {
-    final result = await _request(r'''query GetUserSubscribedChannels {
+  /// The channels of this account. [withConnection] also reads how each one's
+  /// connection is doing, which may make the backend ask Meta again, so only
+  /// the channel management page asks for it.
+  Future<List<SocialChannel>> fetchChannels({
+    bool withConnection = false,
+  }) async {
+    final result = withConnection
+        ? await _request('''query GetChannelsWithConnection {
+      getUserSubscribedChannels {
+        platform name channel_id enabled phone
+        connection { $_channelConnectionFields }
+        whatsapp_web { $_whatsappWebFields }
+      }
+    }''', const {})
+        : await _request(r'''query GetUserSubscribedChannels {
       getUserSubscribedChannels { platform name channel_id enabled }
     }''', const {});
     return _list(result, const [
       'data',
       'getUserSubscribedChannels',
     ]).map(SocialChannel.fromJson).toList();
+  }
+
+  /// Removes a channel: it stops taking in and sending messages. Admins only.
+  Future<void> deleteChannel(String channelId) async {
+    await _request(
+      r'''mutation DeleteChannel($channelId: ID!) {
+      deleteChannel(channel_id: $channelId)
+    }''',
+      {'channelId': channelId},
+    );
+  }
+
+  /// Asks the platform now how the channel's connection is doing, skipping the
+  /// backend's 10 minutes between checks. Admins only.
+  Future<({String? phone, ChannelConnection? connection})>
+  checkChannelConnection(String channelId) async {
+    final result = await _request(
+      '''mutation CheckChannelConnection(\$channelId: ID!) {
+      checkChannelConnection(channel_id: \$channelId) {
+        channel_id phone connection { $_channelConnectionFields }
+      }
+    }''',
+      {'channelId': channelId},
+    );
+    final value = _map(result, const ['data', 'checkChannelConnection']);
+    if (value == null) throw const GraphQLException('無法檢查連線');
+    final phone = value['phone'];
+    return (
+      phone: phone is String && phone.isNotEmpty ? phone : null,
+      connection: ChannelConnection.fromJson(value['connection']),
+    );
+  }
+
+  // ---- WhatsApp connected by QR or pairing code ----
+
+  WhatsappWebConnection _webConnection(Map<String, dynamic>? value) {
+    final connection = WhatsappWebConnection.fromJson(value);
+    if (connection == null) {
+      throw const GraphQLException('無法讀取 WhatsApp 連線');
+    }
+    return connection;
+  }
+
+  /// Starts connecting a WhatsApp number: a new channel without [channelId],
+  /// or scanning again for an existing one.
+  Future<WhatsappWebConnection> connectWhatsappWeb({String? channelId}) async {
+    final result = await _request(
+      '''mutation ConnectWhatsappWeb(\$channelId: ID) {
+      connectWhatsappWeb(channel_id: \$channelId) { $_whatsappWebFields }
+    }''',
+      {'channelId': channelId},
+    );
+    return _webConnection(_map(result, const ['data', 'connectWhatsappWeb']));
+  }
+
+  /// The connection right now, with the newest QR code while it waits.
+  Future<WhatsappWebConnection> whatsappWebConnection(String channelId) async {
+    final result = await _request(
+      '''query WhatsappWebConnection(\$channelId: ID!) {
+      whatsappWebConnection(channel_id: \$channelId) { $_whatsappWebFields }
+    }''',
+      {'channelId': channelId},
+    );
+    return _webConnection(
+      _map(result, const ['data', 'whatsappWebConnection']),
+    );
+  }
+
+  /// An 8-character code to type on the phone instead of scanning. [phone]
+  /// includes the country code.
+  Future<String> requestWhatsappWebPairingCode(
+    String channelId,
+    String phone,
+  ) async {
+    final result = await _request(
+      r'''mutation RequestWhatsappWebPairingCode($channelId: ID!, $phone: String!) {
+      requestWhatsappWebPairingCode(channel_id: $channelId, phone: $phone)
+    }''',
+      {'channelId': channelId, 'phone': phone},
+    );
+    final data = result['data'];
+    final code = data is Map ? data['requestWhatsappWebPairingCode'] : null;
+    if (code is! String || code.isEmpty) {
+      throw const GraphQLException('無法取得配對碼');
+    }
+    return code;
+  }
+
+  /// Stops connecting. Returns true when a channel no phone ever connected
+  /// was removed.
+  Future<bool> cancelWhatsappWeb(String channelId) async {
+    final result = await _request(
+      r'''mutation CancelWhatsappWeb($channelId: ID!) {
+      cancelWhatsappWeb(channel_id: $channelId)
+    }''',
+      {'channelId': channelId},
+    );
+    final data = result['data'];
+    return data is Map && data['cancelWhatsappWeb'] == true;
+  }
+
+  /// Names a connected number's channel and adds the agents who work in it.
+  /// Returns the saved name.
+  Future<String> updateWhatsappWebChannel(
+    String channelId, {
+    required String name,
+    List<String> agentIds = const [],
+  }) async {
+    final result = await _request(
+      r'''mutation UpdateWhatsappWebChannel($channelId: ID!, $name: String!, $agentIds: [ID!]) {
+      updateWhatsappWebChannel(channel_id: $channelId, name: $name, agent_ids: $agentIds) { channel_id name }
+    }''',
+      {'channelId': channelId, 'name': name, 'agentIds': agentIds},
+    );
+    final value = _map(result, const ['data', 'updateWhatsappWebChannel']);
+    if (value == null) throw const GraphQLException('無法儲存');
+    return '${value['name'] ?? name}';
+  }
+
+  /// Everyone in the company who can work in a channel.
+  Future<List<ChannelAgent>> fetchChannelAgents() async {
+    final result = await _request(r'''query ChatRoomAssignees {
+      chatRoomAssignees { id name email role }
+    }''', const {});
+    return _list(result, const [
+      'data',
+      'chatRoomAssignees',
+    ]).map(ChannelAgent.fromJson).toList();
   }
 
   Future<bool> setChannelEnabled(String channelId, bool enabled) async {

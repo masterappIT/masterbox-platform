@@ -50,7 +50,10 @@ test('every GraphQL operation the Flutter app sends now is valid', { skip: !APP_
   const documents = appDocuments();
   const names = documents.map(operationName);
   for (const used of ['ChatRoomPage', 'ChatRoom', 'MessagePage', 'SendMessage', 'MarkChatRoomRead', 'WhatsappTemplates', 'SendWhatsappTemplate',
-    'QuickReplies', 'RegisterPushDevice', 'UnregisterPushDevice', 'MessageEvents', 'ChatRoomUpdates']) {
+    'QuickReplies', 'RegisterPushDevice', 'UnregisterPushDevice', 'MessageEvents', 'ChatRoomUpdates',
+    'GetUserSubscribedChannels', 'GetChannelsWithConnection', 'DeleteChannel', 'CheckChannelConnection',
+    'ConnectWhatsappWeb', 'WhatsappWebConnection', 'RequestWhatsappWebPairingCode', 'CancelWhatsappWeb',
+    'UpdateWhatsappWebChannel', 'ChatRoomAssignees']) {
     assert.ok(names.includes(used), `the app no longer has ${used}; update this test`);
   }
   checkAll(documents);

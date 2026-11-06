@@ -935,6 +935,7 @@ void main() {
   group('channel management', () {
     FakeBackend backend() => FakeBackend({
       ..._inbox(),
+      'GetChannelsWithConnection': _inbox()['GetUserSubscribedChannels'],
       'SetChannelEnabled': (Map<String, dynamic> variables) => {
         'setChannelEnabled': {
           'channel_id': variables['channelId'],
@@ -945,7 +946,9 @@ void main() {
     });
 
     _screenTest('filters by name and platform', (tester) async {
-      await tester.pumpWidget(_app(ChannelsPage(graphQL: backend().service())));
+      await tester.pumpWidget(
+        _app(ChannelsPage(graphQL: backend().service(role: 'admin'))),
+      );
       await tester.pumpAndSettle();
       expect(find.text('官方粉專'), findsOneWidget);
       expect(find.text('IG 帳號'), findsOneWidget);
@@ -958,7 +961,9 @@ void main() {
 
     _screenTest('switches a channel off', (tester) async {
       final fake = backend();
-      await tester.pumpWidget(_app(ChannelsPage(graphQL: fake.service())));
+      await tester.pumpWidget(
+        _app(ChannelsPage(graphQL: fake.service(role: 'admin'))),
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.byType(Switch).first);
       await tester.pumpAndSettle();
@@ -974,9 +979,12 @@ void main() {
     _screenTest('a refused switch stays as it was', (tester) async {
       final fake = FakeBackend({
         ..._inbox(),
+        'GetChannelsWithConnection': _inbox()['GetUserSubscribedChannels'],
         'SetChannelEnabled': const FakeError('不行'),
       });
-      await tester.pumpWidget(_app(ChannelsPage(graphQL: fake.service())));
+      await tester.pumpWidget(
+        _app(ChannelsPage(graphQL: fake.service(role: 'admin'))),
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.byType(Switch).first);
       await tester.pumpAndSettle();
@@ -989,7 +997,7 @@ void main() {
       await tester.pumpWidget(
         _app(
           ChannelsPage(
-            graphQL: backend().service(),
+            graphQL: backend().service(role: 'admin'),
             openUrl: (url) async {
               opened = url;
               return true;

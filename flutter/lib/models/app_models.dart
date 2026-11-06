@@ -723,23 +723,148 @@ class CurrentAccount {
   }
 }
 
+/// How a channel's connection to its platform is doing, as the backend last
+/// checked it: ok, auth_expired, not_subscribed, error, disabled or unknown.
+class ChannelConnection {
+  const ChannelConnection({required this.state, this.message, this.checkedAt});
+  final String state;
+
+  /// The backend's explanation for admins, such as 授權已失效，請重新串接.
+  final String? message;
+  final DateTime? checkedAt;
+
+  static ChannelConnection? fromJson(Object? json) {
+    if (json is! Map) return null;
+    return ChannelConnection(
+      state: '${json['state'] ?? 'unknown'}',
+      message: (json['message'] as String?)?.trim().isNotEmpty == true
+          ? (json['message'] as String).trim()
+          : null,
+      checkedAt: DateTime.tryParse('${json['checked_at'] ?? ''}')?.toLocal(),
+    );
+  }
+}
+
+/// How far a WhatsApp number connected by QR code is in copying its chats.
+class WhatsappWebProgress {
+  const WhatsappWebProgress({
+    this.chatsTotal = 0,
+    this.chatsDone = 0,
+    this.messages = 0,
+  });
+  final int chatsTotal;
+  final int chatsDone;
+  final int messages;
+
+  /// 0 to 100, or null before the chat list is read.
+  int? get percent => chatsTotal > 0
+      ? (chatsDone * 100 / chatsTotal).round().clamp(0, 100)
+      : null;
+
+  static WhatsappWebProgress? fromJson(Object? json) {
+    if (json is! Map) return null;
+    int read(Object? value) => value is num ? value.toInt() : 0;
+    return WhatsappWebProgress(
+      chatsTotal: read(json['chats_total']),
+      chatsDone: read(json['chats_done']),
+      messages: read(json['messages']),
+    );
+  }
+}
+
+/// A WhatsApp number connected by scanning a QR code (or a pairing code), as
+/// whatsapp-gateway reports it.
+class WhatsappWebConnection {
+  const WhatsappWebConnection({
+    required this.channelId,
+    required this.state,
+    this.qr,
+    this.phone,
+    this.name,
+    this.error,
+    this.progress,
+    this.updatedAt,
+  });
+  final String channelId;
+
+  /// starting, qr, authenticated, syncing, ready, disconnected, logged_out,
+  /// qr_timeout, rejected, failed or offline.
+  final String state;
+
+  /// A data: URL of the QR code, while [state] is qr.
+  final String? qr;
+  final String? phone;
+  final String? name;
+  final String? error;
+  final WhatsappWebProgress? progress;
+  final DateTime? updatedAt;
+
+  static const waitingStates = {'starting', 'qr', 'authenticated'};
+  static const failedStates = {
+    'logged_out',
+    'qr_timeout',
+    'rejected',
+    'failed',
+    'offline',
+  };
+
+  bool get waiting => waitingStates.contains(state);
+  bool get failed => failedStates.contains(state);
+  bool get connected => state == 'syncing' || state == 'ready';
+
+  static WhatsappWebConnection? fromJson(Object? json) {
+    if (json is! Map) return null;
+    String? text(Object? value) =>
+        value is String && value.trim().isNotEmpty ? value.trim() : null;
+    return WhatsappWebConnection(
+      channelId: '${json['channel_id'] ?? ''}',
+      state: '${json['state'] ?? 'offline'}',
+      qr: text(json['qr']),
+      phone: text(json['phone']),
+      name: text(json['name']),
+      error: text(json['error']),
+      progress: WhatsappWebProgress.fromJson(json['progress']),
+      updatedAt: DateTime.tryParse('${json['updated_at'] ?? ''}')?.toLocal(),
+    );
+  }
+}
+
 class SocialChannel {
   const SocialChannel({
     required this.id,
     required this.platform,
     required this.name,
     required this.enabled,
+    this.phone,
+    this.connection,
+    this.whatsappWeb,
   });
   final String id;
   final String platform;
   final String name;
   final bool enabled;
 
-  SocialChannel copyWith({bool? enabled}) => SocialChannel(
+  /// The WhatsApp number; null for other platforms and for lists that didn't ask.
+  final String? phone;
+
+  /// Only the channel management page asks for it; null for QR-connected numbers.
+  final ChannelConnection? connection;
+
+  /// Set for WhatsApp numbers connected by QR code.
+  final WhatsappWebConnection? whatsappWeb;
+
+  SocialChannel copyWith({
+    bool? enabled,
+    String? phone,
+    ChannelConnection? connection,
+  }) => SocialChannel(
     id: id,
     platform: platform,
     name: name,
     enabled: enabled ?? this.enabled,
+    phone: phone ?? this.phone,
+    connection: connection ?? this.connection,
+    whatsappWeb: whatsappWeb,
   );
 
   factory SocialChannel.fromJson(Map<String, dynamic> json) => SocialChannel(
@@ -747,6 +872,27 @@ class SocialChannel {
     platform: '${json['platform'] ?? ''}',
     name: '${json['name'] ?? ''}',
     enabled: json['enabled'] != false,
+    phone: json['phone'] is String && (json['phone'] as String).isNotEmpty
+        ? json['phone'] as String
+        : null,
+    connection: ChannelConnection.fromJson(json['connection']),
+    whatsappWeb: WhatsappWebConnection.fromJson(json['whatsapp_web']),
+  );
+}
+
+/// Someone a channel or conversation can be given to.
+class ChannelAgent {
+  const ChannelAgent({required this.id, required this.name, this.role});
+  final String id;
+  final String name;
+  final String? role;
+
+  bool get isAdmin => role?.toLowerCase() == 'admin';
+
+  factory ChannelAgent.fromJson(Map<String, dynamic> json) => ChannelAgent(
+    id: '${json['id'] ?? ''}',
+    name: '${json['name'] ?? json['email'] ?? ''}',
+    role: json['role'] as String?,
   );
 }
 

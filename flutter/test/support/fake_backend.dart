@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:masterbox_flutter/models/app_models.dart';
 import 'package:masterbox_flutter/services/graphql_service.dart';
 import 'package:masterbox_flutter/services/realtime_service.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -85,6 +86,7 @@ class FakeBackend {
     String? refreshToken = 'refresh-token',
     String? accountId = 'me',
     String? companyId = 'company-1',
+    String? role,
     SocketConnector? socketConnector,
   }) => GraphQLService(
     endpoint: 'https://api.test/graphql',
@@ -94,6 +96,9 @@ class FakeBackend {
     refreshToken: refreshToken,
     accountId: accountId,
     companyId: companyId,
+    account: role == null
+        ? null
+        : CurrentAccount(id: accountId, email: 'me@example.com', role: role),
     httpClient: client,
     socketConnector: socketConnector,
   );
@@ -209,11 +214,17 @@ Map<String, dynamic> channelJson({
   String platform = 'fb',
   String name = '官方粉專',
   bool enabled = true,
+  String? phone,
+  Map<String, dynamic>? connection,
+  Map<String, dynamic>? whatsappWeb,
 }) => {
   'channel_id': id,
   'platform': platform,
   'name': name,
   'enabled': enabled,
+  'phone': ?phone,
+  'connection': ?connection,
+  'whatsapp_web': ?whatsappWeb,
 };
 
 Map<String, dynamic> accountJson({
