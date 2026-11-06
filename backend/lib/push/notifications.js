@@ -2,21 +2,22 @@
 import { ApolloError } from 'apollo-server-errors';
 import { prisma } from '../db/prisma.js';
 import { channelAccountIds } from '../messaging/access.js';
-import { fcmSender } from './fcm.js';
+import { apnsSender } from './apns.js';
 import { notificationRecipients, notificationFor } from './notificationContent.js';
 
 export { notificationRecipients, notificationFor };
 
-export const DEVICE_PLATFORMS = ['ios', 'android'];
-// FCM tokens are about 160 characters; anything far longer isn't one.
-const MAX_TOKEN_LENGTH = 4096;
+// Android has no push yet. The platform is stored so adding it needs no new table.
+export const DEVICE_PLATFORMS = ['ios'];
+// APNs tokens are hex, 32 bytes today, though Apple says not to count on the length. They go into the request path.
+const DEVICE_TOKEN = /^[0-9a-f]{32,200}$/;
 
 let configError;
 
 /** Whether this server can send push notifications. A broken setup is logged once and treated as not set up. */
 export const pushConfigured = () => {
   try {
-    return Boolean(fcmSender());
+    return Boolean(apnsSender());
   } catch (error) {
     if (!configError) {
       configError = error;
@@ -27,15 +28,15 @@ export const pushConfigured = () => {
 };
 
 const cleanToken = (token) => {
-  const value = typeof token === 'string' ? token.trim() : '';
-  if (!value || value.length > MAX_TOKEN_LENGTH || /\s/.test(value)) throw new ApolloError('裝置推播代碼無效', 'BAD_USER_INPUT');
+  const value = typeof token === 'string' ? token.trim().toLowerCase() : '';
+  if (!DEVICE_TOKEN.test(value)) throw new ApolloError('裝置推播代碼無效', 'BAD_USER_INPUT');
   return value;
 };
 
 /** Notifications for the account's customers go to this phone, and no longer to whoever used it before. */
 export const registerDevice = async (account, { token, platform }) => {
   const value = cleanToken(token);
-  if (!DEVICE_PLATFORMS.includes(platform)) throw new ApolloError('只支援 iOS 和 Android 推播', 'BAD_USER_INPUT');
+  if (!DEVICE_PLATFORMS.includes(platform)) throw new ApolloError('目前只支援 iOS 推播', 'BAD_USER_INPUT');
   await prisma.deviceToken.upsert({
     where: { token: value },
     update: { accountId: account.account_id, companyId: account.company_id, platform },
@@ -56,7 +57,7 @@ export const unregisterDevice = async (account, { token }) => {
  */
 export const notifyCustomerMessage = async (message, { sender, accountIdsFor = channelAccountIds } = {}) => {
   try {
-    const push = sender ?? (pushConfigured() ? fcmSender() : null);
+    const push = sender ?? (pushConfigured() ? apnsSender() : null);
     const recipient = message?.recipients?.[0];
     const roomKey = recipient?.chatRoomIds?.[0];
     if (!push || message?.createdBy || !roomKey || !recipient.channelId) return 0;
@@ -68,12 +69,12 @@ export const notifyCustomerMessage = async (message, { sender, accountIdsFor = c
     const accountIds = notificationRecipients(room, await accountIdsFor(room.companyId, room.channelId));
     if (!accountIds.length) return 0;
     // The company is checked again so a token can't carry another company's customers.
-    const devices = await prisma.deviceToken.findMany({ where: { accountId: { in: accountIds }, companyId: room.companyId } });
+    const devices = await prisma.deviceToken.findMany({ where: { accountId: { in: accountIds }, companyId: room.companyId, platform: 'ios' } });
     if (!devices.length) return 0;
-    const notification = notificationFor({ room, channelName: room.channel?.name, message });
+    const payload = notificationFor({ room, channelName: room.channel?.name, message });
     const results = await Promise.all(devices.map(async (device) => {
       try {
-        return { device, result: await push.send(device.token, notification) };
+        return { device, result: await push.send(device.token, payload) };
       } catch (error) {
         return { device, result: { ok: false, unregistered: false, reason: error.message } };
       }

@@ -4,7 +4,9 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:masterbox_flutter/main.dart';
 import 'package:masterbox_flutter/models/app_models.dart';
@@ -191,13 +193,11 @@ class _FakePush implements PushClient {
   final opened = StreamController<Map<String, dynamic>>.broadcast();
   final refreshed = StreamController<String>.broadcast();
   final foreground = StreamController<ForegroundPush>.broadcast();
-  var token = 'fcm-1';
-  var deleted = 0;
+  var token = 'aa11';
+  var stopped = 0;
 
   @override
   bool get available => true;
-  @override
-  String get platformName => 'ios';
   @override
   Future<void> initialize() async {}
   @override
@@ -213,7 +213,7 @@ class _FakePush implements PushClient {
   @override
   Future<Map<String, dynamic>?> launchedFrom() async => launched;
   @override
-  Future<void> deleteToken() async => deleted++;
+  Future<void> stop() async => stopped++;
 }
 
 void main() {
@@ -791,14 +791,14 @@ void main() {
         openChat: false,
       );
       expect(app.backend.named('RegisterPushDevice').single.variables, {
-        'token': 'fcm-1',
+        'token': 'aa11',
         'platform': 'ios',
       });
-      push.refreshed.add('fcm-2');
+      push.refreshed.add('bb22');
       await tester.pumpAndSettle();
       expect(
         app.backend.named('RegisterPushDevice').last.variables['token'],
-        'fcm-2',
+        'bb22',
       );
     });
 
@@ -985,9 +985,29 @@ void main() {
       }
       await tester.pumpAndSettle();
       expect(app.backend.named('UnregisterPushDevice').single.variables, {
-        'token': 'fcm-1',
+        'token': 'aa11',
       });
-      expect(push.deleted, 1);
+      expect(push.stopped, 1);
+      expect(find.text('登入 MasterBox'), findsOneWidget);
+    });
+
+    testWidgets('signing out stops them even when the server can\'t be told', (
+      tester,
+    ) async {
+      final push = _FakePush();
+      final responses = withPush(_backend())
+        ..['UnregisterPushDevice'] = const FakeError('離線');
+      await _open(tester, responses, push: push, openChat: false);
+      await tester.tap(find.text('Setting'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('登出'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, '登出'));
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      await tester.pumpAndSettle();
+      expect(push.stopped, 1);
       expect(find.text('登入 MasterBox'), findsOneWidget);
     });
 
@@ -1035,11 +1055,103 @@ void main() {
       expect(app.backend.named('RegisterPushDevice'), isEmpty);
     });
 
-    testWidgets('a build without Firebase settings says so', (tester) async {
-      await _open(tester, _backend(), openChat: false);
+    testWidgets('Android says it has no push and never asks for permission', (
+      tester,
+    ) async {
+      final app = await _open(tester, _backend(), openChat: false);
       await tester.tap(find.text('Setting'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('推播'), findsWidgets);
+      expect(
+        find.text('目前只有 iPhone App 支援推播，這裡在 App 開啟時會提示新訊息'),
+        findsOneWidget,
+      );
+      expect(app.backend.named('PushNotificationsAvailable'), isEmpty);
+      expect(app.backend.named('RegisterPushDevice'), isEmpty);
+    });
+
+    group('the native side', () {
+      const channel = MethodChannel('masterbox/push');
+      final calls = <String>[];
+      TestDefaultBinaryMessenger messenger() =>
+          TestWidgetsFlutterBinding.ensureInitialized().defaultBinaryMessenger;
+
+      setUp(() {
+        calls.clear();
+        messenger().setMockMethodCallHandler(channel, (call) async {
+          calls.add(call.method);
+          return switch (call.method) {
+            'requestPermission' => true,
+            'getToken' => 'abc123',
+            'takeLaunchNotification' => {
+              'title': '小美',
+              'body': '您好',
+              'data': {'roomId': 'room-row-1'},
+            },
+            _ => null,
+          };
+        });
+      });
+      tearDown(() => messenger().setMockMethodCallHandler(channel, null));
+
+      Future<void> fromNative(String method, Object arguments) =>
+          messenger().handlePlatformMessage(
+            channel.name,
+            const StandardMethodCodec().encodeMethodCall(
+              MethodCall(method, arguments),
+            ),
+            (_) {},
+          );
+
+      test('asks for permission and reads the token and launch tap', () async {
+        final client = ApnsPushClient();
+        await client.initialize();
+        expect(await client.requestPermission(), isTrue);
+        expect(await client.getToken(), 'abc123');
+        expect(await client.launchedFrom(), {'roomId': 'room-row-1'});
+        await client.stop();
+        expect(calls, [
+          'requestPermission',
+          'getToken',
+          'takeLaunchNotification',
+          'stop',
+        ]);
+      });
+
+      test('passes on taps, notifications while open and new tokens', () async {
+        final client = ApnsPushClient();
+        await client.initialize();
+        final opened = client.onOpened.first;
+        final foreground = client.onForeground.first;
+        final token = client.onTokenRefresh.first;
+        await fromNative('opened', {
+          'title': '小美',
+          'body': '您好',
+          'data': {'roomId': 'room-row-2'},
+        });
+        await fromNative('foreground', {
+          'title': '小美',
+          'body': '您好',
+          'data': {
+            'messageId': 'm1',
+            'roomId': 'room-row-2',
+            'chatRoomId': 'psid-2',
+          },
+        });
+        await fromNative('token', 'def456');
+        expect((await opened)['roomId'], 'room-row-2');
+        final push = await foreground;
+        expect(push.messageId, 'm1');
+        expect(push.chatRoomId, 'psid-2');
+        expect(push.body, '您好');
+        expect(await token, 'def456');
+      });
+
+      test('only iOS has it', () {
+        expect(ApnsPushClient().available, isFalse);
+        debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+        expect(ApnsPushClient().available, isTrue);
+      });
     });
   });
 }

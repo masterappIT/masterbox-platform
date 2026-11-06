@@ -1,6 +1,7 @@
 import ActivityKit
 import Flutter
 import UIKit
+import UserNotifications
 import os.log
 
 @main
@@ -11,6 +12,8 @@ import os.log
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    // Has to be set before launching ends, to hear about the tap that launched the app.
+    UNUserNotificationCenter.current().delegate = self
     let result = super.application(application, didFinishLaunchingWithOptions: launchOptions)
     return result
     if #available(iOS 16.2, *), ProcessInfo.processInfo.arguments.contains("--live-activity-demo") {
@@ -38,6 +41,38 @@ import os.log
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     AppDelegate.registerDynamicIslandChannel(using: engineBridge.applicationRegistrar.messenger())
+    PushBridge.shared.attach(using: engineBridge.applicationRegistrar.messenger())
+  }
+
+  override func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+    super.application(application, didRegisterForRemoteNotificationsWithDeviceToken: deviceToken)
+    PushBridge.shared.registered(deviceToken: deviceToken)
+  }
+
+  override func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+    super.application(application, didFailToRegisterForRemoteNotificationsWithError: error)
+    PushBridge.shared.registrationFailed(error)
+  }
+
+  // The phone shows nothing while the app is open; the app shows its own notice instead.
+  override func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    willPresent notification: UNNotification,
+    withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+  ) {
+    PushBridge.shared.arrivedWhileOpen(notification)
+    completionHandler([])
+  }
+
+  override func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    didReceive response: UNNotificationResponse,
+    withCompletionHandler completionHandler: @escaping () -> Void
+  ) {
+    if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
+      PushBridge.shared.tapped(response.notification)
+    }
+    completionHandler()
   }
 
   static func registerDynamicIslandChannel(using messenger: FlutterBinaryMessenger) {
@@ -70,5 +105,82 @@ import os.log
         } catch { reply(FlutterError(code: "LIVE_ACTIVITY_ERROR", message: error.localizedDescription, details: nil)) }
       }
     }
+  }
+}
+
+/// The native side of push_service.dart: asks for permission, gets the APNs device
+/// token, and passes on notifications that arrive while open or are tapped.
+final class PushBridge {
+  static let shared = PushBridge()
+  private var channel: FlutterMethodChannel?
+  private var tokenReplies: [FlutterResult] = []
+  private var lastToken: String?
+  // A tap can come before Dart is ready, as when it launched the app.
+  private var dartListening = false
+  private var waitingTap: [String: Any]?
+
+  func attach(using messenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(name: "masterbox/push", binaryMessenger: messenger)
+    channel.setMethodCallHandler { [weak self] call, reply in self?.handle(call, reply) }
+    self.channel = channel
+  }
+
+  private func handle(_ call: FlutterMethodCall, _ reply: @escaping FlutterResult) {
+    switch call.method {
+    case "requestPermission":
+      UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in
+        DispatchQueue.main.async { reply(granted) }
+      }
+    case "getToken":
+      tokenReplies.append(reply)
+      UIApplication.shared.registerForRemoteNotifications()
+    case "takeLaunchNotification":
+      dartListening = true
+      reply(waitingTap)
+      waitingTap = nil
+    case "stop":
+      UIApplication.shared.unregisterForRemoteNotifications()
+      lastToken = nil
+      reply(nil)
+    default:
+      reply(FlutterMethodNotImplemented)
+    }
+  }
+
+  func registered(deviceToken: Data) {
+    let token = deviceToken.map { String(format: "%02x", $0) }.joined()
+    let replies = tokenReplies
+    tokenReplies = []
+    replies.forEach { $0(token) }
+    // Apple gave a new token without being asked.
+    if replies.isEmpty && lastToken != nil && lastToken != token { channel?.invokeMethod("token", arguments: token) }
+    lastToken = token
+  }
+
+  func registrationFailed(_ error: Error) {
+    let replies = tokenReplies
+    tokenReplies = []
+    replies.forEach { $0(FlutterError(code: "REGISTER_FAILED", message: error.localizedDescription, details: nil)) }
+  }
+
+  func arrivedWhileOpen(_ notification: UNNotification) {
+    channel?.invokeMethod("foreground", arguments: payload(of: notification))
+  }
+
+  func tapped(_ notification: UNNotification) {
+    if dartListening {
+      channel?.invokeMethod("opened", arguments: payload(of: notification))
+    } else {
+      waitingTap = payload(of: notification)
+    }
+  }
+
+  private func payload(of notification: UNNotification) -> [String: Any] {
+    let content = notification.request.content
+    var data: [String: String] = [:]
+    for (key, value) in content.userInfo {
+      if let key = key as? String, let value = value as? String { data[key] = value }
+    }
+    return ["title": content.title, "body": content.body, "data": data]
   }
 }

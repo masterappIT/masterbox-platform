@@ -2,9 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- Push notifications. Builds signed for development get sandbox tokens;
-	     App Store and TestFlight exports switch this to production, which is
-	     the only environment the MasterBox Push APNs key covers. -->
+	<!-- Push notifications. Builds run from Xcode are signed for development, and
+	     exporting for TestFlight or the App Store changes this to production
+	     from the distribution profile. Production is the only environment the
+	     server sends to, so iOS notifications arrive in those builds only. -->
 	<key>aps-environment</key>
 	<string>development</string>
 </dict>

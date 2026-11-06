@@ -15,7 +15,7 @@ android {
     }
 
     defaultConfig {
-        // The same name as the iOS bundle id; Firebase registers the Android app under it.
+        // The same name as the iOS bundle id.
         applicationId = "com.masterbox.masterappinc"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.

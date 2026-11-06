@@ -12,5 +12,6 @@ class SceneDelegate: FlutterSceneDelegate {
           let window = windowScene.windows.first,
           let controller = window.rootViewController as? FlutterViewController else { return }
     AppDelegate.registerDynamicIslandChannel(using: controller.binaryMessenger)
+    PushBridge.shared.attach(using: controller.binaryMessenger)
   }
 }

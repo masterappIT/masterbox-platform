@@ -8,10 +8,6 @@
         android:label="MasterBox"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
-        <!-- Customer-message notifications go to the channel MainActivity creates. -->
-        <meta-data
-            android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="messages"/>
         <activity
             android:name=".MainActivity"
             android:exported="true"

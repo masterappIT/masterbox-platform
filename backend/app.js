@@ -124,8 +124,8 @@ httpServer.listen(PORT, () => {
   console.log(
     `🚀 Subscription endpoint ready at ws://localhost:${PORT}${server.graphqlPath}`
   );
-  // A broken service account is reported here rather than at the first customer message.
-  console.log(pushConfigured() ? 'Push notifications are on' : 'Push notifications are off (no FCM service account)');
+  // A broken key is reported here rather than at the first customer message.
+  console.log(pushConfigured() ? 'Push notifications are on' : 'Push notifications are off (no usable APNs key)');
 });
 
 

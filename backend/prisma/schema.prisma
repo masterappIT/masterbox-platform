@@ -142,7 +142,7 @@ model DeviceToken {
   token     String   @unique
   accountId String   @map("account_id") @db.Text
   companyId String   @map("company_id") @db.Text
-  // ios or android
+  // ios; Android has no push yet
   platform  String
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")

@@ -2,6 +2,7 @@
 // can be checked on its own.
 import { customerOf, messagePreview } from '../messaging/conversationText.js';
 
+const TITLE_MAX = 100;
 const BODY_MAX = 180;
 
 /**
@@ -16,27 +17,20 @@ export const notificationRecipients = (room, channelAccounts) => (
 const shorten = (text, max) => ([...text].length > max ? `${[...text].slice(0, max - 1).join('')}…` : text);
 
 /**
- * The FCM message for a customer's message in a conversation. Tapping it opens the conversation by `roomId`;
- * notifications of one conversation are grouped, and on Android a newer one replaces the older.
+ * The APNs payload for a customer's message in a conversation. Tapping it opens the conversation by `roomId`,
+ * and the phone groups the notifications of one conversation. Well under APNs' 4KB limit, even with the longest text.
  */
 export const notificationFor = ({ room, channelName, message }) => {
   const customer = customerOf(room)?.name || '客戶';
-  const title = channelName ? `${customer} · ${channelName}` : customer;
+  const title = shorten(channelName ? `${customer} · ${channelName}` : customer, TITLE_MAX);
   const body = shorten(messagePreview(message.contents, message.encryptionMode) || '傳來一則訊息', BODY_MAX);
   return {
-    notification: { title, body },
-    data: {
-      type: 'message',
-      roomId: room.id,
-      chatRoomId: room.chatRoomId || room.id,
-      channelId: room.channelId,
-      platform: String(room.platform || ''),
-      messageId: String(message.id || ''),
-    },
-    android: { priority: 'HIGH', notification: { channel_id: 'messages', tag: room.id, sound: 'default' } },
-    apns: {
-      headers: { 'apns-priority': '10', 'apns-push-type': 'alert' },
-      payload: { aps: { sound: 'default', 'thread-id': room.id } },
-    },
+    aps: { alert: { title, body }, sound: 'default', 'thread-id': room.id },
+    type: 'message',
+    roomId: room.id,
+    chatRoomId: room.chatRoomId || room.id,
+    channelId: room.channelId,
+    platform: String(room.platform || ''),
+    messageId: String(message.id || ''),
   };
 };

@@ -46,9 +46,3 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
-
-# Firebase project settings for push, given at build time (see README).
-/firebase-defines.json
-# Firebase console downloads; the app reads its settings from firebase-defines.json instead.
-GoogleService-Info.plist
-google-services.json

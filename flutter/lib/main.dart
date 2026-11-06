@@ -1328,15 +1328,13 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  /// Push can only be switched where the phone, the build and the server
-  /// allow it; otherwise the switch says why.
+  /// Push can only be switched where the phone and the server allow it;
+  /// otherwise the switch says why.
   Widget _pushSwitch(PushService push) => ValueListenableBuilder<PushState>(
     valueListenable: push.state,
     builder: (context, state, _) {
       final available = switch (state) {
-        PushState.unsupportedPlatform ||
-        PushState.notConfigured ||
-        PushState.serverNotConfigured => false,
+        PushState.unsupportedPlatform || PushState.serverNotConfigured => false,
         _ => true,
       };
       return SwitchListTile(

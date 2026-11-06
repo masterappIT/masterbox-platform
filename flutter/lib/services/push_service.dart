@@ -1,65 +1,9 @@
 import 'dart:async';
 
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 import 'graphql_service.dart';
-
-/// The Firebase project the app registers with, given at build time with
-/// --dart-define so no project settings live in the (public) repository:
-///
-///   FIREBASE_PROJECT_ID, FIREBASE_MESSAGING_SENDER_ID,
-///   FIREBASE_IOS_API_KEY, FIREBASE_IOS_APP_ID,
-///   FIREBASE_ANDROID_API_KEY, FIREBASE_ANDROID_APP_ID
-///
-/// A build without them works as before, only without push.
-class FirebaseSettings {
-  const FirebaseSettings({
-    this.projectId = const String.fromEnvironment('FIREBASE_PROJECT_ID'),
-    this.senderId = const String.fromEnvironment(
-      'FIREBASE_MESSAGING_SENDER_ID',
-    ),
-    this.iosApiKey = const String.fromEnvironment('FIREBASE_IOS_API_KEY'),
-    this.iosAppId = const String.fromEnvironment('FIREBASE_IOS_APP_ID'),
-    this.androidApiKey = const String.fromEnvironment(
-      'FIREBASE_ANDROID_API_KEY',
-    ),
-    this.androidAppId = const String.fromEnvironment('FIREBASE_ANDROID_APP_ID'),
-  });
-  final String projectId;
-  final String senderId;
-  final String iosApiKey;
-  final String iosAppId;
-  final String androidApiKey;
-  final String androidAppId;
-
-  static const iosBundleId = 'com.masterbox.masterappinc';
-
-  /// The options for this device's platform, or null when this build has none.
-  FirebaseOptions? optionsFor(TargetPlatform platform) {
-    if (projectId.isEmpty || senderId.isEmpty) return null;
-    return switch (platform) {
-      TargetPlatform.iOS when iosApiKey.isNotEmpty && iosAppId.isNotEmpty =>
-        FirebaseOptions(
-          apiKey: iosApiKey,
-          appId: iosAppId,
-          messagingSenderId: senderId,
-          projectId: projectId,
-          iosBundleId: iosBundleId,
-        ),
-      TargetPlatform.android
-          when androidApiKey.isNotEmpty && androidAppId.isNotEmpty =>
-        FirebaseOptions(
-          apiKey: androidApiKey,
-          appId: androidAppId,
-          messagingSenderId: senderId,
-          projectId: projectId,
-        ),
-      _ => null,
-    };
-  }
-}
 
 /// Where push stands on this phone, in words the settings page shows.
 enum PushState {
@@ -72,19 +16,16 @@ enum PushState {
   /// The switch in settings is off.
   off,
 
-  /// The web and desktop versions have no push; they prompt while open.
+  /// Only the iPhone app has push so far.
   unsupportedPlatform,
 
-  /// This build of the app has no Firebase settings.
-  notConfigured,
-
-  /// The server has no Firebase service account.
+  /// The server has no APNs key.
   serverNotConfigured,
 
   /// The phone's settings don't allow MasterBox notifications.
   denied,
 
-  /// Registering failed, such as without a connection; tried again later.
+  /// Registering failed, such as without a connection.
   failed,
 }
 
@@ -92,12 +33,10 @@ String pushStateLabel(PushState state) => switch (state) {
   PushState.checking => '檢查中…',
   PushState.on => '客戶傳訊息時，手機會收到推播通知',
   PushState.off => '已關閉：只有 App 開啟時才會提示新訊息',
-  PushState.unsupportedPlatform =>
-    '網頁版和電腦版沒有推播，App 開啟時會提示新訊息；手機推播請使用 iOS 或 Android App',
-  PushState.notConfigured => '這個版本的 App 尚未設定推播，App 開啟時仍會提示新訊息',
+  PushState.unsupportedPlatform => '目前只有 iPhone App 支援推播，這裡在 App 開啟時會提示新訊息',
   PushState.serverNotConfigured => '伺服器尚未設定推播，App 開啟時仍會提示新訊息',
   PushState.denied => '手機不允許 MasterBox 通知，請到系統設定開啟通知',
-  PushState.failed => '推播註冊失敗，稍後會自動重試',
+  PushState.failed => '推播註冊失敗，下次開啟 App 時會再試一次',
 };
 
 /// A notification that arrived while the app was open. Phones don't show these
@@ -142,12 +81,14 @@ class ForegroundPush {
 
 /// What the app needs from the phone's push service; tests pass their own.
 abstract class PushClient {
-  /// False on platforms or builds without push.
+  /// False on platforms without push.
   bool get available;
   Future<void> initialize();
 
   /// Asks for permission the first time; afterwards answers with the setting.
   Future<bool> requestPermission();
+
+  /// This phone's device token.
   Future<String?> getToken();
   Stream<String> get onTokenRefresh;
 
@@ -160,89 +101,86 @@ abstract class PushClient {
   /// The data of the notification that launched the app, if one did.
   Future<Map<String, dynamic>?> launchedFrom();
 
-  /// Invalidates this phone's token, so nothing sent to it arrives any more.
-  Future<void> deleteToken();
-
-  /// ios or android
-  String get platformName;
+  /// Stops this phone receiving anything, even if the server couldn't be told.
+  Future<void> stop();
 }
 
-/// Uses FCM registration tokens, which the backend sends to with the HTTP v1
-/// API's `token` field. firebase_messaging 17 prefers its newer register() and
-/// installation ids, but the backend has only been built against tokens, so the
-/// token calls stay until it is moved over too.
-// ignore_for_file: deprecated_member_use
-class FirebasePushClient implements PushClient {
-  FirebasePushClient({FirebaseSettings settings = const FirebaseSettings()})
-    : _options = kIsWeb ? null : settings.optionsFor(defaultTargetPlatform);
+/// Apple's push service, through AppDelegate.swift. Android has no push yet, so
+/// nothing here runs there and it never asks for notification permission.
+class ApnsPushClient implements PushClient {
+  static const _channel = MethodChannel('masterbox/push');
+  static const _tokenTimeout = Duration(seconds: 15);
 
-  final FirebaseOptions? _options;
-  bool _ready = false;
+  final _tokens = StreamController<String>.broadcast();
+  final _opened = StreamController<Map<String, dynamic>>.broadcast();
+  final _foreground = StreamController<ForegroundPush>.broadcast();
 
   @override
-  bool get available => _options != null;
+  bool get available => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
   @override
-  String get platformName =>
-      defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android';
+  Future<void> initialize() async => _channel.setMethodCallHandler(_handle);
 
-  FirebaseMessaging get _messaging => FirebaseMessaging.instance;
-
-  @override
-  Future<void> initialize() async {
-    if (_ready || _options == null) return;
-    if (Firebase.apps.isEmpty) await Firebase.initializeApp(options: _options);
-    _ready = true;
-  }
-
-  @override
-  Future<bool> requestPermission() async {
-    final settings = await _messaging.requestPermission();
-    return settings.authorizationStatus == AuthorizationStatus.authorized ||
-        settings.authorizationStatus == AuthorizationStatus.provisional;
-  }
-
-  @override
-  Future<String?> getToken() async {
-    if (defaultTargetPlatform == TargetPlatform.iOS) {
-      // FCM can only hand out a token once Apple has given the phone one.
-      for (var attempt = 0; attempt < 10; attempt++) {
-        if (await _messaging.getAPNSToken() != null) break;
-        await Future<void>.delayed(const Duration(milliseconds: 500));
-      }
+  Future<void> _handle(MethodCall call) async {
+    final arguments = call.arguments;
+    switch (call.method) {
+      case 'token' when arguments is String:
+        _tokens.add(arguments);
+      case 'opened' when arguments is Map:
+        _opened.add(_dataOf(arguments));
+      case 'foreground' when arguments is Map:
+        _foreground.add(
+          ForegroundPush.fromData(
+            _dataOf(arguments),
+            title: arguments['title'] as String?,
+            body: arguments['body'] as String?,
+          ),
+        );
     }
-    return _messaging.getToken();
+  }
+
+  static Map<String, dynamic> _dataOf(Map<Object?, Object?> notification) {
+    final data = notification['data'];
+    return data is Map ? data.cast<String, dynamic>() : const {};
   }
 
   @override
-  Stream<String> get onTokenRefresh => _messaging.onTokenRefresh;
+  Future<bool> requestPermission() async =>
+      await _channel.invokeMethod<bool>('requestPermission') ?? false;
 
   @override
-  Stream<Map<String, dynamic>> get onOpened =>
-      FirebaseMessaging.onMessageOpenedApp.map((message) => message.data);
+  Future<String?> getToken() =>
+      _channel.invokeMethod<String>('getToken').timeout(_tokenTimeout);
 
   @override
-  Stream<ForegroundPush> get onForeground => FirebaseMessaging.onMessage.map(
-    (message) => ForegroundPush.fromData(
-      message.data,
-      title: message.notification?.title,
-      body: message.notification?.body,
-    ),
-  );
+  Stream<String> get onTokenRefresh => _tokens.stream;
 
   @override
-  Future<Map<String, dynamic>?> launchedFrom() async =>
-      (await _messaging.getInitialMessage())?.data;
+  Stream<Map<String, dynamic>> get onOpened => _opened.stream;
 
   @override
-  Future<void> deleteToken() => _messaging.deleteToken();
+  Stream<ForegroundPush> get onForeground => _foreground.stream;
+
+  @override
+  Future<Map<String, dynamic>?> launchedFrom() async {
+    final notification = await _channel.invokeMethod<Map<Object?, Object?>>(
+      'takeLaunchNotification',
+    );
+    return notification == null ? null : _dataOf(notification);
+  }
+
+  @override
+  Future<void> stop() => _channel.invokeMethod<void>('stop');
 }
 
 /// Registers this phone for the signed-in account's notifications and opens
 /// the conversation a tapped notification is about.
 class PushService {
   PushService({required this.graphQL, PushClient? client})
-    : _client = client ?? FirebasePushClient();
+    : _client = client ?? ApnsPushClient();
+
+  static const _platform = 'ios';
+  static const _serverWait = Duration(seconds: 3);
 
   final GraphQLService graphQL;
   final PushClient _client;
@@ -266,29 +204,21 @@ class PushService {
   /// opens the conversation of the notification that launched the app.
   Future<void> start({required bool enabled}) async {
     if (!_client.available) {
-      _state.value = kIsWeb || !_isPhone
-          ? PushState.unsupportedPlatform
-          : PushState.notConfigured;
+      _state.value = PushState.unsupportedPlatform;
       return;
     }
     try {
       await _client.initialize();
+      _opened ??= _client.onOpened.listen(_handleOpened);
+      _foreground ??= _client.onForeground.listen(_foregroundMessages.add);
+      final launched = await _client.launchedFrom();
+      if (launched != null) _handleOpened(launched);
     } catch (_) {
-      _state.value = PushState.notConfigured;
+      _state.value = PushState.failed;
       return;
     }
-    _opened ??= _client.onOpened.listen(_handleOpened);
-    _foreground ??= _client.onForeground.listen(_foregroundMessages.add);
-    final launched = await _client.launchedFrom().catchError(
-      (Object _) => null,
-    );
-    if (launched != null) _handleOpened(launched);
     await setEnabled(enabled);
   }
-
-  bool get _isPhone =>
-      defaultTargetPlatform == TargetPlatform.iOS ||
-      defaultTargetPlatform == TargetPlatform.android;
 
   String? _pendingRoom;
 
@@ -314,7 +244,7 @@ class PushService {
   Future<void> setEnabled(bool enabled) async {
     if (!_client.available) return;
     if (!enabled) {
-      await _unregister();
+      await _stopHere();
       _state.value = PushState.off;
       return;
     }
@@ -333,12 +263,12 @@ class PushService {
         _state.value = PushState.failed;
         return;
       }
-      await graphQL.registerPushDevice(token, _client.platformName);
+      await graphQL.registerPushDevice(token, _platform);
       _registeredToken = token;
       _tokenRefresh ??= _client.onTokenRefresh.listen((fresh) async {
         if (_state.value != PushState.on) return;
         try {
-          await graphQL.registerPushDevice(fresh, _client.platformName);
+          await graphQL.registerPushDevice(fresh, _platform);
           _registeredToken = fresh;
         } catch (_) {
           // Registered again on the next start.
@@ -350,40 +280,33 @@ class PushService {
     }
   }
 
-  Future<void> _unregister({Duration? timeout}) async {
-    final token = _registeredToken ?? await _safeToken();
-    _registeredToken = null;
-    if (token == null) return;
+  /// Tells the server, without waiting long on a slow connection, and stops
+  /// the phone receiving anything in case the server didn't hear.
+  Future<void> _stopHere() async {
     try {
-      final request = graphQL.unregisterPushDevice(token);
-      await (timeout == null ? request : request.timeout(timeout));
+      final token =
+          _registeredToken ?? await _client.getToken().timeout(_serverWait);
+      _registeredToken = null;
+      if (token != null) {
+        await graphQL.unregisterPushDevice(token).timeout(_serverWait);
+      }
     } catch (_) {
-      // Signing out also invalidates the token, which the server then forgets.
+      // Stopping below still ends the notifications.
+    }
+    try {
+      await _client.stop();
+    } catch (_) {
+      // Nothing more can be done.
     }
   }
 
-  Future<String?> _safeToken() async {
-    try {
-      return await _client.getToken();
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /// Signing out: the account's notifications stop on this phone, even when
-  /// the server can't be reached, because the token itself is invalidated.
+  /// Signing out: the account's notifications stop on this phone.
   Future<void> signOut() async {
     // Not awaited: nothing depends on it, and it can finish after sign-out.
     unawaited(_tokenRefresh?.cancel());
     _tokenRefresh = null;
     if (!_client.available) return;
-    // Signing out doesn't wait long on a slow connection.
-    await _unregister(timeout: const Duration(seconds: 3));
-    try {
-      await _client.deleteToken();
-    } catch (_) {
-      // Nothing more can be done offline.
-    }
+    await _stopHere();
     _state.value = PushState.off;
   }
 

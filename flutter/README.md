@@ -31,21 +31,12 @@ flutter test
 
 ## Push notifications
 
-The phone gets a notification when a customer writes in a conversation the signed-in account works in: its agent when it is assigned, otherwise everyone with access to the channel. Tapping it opens the conversation. Signing out, or switching push off in Settings, stops them on that phone.
+The iPhone gets a notification when a customer writes in a conversation the signed-in account works in: its agent when it is assigned, otherwise everyone with access to the channel. Tapping it opens the conversation. Signing out, or switching push off in Settings, stops them on that phone.
 
-Notifications go through Firebase Cloud Messaging; Firebase hands the iOS ones to APNs with the APNs key uploaded to the Firebase project. Nothing about the Firebase project is kept in this repository, which is public:
+While the app is open the phone shows nothing itself, so the app shows a notice with a link to the conversation, unless that conversation is on screen or the in-app switch in Settings is off. In the background or closed, the phone shows the notification and tapping it opens the conversation.
 
-- **App**: the project settings are given at build time. Copy `firebase-defines.example.json` to `firebase-defines.json` (ignored by git), fill it in from the Firebase console (Project settings → Your apps), and build with `--dart-define-from-file=firebase-defines.json`. A build without them works as before, only without push, and Settings says so.
-- **Server**: the Firebase service account key, mounted into the API container; `FCM_SERVICE_ACCOUNT_FILE` points at it (see `backend/.env.example`). Without it the API logs `Push notifications are off` and the app says the server has no push set up.
+Notifications go straight to Apple (APNs). The app registers its device token with the backend, which signs in with the APNs key, a `.p8` file mounted into the API container (`APNS_KEY_FILE`, see `backend/.env.example`). The key is never in this repository, which is public, or in the image. Without it the API logs `Push notifications are off` and the app says the server has no push set up.
 
-```bash
-flutter build ipa --build-number 17 \
-  --dart-define=GRAPHQL_ENDPOINT=https://api.masterbox.masterappinc.com/graphql \
-  --dart-define=REALTIME_ENDPOINT=https://api.masterbox.masterappinc.com \
-  --dart-define=ADMIN_URL=https://admin.masterbox.masterappinc.com \
-  --dart-define-from-file=firebase-defines.json
-```
+The MasterBox Push key only covers production, so notifications arrive in TestFlight and App Store builds, not in builds run from Xcode onto a phone. The App ID needs the Push Notifications capability.
 
-While the app is open the phone shows nothing itself, so the app shows a notice with a link to the conversation, unless that conversation is on screen or the in-app switch in Settings is off. In the background or closed, the phone shows the notification and tapping it opens the conversation. An Android app the user force-stopped gets nothing until it is opened again; that is Android's rule.
-
-The MasterBox Push APNs key only covers production, so iOS notifications arrive in TestFlight and App Store builds, not in builds run from Xcode onto a phone.
+Android has no push yet: Settings says so, and the app never asks for notification permission there. In-app notices work the same. Adding it needs a push service for Android (Firebase Cloud Messaging), a sender next to `backend/lib/push/apns.js` chosen by the stored `device_tokens.platform`, and an Android `PushClient`.
