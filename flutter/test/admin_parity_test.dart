@@ -335,8 +335,6 @@ void main() {
         MasterBoxApp(graphQL: backend.service(token: null)),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.byType(Switch));
-      await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField).at(0), 'me@example.com');
       await tester.enterText(find.byType(TextField).at(1), 'pw');
       await tester.pump();

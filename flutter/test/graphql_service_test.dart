@@ -139,22 +139,6 @@ void main() {
       expect(expired, isTrue);
     });
 
-    test('does not end a development session', () async {
-      final backend = FakeBackend({
-        'ChatRooms': const FakeError('expired', code: 'UNAUTHENTICATED'),
-      });
-      var expired = false;
-      final service = backend.service(
-        token: developmentToken,
-        refreshToken: null,
-      )..onSessionExpired = () => expired = true;
-      await expectLater(
-        service.fetchConversations(),
-        throwsA(isA<GraphQLException>()),
-      );
-      expect(expired, isFalse);
-    });
-
     test('shares one refresh between requests', () async {
       final backend = FakeBackend({
         'RefreshToken': {

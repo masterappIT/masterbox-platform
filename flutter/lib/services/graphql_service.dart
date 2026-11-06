@@ -6,9 +6,6 @@ import 'package:http/http.dart' as http;
 import '../models/app_models.dart';
 import 'realtime_service.dart';
 
-/// The token debug builds sign in with when no backend is reachable.
-const developmentToken = 'development-token';
-
 class GraphQLException implements Exception {
   const GraphQLException(this.message, {this.statusCode, this.code});
   final String message;
@@ -106,7 +103,6 @@ class GraphQLService {
   final _messageEvents = StreamController<ChatMessage>.broadcast();
 
   bool get isAuthenticated => token != null && token!.isNotEmpty;
-  bool get isDevelopmentSession => token == developmentToken;
 
   /// Messages as they arrive over the socket, for pages to refresh on.
   Stream<ChatMessage> get messageEvents => _messageEvents.stream;
@@ -117,7 +113,7 @@ class GraphQLService {
   }
 
   void startRealtime() {
-    if (!isAuthenticated || isDevelopmentSession) return;
+    if (!isAuthenticated) return;
     final realtime = _realtime ??= RealtimeService(
       url: _socketUrl,
       token: () => token,
@@ -699,10 +695,8 @@ class GraphQLService {
         if (allowRefresh && await refresh()) {
           return _request(query, variables, allowRefresh: false);
         }
-        if (!isDevelopmentSession) {
-          onSessionExpired?.call();
-          throw const GraphQLException('登入已過期，請重新登入', code: 'UNAUTHENTICATED');
-        }
+        onSessionExpired?.call();
+        throw const GraphQLException('登入已過期，請重新登入', code: 'UNAUTHENTICATED');
       }
       throw GraphQLException(
         _friendlyErrors[code] ?? message,

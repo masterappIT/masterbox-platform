@@ -267,44 +267,13 @@ class _AppRootState extends State<AppRoot> {
             onThemeModeChanged: widget.onThemeModeChanged,
             onLogout: handleLogout,
           )
-        : LoginPage(
-            onRegister: handleRegister,
-            onLogin: (email, password, developmentMode) async {
-              if (kDebugMode && developmentMode) {
-                try {
-                  await handleLogin(
-                    email.trim().isEmpty
-                        ? 'demo@masterbox.local'
-                        : email.trim(),
-                    password,
-                  );
-                } catch (_) {
-                  if (!mounted) return;
-                  graphQL
-                    ..token = developmentToken
-                    ..account = const CurrentAccount(
-                      id: null,
-                      email: null,
-                      role: 'admin',
-                    );
-                  setState(() => signedIn = true);
-                }
-              } else {
-                await handleLogin(email, password);
-              }
-            },
-          );
+        : LoginPage(onRegister: handleRegister, onLogin: handleLogin);
   }
 }
 
 class LoginPage extends StatefulWidget {
   const LoginPage({required this.onLogin, this.onRegister, super.key});
-  final Future<void> Function(
-    String email,
-    String password,
-    bool developmentMode,
-  )
-  onLogin;
+  final Future<void> Function(String email, String password) onLogin;
   final Future<void> Function(CompanyRegistration input)? onRegister;
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -312,7 +281,6 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage>
     with SingleTickerProviderStateMixin {
-  bool developmentMode = kDebugMode;
   bool showLoginForm = true;
   bool forgotPassword = false;
   bool registering = false;
@@ -381,8 +349,7 @@ class _LoginPageState extends State<LoginPage>
   bool get _canSubmit {
     if (loading || forgotPassword) return false;
     if (registering) return true;
-    return developmentMode ||
-        (email.text.isNotEmpty && password.text.isNotEmpty);
+    return email.text.isNotEmpty && password.text.isNotEmpty;
   }
 
   Future<void> _submit() async {
@@ -408,7 +375,7 @@ class _LoginPageState extends State<LoginPage>
           ),
         );
       } else {
-        await widget.onLogin(email.text.trim(), password.text, developmentMode);
+        await widget.onLogin(email.text.trim(), password.text);
       }
     } catch (error) {
       if (mounted) {
@@ -583,16 +550,6 @@ class _LoginPageState extends State<LoginPage>
                                         ),
                                       ),
                                     ],
-                                    if (kDebugMode && !registering)
-                                      SwitchListTile(
-                                        contentPadding: EdgeInsets.zero,
-                                        title: const Text('開發免登入'),
-                                        subtitle: const Text('本機開發時略過帳號驗證'),
-                                        value: developmentMode,
-                                        onChanged: (value) => setState(
-                                          () => developmentMode = value,
-                                        ),
-                                      ),
                                   ],
                                   const SizedBox(height: 12),
                                   if (errorMessage != null) ...[
@@ -625,11 +582,7 @@ class _LoginPageState extends State<LoginPage>
                                         label: Text(
                                           loading
                                               ? (registering ? '註冊中…' : '登入中…')
-                                              : (registering
-                                                    ? '立即註冊'
-                                                    : (developmentMode
-                                                          ? '以開發模式進入'
-                                                          : '登入')),
+                                              : (registering ? '立即註冊' : '登入'),
                                         ),
                                       ),
                                     ),
@@ -655,11 +608,6 @@ class _LoginPageState extends State<LoginPage>
                           ),
                         ),
                       const SizedBox(height: 18),
-                      if (kDebugMode)
-                        const Text(
-                          'API 連線尚未設定時仍可使用示範資料',
-                          style: TextStyle(color: Colors.white70, fontSize: 12),
-                        ),
                     ],
                   ),
                 ),
@@ -1211,12 +1159,6 @@ class ChatPage extends StatefulWidget {
 }
 
 class _ChatPageState extends State<ChatPage> {
-  static const _demoRoom = ChatConversation(
-    id: 'demo',
-    title: '示範聊天室',
-    lastMessage: '歡迎使用 MasterBox',
-  );
-
   final searchController = TextEditingController();
   final searchFocus = FocusNode();
 
@@ -1230,12 +1172,10 @@ class _ChatPageState extends State<ChatPage> {
   int _pollFailures = 0;
   String? _connectionMessage;
 
-  bool get _isDevelopment => widget.graphQL.isDevelopmentSession;
-
   @override
   void initState() {
     super.initState();
-    conversations = _loadInitialConversations();
+    conversations = widget.graphQL.fetchConversations();
     _loadChannels();
     _pollTimer = Timer.periodic(
       const Duration(seconds: 15),
@@ -1253,17 +1193,6 @@ class _ChatPageState extends State<ChatPage> {
     } catch (_) {
       // The conversations' own error says the connection is down.
     }
-  }
-
-  Future<List<ChatConversation>> _loadInitialConversations() async {
-    if (!_isDevelopment) return widget.graphQL.fetchConversations();
-    try {
-      final result = await widget.graphQL.fetchConversations();
-      if (result.isNotEmpty) return result;
-    } catch (_) {
-      // The demo room keeps the offline development flow usable.
-    }
-    return const [_demoRoom];
   }
 
   Future<void> _refreshConversations() async {
@@ -1447,13 +1376,7 @@ class _ChatPageState extends State<ChatPage> {
                 }
                 final rooms = _visibleRooms(snapshot.data ?? const []);
                 if (rooms.isEmpty && query.trim().isEmpty) {
-                  if (!_isDevelopment) return _noRooms();
-                  return ConversationTile(
-                    name: _demoRoom.title,
-                    preview: _demoRoom.lastMessage,
-                    time: '剛剛',
-                    onTap: () => _open(_demoRoom),
-                  );
+                  return _noRooms();
                 }
                 if (rooms.isEmpty) {
                   return const EmptyState(
@@ -1534,7 +1457,6 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   String get _accountSummary {
-    if (widget.graphQL.isDevelopmentSession) return '開發模式';
     final account = widget.graphQL.account;
     if (account == null) return '';
     final role = accountRoleNames[account.role] ?? account.role;
