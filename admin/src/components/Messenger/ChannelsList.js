@@ -7,6 +7,7 @@ import ListItem from '../../stories/components/ListItem';
 import Icon from '../../stories/components/Icon';
 import Headline from '../../stories/components/Headline';
 import { useTranslation } from 'react-i18next';
+import { channelSubtitle } from '../Chat/capabilities';
 
 
 // allChannels adds a first choice for every channel, chosen as -1.
@@ -30,14 +31,14 @@ function ChannelsList({ setChannelData, channelList, setChannelListVisitable, ch
           <ChatroomItem title={t('all_channels')} isMobile={isMobile} name={t('all_channels')} contentShow={false} />
         </div>
       )}
-      {(channelList&&channelList.length) ?channelList.map(({  channel_id, platform, name }, i) => (
-        <div key={i} onClick={() => handleOnClick(i)} >
-          <ChatroomItem title={name}
+      {(channelList&&channelList.length) ?channelList.map((channel, i) => (
+        <div key={channel.channel_id || i} onClick={() => handleOnClick(i)} >
+          <ChatroomItem title={channel.name}
             isMobile={isMobile}
-            name={name}
-            content={channel_id}
-            contentIcon={<Icon name={platform} size='small' customStyles={`mr-[6px] mt-[1px] `}/>} 
-            // contentIcon={<Icon name={platform} size='small' customStyles={`mr-[6px] mt-[1px] ${isMobile?'messenger-list-channel-others-iconFilter':''}`} />} 
+            name={channel.name}
+            // The phone number or page name after the source, never the internal id.
+            content={channelSubtitle(channel)}
+            contentIcon={<Icon name={channel.platform} size='small' customStyles={`mr-[6px] mt-[1px] `}/>}
             />
         </div>
       )):''}

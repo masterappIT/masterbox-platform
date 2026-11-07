@@ -13,9 +13,12 @@ export const GET_USER_SUBSCRIBED_CHANNELS = gql`
 query GetUserSubscribedChannels {
   getUserSubscribedChannels {
     platform
+    source
+    capabilities
     name
     channel_id
     enabled
+    phone
     whatsapp_web {
       ${WHATSAPP_WEB_FIELDS}
     }
@@ -32,6 +35,8 @@ export const GET_CHANNELS_WITH_CONNECTION = gql`
 query GetChannelsWithConnection {
   getUserSubscribedChannels {
     platform
+    source
+    capabilities
     name
     channel_id
     enabled
@@ -93,6 +98,8 @@ const AGENT_FIELDS = `id name email role`;
 const ROOM_FIELDS = `
     id
     platform
+    source
+    capabilities
     channel_id
     channel_name
     chat_room_id

@@ -7,6 +7,7 @@ import Icon from '../../stories/components/Icon'
 import { useTranslation } from 'react-i18next'
 import { dateTimeLabel } from '../../utils/messageTime'
 import { customerOfRoom } from './ChatroomList'
+import { sourceLabel } from '../Chat/capabilities'
 
 const TAG_MAX_LENGTH = 20
 
@@ -70,6 +71,9 @@ function AssigneeSection({ room, assignment }) {
   )
 }
 
+// Whether an id is just the phone number written another way, such as 886912345678 and +886 912 345 678.
+const sameNumber = (id, phone) => Boolean(id && phone) && String(id).replace(/\D/g, '') === String(phone).replace(/\D/g, '')
+
 /**
  * What we know about the customer of a conversation, from the platform, and the company's tags for them.
  * Anything the platform doesn't share is left out rather than guessed.
@@ -85,12 +89,12 @@ function CustomerPanel({ room, isShown, onClose, tagSuggestions, onAddTag, onRem
   const customer = { ...customerOfRoom(room), ...(room.customer || {}) }
   const language = i18n.language
   const rows = [
-    [t('customer_platform'), room.platform ? t(`platform_${room.platform}`) : null],
+    [t('customer_platform'), sourceLabel(room.source)],
     [t('customer_channel'), room.channel_name],
     [t('customer_username'), customer.username ? `@${customer.username}` : null],
     [t('customer_phone'), customer.phone],
-    // WhatsApp's id is the phone number, already shown above.
-    [t('customer_platform_id'), room.platform === 'whatsapp' ? null : customer.id],
+    // Where the id is the phone number (WhatsApp), it is already shown above.
+    [t('customer_platform_id'), sameNumber(customer.id, customer.phone) ? null : customer.id],
     [t('conversation_started'), dateTimeLabel(room.createdAt, { language })],
     [t('last_message_at'), dateTimeLabel(room.lastMessageAt, { language })],
   ].filter(([, value]) => value)
