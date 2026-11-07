@@ -7,6 +7,7 @@
 		"build": "next build",
 		"start": "next start",
 		"lint": "next lint",
+		"test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./test/resolve-extensionless.mjs --test test/*.test.mjs",
 		"storybook": "start-storybook -p 6006 -s ./public",
 		"build-storybook": "build-storybook -s public",
 		"cypress": "CYPRESS_BASE_URL=http://localhost:3000 npx  cypress open"

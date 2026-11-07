@@ -1,9 +1,24 @@
 import { gql, } from '@apollo/client';
 
-// What the admin shows of a message. `cursor` places it in its conversation for paging and catching up.
+// What the admin shows of a message. `body` is the message in the same shape for every source; `cursor` places it in
+// its conversation for paging and catching up.
 export const MESSAGE_FIELDS = `
     _id
-    contents
+    body {
+      text
+      attachments {
+        type
+        url
+        filename
+        mime_type
+        size
+        caption
+      }
+      template {
+        id
+        name
+      }
+    }
     platform
     channel_id
     to_chat_room_id

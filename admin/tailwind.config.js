@@ -65,6 +65,71 @@ module.exports = {
         black_quaternary:'#D9D9D9',
         black_quinary:'#E6E6E6',
         black_white:'#FFFFFF',
+
+        // The chat room, from the Figma variable collection "MasterBox Chat v1" (Light mode).
+        // Each Figma variable `group/name` is the class `*-group-name`, such as bg-surface-chat or text-text-secondary.
+        brand: {
+          primary: '#FFAB37',
+          'primary-dark': '#F08F36',
+          'primary-soft': '#FFEED7',
+          'primary-tint': '#FFF5E8',
+        },
+        text: {
+          primary: '#1F1F1F',
+          secondary: '#666666',
+          tertiary: '#9A9A9A',
+          'on-primary': '#FFFFFF',
+        },
+        surface: {
+          page: '#F7F7F7',
+          card: '#FFFFFF',
+          nav: '#FFFFFF',
+          chat: '#F2EDE6',
+        },
+        border: {
+          default: '#E6E6E6',
+          strong: '#D0D0D0',
+        },
+        bubble: {
+          customer: '#FFFFFF',
+          company: '#FFE9CC',
+          note: '#FFF6D6',
+          'note-border': '#F2D58A',
+        },
+        source: {
+          messenger: '#1877F2',
+          'messenger-soft': '#E3EFFD',
+          instagram: '#E1306C',
+          'instagram-soft': '#FBE6ED',
+          'whatsapp-cloud': '#25D366',
+          'whatsapp-cloud-soft': '#E5FAED',
+          'whatsapp-web': '#128C7E',
+          'whatsapp-web-soft': '#E3F1F0',
+          line: '#06C755',
+          'line-soft': '#E1F8EB',
+          'chatbox-internal': '#7993B7',
+          'chatbox-internal-soft': '#EFF2F6',
+          'chatbox-external': '#2B84FF',
+          'chatbox-external-soft': '#E6F0FF',
+        },
+        status: {
+          open: '#FFAB37',
+          'open-soft': '#FFF3E3',
+          progress: '#2B84FF',
+          'progress-soft': '#E1EEFF',
+          closed: '#9A9A9A',
+          'closed-soft': '#F1F1F1',
+        },
+        feedback: {
+          alert: '#EB6666',
+          'alert-soft': '#FBE0E0',
+          info: '#2B84FF',
+          'info-soft': '#EAF3FF',
+        },
+      },
+      boxShadow: {
+        // The chat's toasts, such as 新訊息.
+        chat: '0px 2px 8px 0 rgba(0,0,0,0.12)',
       },
       backgroundColor: {
         bubble_primary:'#F7DFBA',

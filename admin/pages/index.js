@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 
 import ChatRoom from "../src/components/Messenger/ChatRoom";
-import Conversations from "../src/components/Conversations/Conversations";
+import ChatRoomView from "../src/components/Chat/ChatRoomView";
+import { capabilitiesOf, sourceLabel, sourcesOfChannels } from "../src/components/Chat/capabilities";
 import CustomerPanel from "../src/components/Messenger/CustomerPanel";
 import MobileNavigation from "../src/components/Messenger/MobileNavigation";
 import MobileHeader from "../src/components/Messenger/MobileHeader";
 import MobileSetting from "../src/components/Messenger/MobileSetting";
 import MobileSettingDetail from "../src/components/Messenger/MobileSettingDetail";
-import StatusMessage from "../src/components/Messenger/StatusMessage";
+import ChatEmptyState from "../src/components/Chat/ChatEmptyState";
 import AssignmentFilter, { assignmentFilter } from "../src/components/Messenger/AssignmentFilter";
 import useRoomAssignment from "../src/utils/useRoomAssignment";
 import Checkbox from "../src/stories/components/Checkbox";
@@ -19,7 +20,7 @@ import {
   addConversationTag, removeConversationTag, handleSendMessage, loadAgents, selectAgents, selectRoomDetails,
 } from '../src/redux/slices/messagesSlices';
 import { selectUserInfo } from '../src/redux/slices/userSlices';
-import { MessageFactory } from '../src/utils/MessageFactory';
+import { replyInput } from '../src/utils/chatReply';
 import { useRouter } from 'next/router';
 import { useTranslation } from 'react-i18next';
 
@@ -82,7 +83,8 @@ export default function Messenger() {
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [search, setSearch] = useState('');
   const [searchWords, setSearchWords] = useState('');
-  const [platform, setPlatform] = useState('');
+  // A source such as whatsapp_cloud, or '' for all of them.
+  const [source, setSource] = useState('');
   const [unreadOnly, setUnreadOnly] = useState(false);
   // '' for every conversation, 'mine', 'unassigned', or 'agent:<id>'.
   const [assignment, setAssignment] = useState('');
@@ -102,14 +104,19 @@ export default function Messenger() {
     return () => clearTimeout(timer)
   }, [search])
 
-  const platforms = useMemo(() => [...new Set(channels.map(({ platform: channelPlatform }) => channelPlatform))], [channels])
+  const sources = useMemo(() => sourcesOfChannels(channels), [channels])
+
+  // A source no channel has any more can't be filtered on.
+  useEffect(() => {
+    if (source && channels.length && !sources.includes(source)) setSource('')
+  }, [source, sources, channels.length])
   const channelFilter = selectedChannel === ALL_CHANNELS ? null : channels[selectedChannel]?.account
   const filter = useMemo(() => ({
     ...(searchWords ? { search: searchWords } : {}),
-    ...(channelFilter ? { channel_id: channelFilter } : platform ? { platform } : {}),
+    ...(channelFilter ? { channel_id: channelFilter } : source ? { source } : {}),
     ...(unreadOnly ? { unread_only: true } : {}),
     ...assignmentFilter(assignment, userInfo?._id),
-  }), [searchWords, channelFilter, platform, unreadOnly, assignment, userInfo?._id])
+  }), [searchWords, channelFilter, source, unreadOnly, assignment, userInfo?._id])
   const filterKey = JSON.stringify(filter)
 
   const fetchInbox = () => {
@@ -122,7 +129,7 @@ export default function Messenger() {
   }, [hasChannels, filterKey])
 
   const chatrooms = inbox.rooms
-  const isFiltered = Boolean(searchWords || platform || unreadOnly || assignment)
+  const isFiltered = Boolean(searchWords || (source && !channelFilter) || unreadOnly || assignment)
 
   // The list's copy is the freshest; when the filter hides it, the one kept on selecting with any change since.
   const currentChatroom = useMemo(() => {
@@ -132,9 +139,10 @@ export default function Messenger() {
   const roomAssignment = useRoomAssignment(currentChatroom)
 
   const currentChannel = useMemo(() => {
-    if (currentChatroom) return channels.find(({ account }) => account === currentChatroom.channel_id) || { account: currentChatroom.channel_id, platform: currentChatroom.platform }
+    if (currentChatroom) return channels.find(({ account }) => account === currentChatroom.channel_id) || null
     return selectedChannel === ALL_CHANNELS ? null : channels[selectedChannel]
   }, [currentChatroom, channels, selectedChannel])
+  const currentCapabilities = useMemo(() => capabilitiesOf(currentChatroom, currentChannel), [currentChatroom, currentChannel])
 
   // Cached data is shown while refreshing or after a failed refresh; without it, say what is going on.
   const homeStatus = useMemo(() => {
@@ -148,14 +156,23 @@ export default function Messenger() {
     return isFiltered ? 'no_matches' : 'no_chatrooms'
   }, [hasChannels, channelsRequested, channelsStatus, chatrooms, inboxRequested, inbox.status, isFiltered])
 
-  const homeStatusMessage = {
-    loading: { title: t('home_loading') },
-    failed: { title: t('home_load_failed'), description: t('home_load_failed_hint'), action: { title: t('retry'), onClick: hasChannels ? fetchInbox : fetchChannels } },
+  const clearFilters = () => {
+    setSearch('')
+    setSearchWords('')
+    setSource('')
+    setUnreadOnly(false)
+    setAssignment('')
+  }
+
+  // What the list and the chat room show instead (Figma Admin/空白狀態); ChatEmptyState has the text of each kind.
+  const homeEmptyState = {
+    loading: { kind: 'loading', title: t('home_loading') },
+    failed: { kind: 'failed', action: { title: t('retry'), onClick: hasChannels ? fetchInbox : fetchChannels } },
     no_channels: isAdmin
-      ? { title: t('no_channel_connected'), description: t('connect_channel_hint'), action: { title: t('go_to_channels_management'), onClick: () => router.push('/channels-management') } }
-      : { title: t('no_channel_connected'), description: t('connect_channel_ask_admin') },
-    no_chatrooms: { title: t('no_conversations_yet'), description: t('no_conversations_hint') },
-    no_matches: { title: unreadOnly && !searchWords && !assignment ? t('no_unread_conversations') : t('no_matching_conversations') },
+      ? { kind: 'no_channels', action: { title: t('go_to_channels_management'), onClick: () => router.push('/channels-management') } }
+      : { kind: 'no_channels', description: t('connect_channel_ask_admin') },
+    no_chatrooms: { kind: 'no_chatrooms' },
+    no_matches: { kind: 'no_matches', ...(unreadOnly && !searchWords && !assignment ? { title: t('no_unread_conversations') } : {}), action: { title: '清除篩選', onClick: clearFilters } },
   }[homeStatus]
 
   const selectChatroom = (_, room) => {
@@ -208,11 +225,9 @@ export default function Messenger() {
 
   const isMobileHeader = componentHandler.current !== 'client'
 
-  function handlePushMessage(to_chat_room_id, message, recipient) {
-    const { account, platform: channelPlatform } = currentChannel
-    const data = new MessageFactory(to_chat_room_id, channelPlatform, account).createContents({ message: message, recipient: recipient });
-    // Rejects when the message wasn't sent, so the input can keep it and show why.
-    return dispatch(handleSendMessage(data)).unwrap()
+  // Rejects when the message wasn't sent, so the message box can keep it and show why.
+  function sendReply(reply) {
+    return dispatch(handleSendMessage(replyInput(currentChatroom, reply))).unwrap()
   }
 
   // The panel shows the list's copy of the conversation, so a tag change shows there too.
@@ -227,10 +242,10 @@ export default function Messenger() {
         <input type='search' value={search} placeholder={t('search_conversations')} aria-label={t('search_conversations')} onChange={(event) => setSearch(event.target.value)} />
       </label>
       <div className='messenger-list-filters-row'>
-        {selectedChannel === ALL_CHANNELS && platforms.length > 1 && (
-          <select className='messenger-list-filters-platform' value={platform} aria-label={t('all_platforms')} onChange={(event) => setPlatform(event.target.value)}>
-            <option value=''>{t('all_platforms')}</option>
-            {platforms.map((value) => <option key={value} value={value}>{t(`platform_${value}`)}</option>)}
+        {selectedChannel === ALL_CHANNELS && sources.length > 1 && (
+          <select className='messenger-list-filters-platform' value={source} aria-label={t('all_sources')} onChange={(event) => setSource(event.target.value)}>
+            <option value=''>{t('all_sources')}</option>
+            {sources.map((value) => <option key={value} value={value}>{sourceLabel(value)}</option>)}
           </select>
         )}
         <AssignmentFilter value={assignment} onChange={setAssignment} agents={agents} myId={userInfo?._id} />
@@ -256,8 +271,8 @@ export default function Messenger() {
           channels={channels}
           chatrooms={chatrooms}
           allChannels
-          channelPlaceholder={homeStatus === 'loading' || (homeStatus === 'failed' && !hasChannels) ? homeStatusMessage.title : null}
-          emptyContent={homeStatusMessage ? <StatusMessage {...homeStatusMessage} compact={!isMobile} /> : null}
+          channelPlaceholder={homeStatus === 'loading' ? t('home_loading') : homeStatus === 'failed' && !hasChannels ? t('home_load_failed') : null}
+          emptyContent={homeEmptyState ? <ChatEmptyState {...homeEmptyState} /> : null}
           listProps={{
             filterBar: hasChannels ? filterBar : null,
             onLoadMore: () => dispatch(loadMoreInbox()),
@@ -268,24 +283,21 @@ export default function Messenger() {
             selectedId: currentChatroom?.id || null,
           }}
         />
-        <Conversations
+        <ChatRoomView
           key={currentChatroom?.id || 'none'}
-          isCustomerSideInfo={isCustomerSideInfo}
-          setIsCustomerSideInfo={setIsCustomerSideInfo}
-          componentHandler={componentHandler}
-          currentComponent={componentHandler.current}
-          isMobile={isMobile}
+          room={currentChatroom}
+          channel={currentChannel}
           messages={currentConversation}
-          selectedChatroomID={currentChatroom?.chat_room_id || null}
-          currentChannel={currentChannel}
-          selectedChannel={selectedChannel}
-          currentChatroom={currentChatroom}
-          channels={channels}
-          handlePushMessage={handlePushMessage}
+          capabilities={currentCapabilities}
+          onSend={sendReply}
           onLoadOlder={() => currentChatroom && dispatch(loadOlderMessages(currentChatroom))}
           hasOlder={Boolean(paging.hasOlder)}
           loadingOlder={Boolean(paging.loadingOlder)}
-          emptyContent={homeStatus !== 'ready' && homeStatusMessage ? <StatusMessage {...homeStatusMessage} /> : null}
+          isMobile={isMobile}
+          hidden={isMobile && componentHandler.current !== 'conversations'}
+          onTogglePanel={() => setIsCustomerSideInfo((shown) => !shown)}
+          isPanelOpen={isCustomerSideInfo}
+          emptyState={['no_channels', 'failed'].includes(homeStatus) ? homeEmptyState : null}
         />
         <CustomerPanel
           room={currentChatroom}

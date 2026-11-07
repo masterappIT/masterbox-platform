@@ -1,8 +1,7 @@
 import React, { useEffect, useRef } from 'react'
 import PropTypes from 'prop-types'
-import ChatroomItem from '../../stories/components/ChatroomItem';
+import ChatListItem from '../Chat/ChatListItem';
 import ContentText from '../../stories/components/ContentText';
-import Icon from '../../stories/components/Icon';
 import Checkbox from '../../stories/components/Checkbox';
 import { useTranslation } from "react-i18next";
 import { listTimeLabel } from '../../utils/messageTime';
@@ -47,33 +46,24 @@ function ChatroomList({ isMobile, chatRoomsList, componentHandler, setCurrentCom
 
       <div ref={listRef} className='list messenger-list-chatroom' role='list' onScroll={loadMoreIfNearEnd}>
         {(chatRoomsList && chatRoomsList.length) ? chatRoomsList.map((room) => {
-          const { id, channel_id, chat_room_id, platform, lastMessage, lastMessageAt, updatedAt, unreadCount, assignee } = room
+          const { id, channel_id, chat_room_id, source, lastMessage, lastMessageAt, updatedAt, unreadCount, assignee } = room
           const customer = customerOfRoom(room)
           const unread = showUnread ? unreadCount || 0 : 0
-          const isSelected = selectedId && (selectedId === id || selectedId === chat_room_id)
+          const isSelected = Boolean(selectedId && (selectedId === id || selectedId === chat_room_id))
           const time = listTimeLabel(lastMessageAt || updatedAt, { t, language: i18n.language })
 
           return (
-            <div
-              key={id || `${channel_id}-${chat_room_id}`}
-              role='listitem'
-              className={`messenger-list-room ${isSelected ? 'messenger-list-room-selected' : ''} ${unread ? 'messenger-list-room-unread' : ''}`}
-              onClick={() => handleOnClick(room)}
-            >
-              <ChatroomItem
-                isMobile={isMobile}
-                title={customer.name || t('no_name')}
-                name={customer.avatar || customer.name}
-                contentIcon={platform ? <Icon name={platform} size='small' customStyles='mr-[6px] mt-[1px] shrink-0' /> : null}
-                content={lastMessage || `ID : ${customer.id || chat_room_id}`}
-                endElement={
-                  <div className='messenger-list-room-meta'>
-                    <span className='messenger-list-room-time'>{time}</span>
-                    {assignee && <span className='messenger-list-room-assignee' title={t('assignee_label', { name: assignee.name })}>{assignee.name}</span>}
-                    {unread > 0 && <span className='messenger-unread' aria-label={t('unread_count', { count: unread })}>{unread > 99 ? '99+' : unread}</span>}
-                  </div>
-                }
-                customStyles={{ padding: '10px 16px', cursor: 'pointer' }}
+            <div key={id || `${channel_id}-${chat_room_id}`} role='listitem'>
+              <ChatListItem
+                name={customer.name || t('no_name')}
+                photo={customer.avatar}
+                source={source}
+                lastMessage={lastMessage || ''}
+                time={time}
+                assignee={assignee?.name || null}
+                unread={unread}
+                isSelected={isSelected}
+                onClick={() => handleOnClick(room)}
               />
             </div>
           )

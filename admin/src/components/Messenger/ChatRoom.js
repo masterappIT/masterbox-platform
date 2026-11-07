@@ -6,6 +6,7 @@ import Icon from "../../stories/components/Icon";
 import ChatroomList from "./ChatroomList";
 import ChannelsList from "./ChannelsList";
 import { useTranslation } from 'react-i18next';
+import { channelSubtitle } from '../Chat/capabilities';
 
 // listProps go to the conversation list as they are: filterBar, onLoadMore, hasMore, loadingMore, loadMoreFailed, showUnread, selectedId.
 // allChannels lets the agent see every channel at once, as selectedChannel -1, with the list already filtered by the server.
@@ -44,7 +45,7 @@ function ChatRoom({ currentChannel, channels, chatrooms, clientList, componentHa
                   color={isMobile ? 'secondary' : 'primary'}
                   name={shownChannel && channels.length ? shownChannel.name : ''}
                   title={shownChannel && channels.length ? shownChannel.name : (channelPlaceholder || t('no_channel'))}
-                  content={shownChannel && channels.length ? (shownChannel.account) : (channelPlaceholder ? '' : t('un_connected'))}
+                  content={shownChannel && channels.length ? channelSubtitle(shownChannel) : (channelPlaceholder ? '' : t('un_connected'))}
                   contentShow={!isAllChannels}
                   contentIcon={shownChannel?.platform ? <Icon name={shownChannel.platform} size='small' customStyles='mr-[6px] mt-[1px]' /> : null}
                   endElement={<Icon name='switch' size='large' color={isMobile ? 'secondary' : 'primary'} />}

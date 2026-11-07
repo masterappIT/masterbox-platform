@@ -17,8 +17,10 @@ const MESSAGES_PER_PAGE = 30;
 const CATCH_UP_PAGES = 10;
 
 // The home page keys chat rooms by `account`; rooms point at their channel by its id.
-const toChannel = ({ channel_id, platform, name, enabled, phone, connection, whatsapp_web }) => ({
-  channel_id, platform, name, enabled: enabled !== false, account: channel_id, phone: phone || null, connection: connection || null, whatsapp_web: whatsapp_web || null,
+// source and capabilities say where the channel's messages come from and what the chat room offers for it.
+const toChannel = ({ channel_id, platform, source, capabilities, name, enabled, phone, connection, whatsapp_web }) => ({
+  channel_id, platform, source: source || null, capabilities: Array.isArray(capabilities) ? capabilities : [], name, enabled: enabled !== false,
+  account: channel_id, phone: phone || null, connection: connection || null, whatsapp_web: whatsapp_web || null,
 });
 
 const toChatRoom = ({ users, ...room }) => ({
@@ -26,29 +28,13 @@ const toChatRoom = ({ users, ...room }) => ({
   users: (users || []).map(({ name, first_name, ...user }) => ({ ...user, first_name: first_name || name })),
 });
 
-const UNSUPPORTED_MESSAGE = '[此訊息類型暫不支援顯示]';
-
-// Stored contents are plain text, a JSON message (`text`), or a Meta payload (`message.text`).
-// A customer's message may only have attachments, and some types have nothing to show at all.
-const parseContents = (contents) => {
-  let parsed = contents && typeof contents === 'object' ? contents : null;
-  if (!parsed) {
-    try {
-      const value = JSON.parse(contents);
-      if (value && typeof value === 'object') parsed = value;
-    } catch (error) { }
-  }
-  const text = parsed ? parsed.text ?? parsed.message?.text ?? parsed.message?.body : contents;
-  const attachments = parsed?.attachments || parsed?.message?.attachments || [];
-  return { ...parsed, text: (text?.body ?? text) || attachments.length ? text : UNSUPPORTED_MESSAGE, attachments };
-};
-
 // Conversations tell the two sides apart by comparing the sender with the channel.
 const CUSTOMER_SENDER = 'customer';
 
-const toMessage = ({ sentAt, createdAt, contents, sender, ...message }) => ({
+// The server sends every message's body in one shape (text, attachments, template), whatever the source stored.
+const toMessage = ({ sentAt, createdAt, sender, body, ...message }) => ({
   ...message,
-  contents: parseContents(contents),
+  body: body ? { text: body.text ?? null, attachments: body.attachments || [], template: body.template || null } : null,
   sender: sender || (message.inbound ? CUSTOMER_SENDER : message.channel_id),
   createdAt: createdAt || sentAt,
 });
@@ -78,7 +64,7 @@ const fitsAssignment = (room, filter = {}) => (!filter.assignee_id || room.assig
 // A search is only matched on the server, so new conversations wait for the next search.
 const fitsFilter = (room, filter = {}) => !filter.search
   && (!filter.channel_id || room.channel_id === filter.channel_id)
-  && (!filter.platform || room.platform === filter.platform)
+  && (!filter.source || room.source === filter.source)
   && (!filter.unread_only || room.unreadCount > 0)
   && fitsAssignment(room, filter);
 
@@ -106,7 +92,7 @@ export const findChatsRooms = createAsyncThunk(
 
 /**
  * The first page of the inbox for a filter. A newer request replaces the list; an older one finishing late is ignored.
- * @param filter - { search, platform, channel_id, unread_only }
+ * @param filter - { search, source, channel_id, unread_only, assignment, assignee_id }
  */
 export const loadInbox = createAsyncThunk(
   'inbox/load',
