@@ -42,3 +42,11 @@ Notifications go straight to Apple (APNs). The app registers its device token wi
 The MasterBox Push key only covers production, so notifications arrive in TestFlight and App Store builds, not in builds run from Xcode onto a phone. The App ID needs the Push Notifications capability.
 
 Android has no push yet: Settings says so, and the app never asks for notification permission there. In-app notices work the same. Adding it needs a push service for Android (Firebase Cloud Messaging), a sender next to `backend/lib/push/apns.js` chosen by the stored `device_tokens.platform`, and an Android `PushClient`.
+
+## TestFlight
+
+```bash
+bash flutter/tools/testflight.sh
+```
+
+It builds the iPhone app against production (the same `--dart-define`s as `Dockerfile`) and uploads it to App Store Connect, where it shows in TestFlight after 5–30 minutes. The build number is the time, `yyyymmddHHMM`, so it is always higher than the last one; `pubspec.yaml` only sets the version. Signing is left to Xcode, which needs Xcode → Settings → Accounts signed in with an Apple ID in the team YU6GT6HQJ8. App Store signing sets `aps-environment` to production, which notifications need. A warning that WebRTC.framework has no dSYM is expected.
