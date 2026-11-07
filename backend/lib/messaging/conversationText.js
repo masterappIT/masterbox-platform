@@ -1,4 +1,5 @@
 // What the conversation list shows and how it pages. No database here, so it is easy to test.
+import { readBody, isBody } from './messageBody.js';
 
 // The same words the admin uses for attachments in a conversation.
 export const ATTACHMENT_LABELS = {
@@ -18,37 +19,21 @@ export const ATTACHMENT_LABELS = {
   reel: 'Reels',
 };
 
-const parse = (contents) => {
-  if (contents && typeof contents === 'object') return contents;
-  if (typeof contents !== 'string') return null;
-  try {
-    const value = JSON.parse(contents);
-    return value && typeof value === 'object' ? value : null;
-  } catch { return null; }
-};
-
-const textOf = (value) => {
-  if (typeof value === 'string') return value;
-  if (value && typeof value.body === 'string') return value.body;
-  return '';
-};
-
 /**
  * One line for the conversation list: the text, or a label such as [圖片] for an attachment.
- * @param contents - a message's stored contents: plain text, a JSON message, a Meta payload or a WhatsApp message
+ * @param contents - a message's stored contents, in any shape readBody reads
  * @param {string} [encryptionMode] - e2ee messages can only be read on the devices that hold the key
  */
 export const messagePreview = (contents, encryptionMode) => {
   if (encryptionMode === 'e2ee') return '[加密訊息]';
-  const parsed = parse(contents);
-  if (!parsed) return typeof contents === 'string' ? contents.trim() : '';
-  const body = parsed.message && typeof parsed.message === 'object' ? parsed.message : parsed;
-  const text = textOf(body.text ?? body.body ?? parsed.text).trim();
-  const attachments = Array.isArray(body.attachments) ? body.attachments : Array.isArray(parsed.attachments) ? parsed.attachments : body.attachment ? [body.attachment] : [];
-  if (!attachments.length) return text || '[不支援的訊息類型]';
-  const first = attachments[0] || {};
+  // Plain text, typed by an agent or sent by an older app, shows as it is.
+  if (typeof contents === 'string' && !isBody(contents) && !/^\s*\{/.test(contents)) return contents.trim();
+  const { text, attachments } = readBody(contents);
+  const words = (text || '').trim();
+  if (!attachments.length) return words || '[不支援的訊息類型]';
+  const first = attachments[0];
   const label = `[${ATTACHMENT_LABELS[first.type] || '附件'}]`;
-  const caption = text || (typeof first.caption === 'string' ? first.caption.trim() : '');
+  const caption = words || (first.caption || '').trim();
   return caption ? `${label} ${caption}` : label;
 };
 

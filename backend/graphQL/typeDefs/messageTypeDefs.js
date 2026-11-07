@@ -1,12 +1,37 @@
 import { gql } from 'apollo-server-express';
 
 export default gql`
+  "A file or other attachment in a message, the same for every source."
+  type MessageAttachment {
+    "image, video, audio, file, document, sticker, location, contacts, share and the like."
+    type: String!
+    "Our own copy of the file; null when it couldn't be saved or the attachment isn't a file."
+    url: String
+    filename: String
+    mime_type: String
+    size: Int
+    caption: String
+  }
+  "The WhatsApp template a message was sent from."
+  type MessageBodyTemplate {
+    id: ID!
+    name: String!
+  }
+  "What a message says, the same for every source and however it was stored."
+  type MessageBody {
+    text: String
+    attachments: [MessageAttachment!]!
+    template: MessageBodyTemplate
+  }
   type Message {
     id: ID
     _id: ID
     platform: String
+    "The stored contents as clients built before body read them. New clients read body."
     contents: String!
     text: String!
+    "The message in the unified shape; null for an end-to-end encrypted message, which only its devices can read."
+    body: MessageBody
     recipients: [String!]!
     to_chat_room_id: String
     info_Content: String
@@ -67,6 +92,12 @@ export default gql`
     id: ID!
     title: String
     platform: String
+    "messenger, instagram, whatsapp_cloud, whatsapp_web, line or masterbox; null for a platform without one yet."
+    source: String
+    "The optional features of the conversation's source, such as send_image, caption, reply_window and templates."
+    capabilities: [String!]!
+    "open, pending or closed. Every conversation is open for now."
+    status: String!
     channel_id: String
     channel_name: String
     chat_room_id: String
@@ -104,6 +135,8 @@ export default gql`
     "Matches the customer's name, username or id, or the text of a message."
     search: String
     platform: String
+    "messenger, instagram, whatsapp_cloud, whatsapp_web, line or masterbox."
+    source: String
     channel_id: ID
     unread_only: Boolean
     "all (the default), mine: assigned to the signed-in account, or unassigned."
@@ -122,6 +155,10 @@ export default gql`
   type SubscribedChannel {
     channel_id: ID!
     platform: String!
+    "messenger, instagram, whatsapp_cloud, whatsapp_web, line or masterbox; null for a platform without one yet."
+    source: String
+    "The optional features of the channel's source, such as send_image, caption, reply_window and templates."
+    capabilities: [String!]!
     name: String!
     enabled: Boolean!
     "The WhatsApp number, such as +886 912 345 678; null for other platforms."

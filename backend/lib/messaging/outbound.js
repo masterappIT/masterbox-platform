@@ -1,4 +1,4 @@
-// Turns what an agent sent into the messages each Meta platform accepts. No database or network here, so it is easy to test.
+// Turns what an agent sent into the messages each platform accepts. No database or network here, so it is easy to test.
 
 const parseContents = (contents) => {
   if (contents && typeof contents === 'object') return contents;
@@ -26,22 +26,29 @@ export const replyContentsOf = (contents) => {
 
 // WhatsApp puts a caption under images, videos and documents, up to 1024 characters. Meta doesn't document
 // a combined text and attachment for Messenger or Instagram, so there they always go as two messages.
-const WHATSAPP_CAPTION_TYPES = ['image', 'video', 'document'];
-const WHATSAPP_CAPTION_MAX = 1024;
+const CAPTION_TYPES = ['image', 'video', 'document'];
+const CAPTION_MAX = 1024;
 
 /**
- * The messages a reply is sent as, in order: the attachment first, then the text, unless WhatsApp can show the text as a caption.
- * @param {string} platform - fb, ig or whatsapp
- * @param {{ text: string, attachment?: object, sendType?: string }} reply - attachment is the stored file, sendType the type Meta expects
+ * The messages a reply is sent as, in order: the attachment first, then the text, unless the source can show the
+ * text as the attachment's caption.
+ * @param {{ text: string, attachment?: object, sendType?: string }} reply - attachment is the stored file, sendType the type the platform expects
+ * @param {{ caption?: boolean }} [options] - caption: the source declares the caption capability
  * @returns {{ text?: string, attachment?: object, sendType?: string }[]}
  */
-export const replyParts = (platform, { text, attachment, sendType }) => {
+export const splitReply = ({ text, attachment, sendType }, { caption = false } = {}) => {
   const hasText = typeof text === 'string' && text.trim().length > 0;
   if (!attachment) return hasText ? [{ text }] : [];
-  const canCaption = platform === 'whatsapp' && WHATSAPP_CAPTION_TYPES.includes(sendType) && hasText && [...text].length <= WHATSAPP_CAPTION_MAX;
+  const canCaption = caption && CAPTION_TYPES.includes(sendType) && hasText && [...text].length <= CAPTION_MAX;
   if (canCaption) return [{ text, attachment, sendType }];
   return [{ attachment, sendType }, ...(hasText ? [{ text }] : [])];
 };
+
+/**
+ * splitReply for a platform: WhatsApp has captions, Messenger and Instagram don't.
+ * @param {string} platform - fb, ig or whatsapp
+ */
+export const replyParts = (platform, reply) => splitReply(reply, { caption: platform === 'whatsapp' });
 
 /**
  * The request body Meta's send API takes for one part of a reply.
@@ -63,23 +70,6 @@ export const metaPayload = (platform, recipientId, { text, attachment, sendType 
   const message = attachment ? { attachment: { type: sendType, payload: { url: attachment.payload.url } } } : { text };
   if (messagingTag) return { recipient: { id: recipientId }, messaging_type: 'MESSAGE_TAG', tag: messagingTag, message };
   return { recipient: { id: recipientId }, messaging_type: 'RESPONSE', message };
-};
-
-/**
- * What is stored for one part: the agent's original contents, holding only that part's text and attachment.
- * @param contents - the contents the admin sent
- */
-export const partContents = (contents, { text, attachment }) => {
-  const parsed = parseContents(contents);
-  const attachments = attachment ? [attachment] : undefined;
-  const part = Object.fromEntries(Object.entries({ text, attachments }).filter(([, value]) => value !== undefined));
-  if (!parsed) return text !== undefined && !attachment ? contents : JSON.stringify(part);
-  if (parsed.message && typeof parsed.message === 'object') {
-    const { text: _text, body: _body, attachment: _attachment, attachments: _attachments, ...rest } = parsed.message;
-    return JSON.stringify({ ...parsed, message: { ...rest, ...part } });
-  }
-  const { text: _text, body: _body, attachment: _attachment, attachments: _attachments, ...rest } = parsed;
-  return JSON.stringify({ ...rest, ...part });
 };
 
 /**

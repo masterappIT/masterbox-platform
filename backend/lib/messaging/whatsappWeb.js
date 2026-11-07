@@ -53,7 +53,7 @@ export const connectWhatsappWeb = async (admin, channelId) => {
   } else {
     channel = await prisma.$transaction(async (tx) => {
       const created = await tx.companyChannel.create({
-        data: { companyId: admin.company_id, platform: 'whatsapp', name: DEFAULT_NAME, accessInfo: { provider: 'web', connected_by: admin.account_id }, info: { wa_web: { state: 'starting' } } },
+        data: { companyId: admin.company_id, platform: 'whatsapp', source: 'whatsapp_web', name: DEFAULT_NAME, accessInfo: { provider: 'web', connected_by: admin.account_id }, info: { wa_web: { state: 'starting' } } },
       });
       // Live messages reach the accounts in account_channels, so whoever connected it must be one.
       await tx.accountChannel.create({ data: { accountId: admin.account_id, channelId: created.id } });

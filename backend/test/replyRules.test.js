@@ -282,7 +282,8 @@ describe('reply rules in the database', { skip: !testDatabase && 'set TEST_DATAB
     assert.equal(request.body.type, 'template');
     assert.equal(request.body.to, chat.chatRoomId);
     assert.equal(request.body.template.name, 'order_update');
-    const contents = JSON.parse(message.contents);
+    const contents = message.contents;
+    assert.equal(contents.v, 1);
     assert.equal(contents.text, '訂單 C9\n\n林先生 您好，您的訂單將於 週一 送達。\n\nMasterBox 商店');
     assert.equal(contents.template.name, 'order_update');
     assert.ok(message.externalId);

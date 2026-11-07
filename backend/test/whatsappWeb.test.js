@@ -150,9 +150,11 @@ describe('WhatsApp by QR code in the database', { skip: !testDatabase && 'set TE
     });
     const message = await prisma.message.findUnique({ where: { externalId } });
     assert.equal(message.createdBy, null);
-    const contents = JSON.parse(message.contents);
+    // Stored in the unified shape, pointing at our own copy of the file.
+    const contents = message.contents;
+    assert.equal(contents.v, 1);
     assert.equal(contents.text, '有貨嗎');
-    assert.match(contents.attachments[0].payload.url, /\/files\/[a-f0-9]{32}\//);
+    assert.match(contents.attachments[0].url, /\/files\/[a-f0-9]{32}\//);
     assert.equal(contents.attachments[0].wa_web_media, undefined);
     assert.ok(gatewayRequests.some(({ path: p }) => p === `/channels/${ids.channel}/messages/${encodeURIComponent(externalId)}/media`));
 
@@ -203,7 +205,7 @@ describe('WhatsApp by QR code in the database', { skip: !testDatabase && 'set TE
     const stored = await waitFor(async () => (await prisma.message.count({ where: { externalId: { in: [`false_${other}_H1`, `true_${other}_H2`] } } })) === 2);
     assert.ok(stored);
     const oldMessage = await prisma.message.findUnique({ where: { externalId: `false_${other}_H1` } });
-    assert.equal(JSON.parse(oldMessage.contents).attachments[0].payload, undefined);
+    assert.equal(oldMessage.contents.attachments[0].url, null);
     assert.equal(gatewayRequests.slice(before).filter(({ path: p }) => p.endsWith('/media')).length, 0);
     const reply = await prisma.message.findUnique({ where: { externalId: `true_${other}_H2` } });
     assert.equal(reply.createdBy, admin.account_id);

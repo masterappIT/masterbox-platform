@@ -2,6 +2,7 @@
 // by scanning a QR code. Both sides prove themselves with WHATSAPP_GATEWAY_SECRET; the gateway is only reachable
 // on the internal network.
 import { timingSafeEqual } from 'node:crypto';
+import { sourceOf } from '../connectors/source.js';
 
 const gatewayUrl = () => (process.env.WHATSAPP_GATEWAY_URL || '').replace(/\/$/, '');
 const secret = () => process.env.WHATSAPP_GATEWAY_SECRET || '';
@@ -9,7 +10,7 @@ const secret = () => process.env.WHATSAPP_GATEWAY_SECRET || '';
 export const gatewayConfigured = () => Boolean(gatewayUrl() && secret().length >= 32);
 
 /** A channel connected by QR code, rather than through Meta's Cloud API. */
-export const isWebChannel = (channel) => channel?.platform === 'whatsapp' && channel?.accessInfo?.provider === 'web';
+export const isWebChannel = (channel) => sourceOf(channel) === 'whatsapp_web';
 
 /** The external id webhooks and the gateway's events find a QR channel by. */
 export const webExternalId = (channelId) => `waweb:${channelId}`;

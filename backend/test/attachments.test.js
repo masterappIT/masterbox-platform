@@ -15,7 +15,7 @@ process.env.FILES_PUBLIC_URL = 'https://api.example.test';
 
 const { checkAttachment, resolveFileType } = await import('../lib/storage/attachmentRules.js');
 const { saveStream, saveFromUrl, describeUrl, storedName } = await import('../lib/storage/index.js');
-const { replyContentsOf, replyParts, metaPayload, partContents, storedAttachment } = await import('../lib/messaging/outbound.js');
+const { replyContentsOf, replyParts, metaPayload, storedAttachment } = await import('../lib/messaging/outbound.js');
 const { storeInboundAttachments } = await import('../lib/messaging/inbound.js');
 const { filesRouter, createUploadsRouter } = await import('../route/uploads.js');
 
@@ -120,12 +120,6 @@ describe('reply payloads', () => {
     assert.deepEqual(replyParts('fb', { text: '  ' }), []);
   });
 
-  test('each stored part keeps the original shape with only its own content', () => {
-    const contents = JSON.stringify({ recipient: { id: 'PSID' }, messaging_type: 'RESPONSE', message: { text: 'hi', attachments: [image] } });
-    assert.deepEqual(JSON.parse(partContents(contents, { attachment: image })), { recipient: { id: 'PSID' }, messaging_type: 'RESPONSE', message: { attachments: [image] } });
-    assert.deepEqual(JSON.parse(partContents(contents, { text: 'hi' })), { recipient: { id: 'PSID' }, messaging_type: 'RESPONSE', message: { text: 'hi' } });
-    assert.equal(partContents('plain', { text: 'plain' }), 'plain');
-  });
 });
 
 describe('storage', () => {

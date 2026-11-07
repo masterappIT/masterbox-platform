@@ -14,6 +14,23 @@ enum ChannelPlatform {
   wechat
 }
 
+// Where a channel's conversations come from. platform stays alongside it for older clients and queries.
+enum ChannelSource {
+  messenger
+  instagram
+  whatsapp_cloud
+  whatsapp_web
+  line
+  masterbox
+}
+
+// Where a conversation stands. Nothing changes it yet; the conversation list will filter on it later.
+enum ChatRoomStatus {
+  open
+  pending
+  closed
+}
+
 enum AccountRole {
   admin
   user
@@ -80,6 +97,8 @@ model CompanyChannel {
   id         String           @id @default(cuid()) @db.Text
   companyId  String           @map("company_id") @db.Text
   platform   String
+  // Null only for platforms MasterBox has no connector for yet, such as WeChat.
+  source     ChannelSource?
   name       String
   accessInfo Json             @map("access_info")
   info       Json
@@ -92,6 +111,7 @@ model CompanyChannel {
   chatRooms  ChatRoom[]
 
   @@index([companyId])
+  @@index([companyId, source])
   @@map("company_channels")
 }
 
@@ -174,6 +194,7 @@ model ChatRoom {
   // The agent handling the conversation; null while nobody is.
   assigneeId   String?         @map("assignee_id") @db.Text
   assignedAt   DateTime?       @map("assigned_at")
+  status       ChatRoomStatus  @default(open)
   createdAt    DateTime        @default(now()) @map("created_at")
   updatedAt    DateTime        @updatedAt @map("updated_at")
   company      Company         @relation(fields: [companyId], references: [id])

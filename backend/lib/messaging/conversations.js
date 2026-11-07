@@ -3,8 +3,7 @@ import prismaClientPackage from '@prisma/client';
 import { ApolloError } from 'apollo-server-errors';
 import { prisma } from '../db/prisma.js';
 import { messagePreview, encodeCursor, decodeCursor, pageSize, searchPattern, customerOf } from './conversationText.js';
-import { replyWindow } from './replyWindow.js';
-import { isWebChannel } from './whatsappGateway.js';
+import { connectorFor, capabilitiesOf, sourceOf, SOURCES } from '../connectors/index.js';
 import { visibleChannelIds, channelAccountIds, accountSeesChannel, companyAgents } from './access.js';
 import { pubsub } from '../../config/redis.js';
 
@@ -45,6 +44,15 @@ const CUSTOMER_MATCHES = pattern => Prisma.sql`EXISTS (
   WHERE COALESCE(u->>'id', '') <> r.channel_id
     AND concat_ws(' ', u->>'name', u->>'first_name', u->>'last_name', concat(u->>'first_name', u->>'last_name'),
       concat(u->>'last_name', u->>'first_name'), u->>'username', u->>'id') ILIKE ${pattern})`;
+
+// A channel's source, worked out from its platform for a row written before the column existed (see sourceOf).
+const CHANNEL_SOURCE = Prisma.sql`COALESCE(c.source::text, CASE
+  WHEN c.platform = 'fb' THEN 'messenger'
+  WHEN c.platform = 'ig' THEN 'instagram'
+  WHEN c.platform = 'whatsapp' AND c.access_info->>'provider' = 'web' THEN 'whatsapp_web'
+  WHEN c.platform = 'whatsapp' THEN 'whatsapp_cloud'
+  WHEN c.platform = 'line' THEN 'line'
+END)`;
 
 /**
  * A conversation the account may open: by its own id, by its platform id and channel as messages carry them,
@@ -98,25 +106,28 @@ export const agentView = account => account && ({
 });
 
 /** Whether the conversation can still be answered, as the GraphQL ReplyWindow type has it. */
-export const replyWindowView = (platform, lastCustomerMessageAt, now = new Date(), { noLimit = false } = {}) => {
-  const window = replyWindow({ platform, lastCustomerMessageAt, now, noLimit });
-  return {
-    state: window.state,
-    closesAt: window.closesAt,
-    templateRequired: window.templateRequired,
-    humanAgentAvailable: window.humanAgentAvailable,
-  };
-};
+const windowView = window => ({
+  state: window.state,
+  closesAt: window.closesAt,
+  templateRequired: window.templateRequired,
+  humanAgentAvailable: window.humanAgentAvailable,
+});
+
 
 /** How a conversation is shown, with the account's unread count. */
 const roomView = (room, stats) => {
   const key = room.chatRoomId || room.id;
   const customer = customerOf(room);
   const lastCustomerMessageAt = stats?.last_inbound_at || null;
+  // A conversation whose channel row is gone still has its platform.
+  const channel = room.channel || { platform: room.platform };
   return {
     id: room.id,
     title: customer?.name || key,
     platform: room.platform,
+    source: sourceOf(channel),
+    capabilities: capabilitiesOf(channel),
+    status: room.status || 'open',
     channel_id: room.channelId,
     channel_name: room.channel?.name || null,
     chat_room_id: key,
@@ -128,7 +139,7 @@ const roomView = (room, stats) => {
     lastMessageInbound: stats?.last_id ? !stats.last_created_by : null,
     unreadCount: stats?.unread || 0,
     lastCustomerMessageAt,
-    replyWindow: replyWindowView(room.platform, lastCustomerMessageAt, undefined, { noLimit: isWebChannel({ platform: room.platform, accessInfo: room.channel?.accessInfo }) }),
+    replyWindow: windowView(connectorFor(channel).replyRule(room, { lastCustomerMessageAt })),
     assignee: room.assignee ? agentView(room.assignee) : null,
     assignedAt: room.assigneeId ? room.assignedAt : null,
     createdAt: room.createdAt,
@@ -137,8 +148,9 @@ const roomView = (room, stats) => {
 };
 
 const ROOM_DETAILS = {
-  // accessInfo says whether a WhatsApp channel was connected by QR code; it never leaves the server.
-  channel: { select: { name: true, accessInfo: true } },
+  // The source and capabilities come from the channel. accessInfo tells an older row's WhatsApp channels apart;
+  // it never leaves the server.
+  channel: { select: { name: true, platform: true, source: true, accessInfo: true } },
   tags: { include: { tag: true } },
   assignee: { select: { id: true, email: true, role: true, userInfo: true } },
 };
@@ -155,7 +167,7 @@ export const roomViews = async (account, roomIds) => {
 
 /**
  * A page of the account's conversations, the one with the newest message first.
- * @param {{ first?: number, after?: string, filter?: { search?: string, platform?: string, channel_id?: string, unread_only?: boolean,
+ * @param {{ first?: number, after?: string, filter?: { search?: string, platform?: string, source?: string, channel_id?: string, unread_only?: boolean,
  *   assignment?: 'all' | 'mine' | 'unassigned', assignee_id?: string } }} options
  * @returns {{ rooms, nextCursor: string | null, hasMore: boolean }}
  */
@@ -166,6 +178,7 @@ export const listRooms = async (account, { first, after, filter = {} } = {}) => 
   const channels = filter.channel_id ? [filter.channel_id] : channelIds;
   if (!channels.length) return { rooms: [], nextCursor: null, hasMore: false };
   if (filter.platform && !PLATFORMS.includes(filter.platform)) throw new ApolloError('不支援這個平台', 'BAD_USER_INPUT');
+  if (filter.source && !SOURCES.includes(filter.source)) throw new ApolloError('不支援這個來源', 'BAD_USER_INPUT');
   if (after && !decodeCursor(after)) throw new ApolloError('列表位置無效，請重新整理', 'BAD_USER_INPUT');
   if (filter.assignment && !ASSIGNMENTS.includes(filter.assignment)) throw new ApolloError('不支援這個指派篩選', 'BAD_USER_INPUT');
 
@@ -176,6 +189,7 @@ export const listRooms = async (account, { first, after, filter = {} } = {}) => 
     Prisma.sql`r.company_id = ${account.company_id}`,
     Prisma.sql`r.channel_id IN (${Prisma.join(channels)})`,
     ...(filter.platform ? [Prisma.sql`r.platform::text = ${filter.platform}`] : []),
+    ...(filter.source ? [Prisma.sql`EXISTS (SELECT 1 FROM company_channels c WHERE c.id = r.channel_id AND ${CHANNEL_SOURCE} = ${filter.source})`] : []),
     ...(cursor ? [Prisma.sql`(r.updated_at, r.id) < (${cursor.time}, ${cursor.id})`] : []),
     ...(filter.assignment === 'mine' ? [Prisma.sql`r.assignee_id = ${account.account_id}`] : []),
     ...(filter.assignment === 'unassigned' ? [Prisma.sql`r.assignee_id IS NULL`] : []),

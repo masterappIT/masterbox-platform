@@ -2,10 +2,13 @@
 import { isWebChannel } from './whatsappGateway.js';
 import { connectionView } from './whatsappWeb.js';
 import { channelConnection } from './channels.js';
+import { sourceOf, capabilitiesOf } from '../connectors/index.js';
 
 export const channelView = channel => ({
   channel_id: channel.id,
   platform: channel.platform,
+  source: sourceOf(channel),
+  capabilities: capabilitiesOf(channel),
   name: channel.name,
   enabled: channel.enabled,
   phone: (isWebChannel(channel) ? channel.accessInfo?.phone : channel.info?.display_phone_number) || null,
