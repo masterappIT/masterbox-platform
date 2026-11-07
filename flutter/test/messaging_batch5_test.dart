@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:masterbox_flutter/main.dart';
 import 'package:masterbox_flutter/models/app_models.dart';
 import 'package:masterbox_flutter/models/attachment_rules.dart';
+import 'package:masterbox_flutter/models/chat_source.dart';
 import 'package:masterbox_flutter/models/reply_window.dart';
 import 'package:masterbox_flutter/pages/conversation_page.dart';
 import 'package:masterbox_flutter/pages/whatsapp_template_page.dart';
@@ -34,6 +35,8 @@ Map<String, dynamic> _room({
   String? lastCustomerMessageAt,
   String? updatedAt,
   Map<String, dynamic>? assignee,
+  String? source,
+  List<String>? capabilities,
 }) => {
   ...roomJson(
     id: id,
@@ -43,6 +46,8 @@ Map<String, dynamic> _room({
     firstName: firstName,
     lastName: null,
     updatedAt: updatedAt ?? _ago(const Duration(minutes: 5)),
+    source: source,
+    capabilities: capabilities,
   ),
   'channel_name': platform == 'whatsapp' ? 'WhatsApp 門市' : '官方粉專',
   'unreadCount': unread,
@@ -57,17 +62,8 @@ Map<String, dynamic> _message(
   bool inbound = true,
   Duration ago = const Duration(minutes: 10),
   String roomId = 'psid-1',
-}) => {
-  '_id': id,
-  'contents': jsonEncode({
-    'message': {'text': text},
-  }),
-  'to_chat_room_id': roomId,
-  'channel_id': 'channel-1',
-  'inbound': inbound,
-  'cursor': 'cursor-$id',
-  'sentAt': _ago(ago),
-};
+}) =>
+    messageJson(id, text, inbound: inbound, sentAt: _ago(ago), roomId: roomId);
 
 Map<String, Object?> _messagePage(
   List<Map<String, dynamic>> messages, {
@@ -270,23 +266,26 @@ void main() {
     });
   });
 
-  group("Meta's reply windows", () {
+  group('reply windows, for sources that declare them', () {
+    final messenger = Capabilities(sourceCapabilities['messenger']!);
+    final whatsappCloud = Capabilities(sourceCapabilities['whatsapp_cloud']!);
+
     test('open for 24 hours after the customer last wrote', () {
       final window = replyWindowOf(
-        platform: 'fb',
+        capabilities: messenger,
         lastCustomerMessageAt: _now.subtract(const Duration(hours: 2)),
         now: _now,
       );
       expect(window.state, ReplyState.open);
-      expect(
-        replyNotice(window, 'fb', now: _now).text,
-        contains('可回覆，還剩 22 小時'),
-      );
+      final notice = replyNotice(window, now: _now);
+      expect(notice.text, contains('可回覆，還剩 22 小時'));
+      // Plenty of time left: nothing above the input.
+      expect(noticeWorthShowing(notice), isFalse);
     });
 
-    test('7 days for Messenger once Meta approved the human agent tag', () {
+    test('7 days without templates once Meta approved the human agent tag', () {
       final window = replyWindowOf(
-        platform: 'ig',
+        capabilities: Capabilities(sourceCapabilities['instagram']!),
         lastCustomerMessageAt: _now.subtract(const Duration(days: 2)),
         humanAgentAvailable: true,
         now: _now,
@@ -295,25 +294,38 @@ void main() {
       expect(window.canSendFreeform, isTrue);
     });
 
-    test('WhatsApp needs a template afterwards', () {
+    test('a source with templates needs one afterwards', () {
       final window = replyWindowOf(
-        platform: 'whatsapp',
+        capabilities: whatsappCloud,
         lastCustomerMessageAt: _now.subtract(const Duration(hours: 25)),
         now: _now,
       );
       expect(window.templateRequired, isTrue);
       expect(window.canSendFreeform, isFalse);
-      expect(replyNotice(window, 'whatsapp').tone, NoticeTone.blocked);
+      final notice = replyNotice(window);
+      expect(notice.tone, NoticeTone.blocked);
+      expect(notice.text, '超過 24 小時，只能傳送範本');
     });
 
-    test('Messenger past its window warns but still lets the agent try', () {
+    test('the human agent tag never applies to a source with templates', () {
       final window = replyWindowOf(
-        platform: 'fb',
+        capabilities: whatsappCloud,
+        lastCustomerMessageAt: _now.subtract(const Duration(days: 2)),
+        humanAgentAvailable: true,
+        now: _now,
+      );
+      expect(window.state, ReplyState.closed);
+      expect(window.templateRequired, isTrue);
+    });
+
+    test('past its window without templates warns but lets the agent try', () {
+      final window = replyWindowOf(
+        capabilities: messenger,
         lastCustomerMessageAt: _now.subtract(const Duration(days: 3)),
         now: _now,
       );
       expect(window.canSendFreeform, isTrue);
-      expect(replyNotice(window, 'fb').tone, NoticeTone.warning);
+      expect(replyNotice(window).tone, NoticeTone.warning);
     });
 
     test('counting down rounds down', () {
@@ -326,7 +338,9 @@ void main() {
   });
 
   group('the conversation list', () {
-    testWidgets('shows unread counts, channel and agent', (tester) async {
+    testWidgets('shows unread counts, source, channel and agent', (
+      tester,
+    ) async {
       await _open(
         tester,
         _backend(
@@ -336,7 +350,9 @@ void main() {
         ),
       );
       expect(find.text('3'), findsOneWidget);
-      expect(find.text('官方粉專 · 我負責'), findsOneWidget);
+      expect(find.text('Facebook'), findsOneWidget);
+      expect(find.text('官方粉專'), findsOneWidget);
+      expect(find.text('我負責'), findsOneWidget);
     });
 
     testWidgets('loads the next page at the end of the list', (tester) async {
@@ -411,7 +427,7 @@ void main() {
 
     testWidgets('filters by unread and by agent on the server', (tester) async {
       final app = await _open(tester, _backend());
-      await tester.tap(find.text('只看未讀'));
+      await tester.tap(find.text('未讀'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('未指派'));
       await tester.pumpAndSettle();
@@ -426,7 +442,7 @@ void main() {
     ) async {
       final mine = _room(assignee: {'id': 'me', 'name': '我'});
       final app = await _open(tester, _backend(rooms: [mine]));
-      await tester.tap(find.text('我負責的'));
+      await tester.tap(find.text('我的'));
       await tester.pumpAndSettle();
       expect(find.text('小美'), findsOneWidget);
       app.sockets.last.receive({
@@ -707,22 +723,28 @@ void main() {
               ],
             }
             ..['SendWhatsappTemplate'] = {
-              'sendWhatsappTemplate': {
-                '_id': 'tpl-sent',
-                'contents': jsonEncode({
-                  'message': {'text': '小美 您好，您的訂單已到貨'},
-                }),
-                'inbound': false,
-                'cursor': 'cursor-tpl',
-                'sentAt': _now.toIso8601String(),
-              },
+              'sendWhatsappTemplate': messageJson(
+                'tpl-sent',
+                '小美 您好，您的訂單已到貨',
+                inbound: false,
+                sentAt: _now.toIso8601String(),
+                template: {'id': 'tpl-1', 'name': 'order_ready'},
+              ),
             };
       final app = await openRoom(tester, responses);
-      expect(find.text('已超過 24 小時回覆期限，只能用已核准的 WhatsApp 範本發送'), findsOneWidget);
+      expect(find.text('超過 24 小時，只能傳送範本'), findsOneWidget);
       final field = tester.widget<TextField>(find.byType(TextField));
       expect(field.enabled, isFalse);
+      expect(find.text('只能傳送範本'), findsOneWidget);
+      final send = tester.widget<IconButton>(
+        find.descendant(
+          of: find.byKey(const ValueKey('send-message')),
+          matching: find.byType(IconButton),
+        ),
+      );
+      expect(send.onPressed, isNull);
 
-      await tester.tap(find.widgetWithText(TextButton, '使用範本發送'));
+      await tester.tap(find.text('選範本'));
       await tester.pumpAndSettle();
       expect(find.byType(WhatsappTemplatePage), findsOneWidget);
       expect(find.textContaining('標題是地點'), findsOneWidget);
@@ -745,6 +767,7 @@ void main() {
       });
       expect(find.byType(ConversationPage), findsOneWidget);
       expect(find.text('小美 您好，您的訂單已到貨'), findsOneWidget);
+      expect(find.text('範本・order_ready'), findsOneWidget);
     });
 
     testWidgets('a reply refused for needing a template offers one', (
@@ -761,10 +784,94 @@ void main() {
       await tester.enterText(find.byType(TextField), '您好');
       await tester.tap(find.byKey(const ValueKey('send-message')));
       await tester.pumpAndSettle();
-      expect(find.text('訊息未送出：已超過 24 小時回覆期限'), findsOneWidget);
-      await tester.tap(find.widgetWithText(TextButton, '使用範本發送').first);
+      expect(find.text('只能傳送範本，點一下選範本'), findsOneWidget);
+      await tester.tap(find.text('只能傳送範本，點一下選範本'));
       await tester.pumpAndSettle();
       expect(find.text('這個 WhatsApp 號碼沒有已核准的範本'), findsOneWidget);
+    });
+
+    group("the source's add-ons", () {
+      Future<void> openPlus(WidgetTester tester) async {
+        await tester.tap(find.byKey(const ValueKey('composer-plus')));
+        await tester.pumpAndSettle();
+      }
+
+      Finder inPanel(String label) => find.descendant(
+        of: find.byType(BottomSheet),
+        matching: find.text(label),
+      );
+
+      testWidgets("Facebook's ＋ has files and quick replies, no templates", (
+        tester,
+      ) async {
+        await openRoom(tester, _backend());
+        await openPlus(tester);
+        for (final label in const ['相片', '影片', '檔案', '快速回覆']) {
+          expect(inPanel(label), findsOneWidget, reason: label);
+        }
+        expect(inPanel('範本'), findsNothing);
+      });
+
+      testWidgets("WhatsApp 官方's ＋ adds templates", (tester) async {
+        await openRoom(tester, _backend(rooms: [_room(platform: 'whatsapp')]));
+        await openPlus(tester);
+        expect(inPanel('範本'), findsOneWidget);
+        expect(inPanel('相片'), findsOneWidget);
+      });
+
+      testWidgets(
+        'a source with none offers only quick replies and no window',
+        (tester) async {
+          await openRoom(
+            tester,
+            _backend(
+              rooms: [
+                _room(
+                  capabilities: const [],
+                  lastCustomerMessageAt: _ago(const Duration(days: 2)),
+                ),
+              ],
+            ),
+          );
+          expect(find.textContaining('24 小時'), findsNothing);
+          expect(find.textContaining('可回覆'), findsNothing);
+          expect(
+            tester.widget<TextField>(find.byType(TextField)).enabled,
+            isTrue,
+          );
+          expect(find.byTooltip('語音通話'), findsNothing);
+          expect(find.byTooltip('聊天室設定'), findsNothing);
+          await openPlus(tester);
+          expect(inPanel('快速回覆'), findsOneWidget);
+          for (final label in const ['相片', '影片', '檔案', '範本']) {
+            expect(inPanel(label), findsNothing, reason: label);
+          }
+        },
+      );
+
+      testWidgets('WhatsApp 掃碼 has no 24-hour rule', (tester) async {
+        await openRoom(
+          tester,
+          _backend(
+            rooms: [
+              _room(
+                platform: 'whatsapp',
+                source: 'whatsapp_web',
+                lastCustomerMessageAt: _ago(const Duration(days: 3)),
+              ),
+            ],
+          ),
+        );
+        expect(find.textContaining('24 小時'), findsNothing);
+        expect(find.text('選範本'), findsNothing);
+        expect(
+          tester.widget<TextField>(find.byType(TextField)).enabled,
+          isTrue,
+        );
+        await openPlus(tester);
+        expect(inPanel('範本'), findsNothing);
+        expect(inPanel('相片'), findsOneWidget);
+      });
     });
 
     testWidgets('typing / inserts a quick reply, this platform first', (

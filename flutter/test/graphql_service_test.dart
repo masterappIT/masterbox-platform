@@ -170,24 +170,23 @@ void main() {
       },
     });
 
-    test('replies to a Facebook customer through the platform', () async {
-      final backend = okBackend();
-      await backend.service().sendMessage(
-        conversation: ChatConversation.fromJson(roomJson()),
-        contents: '您好',
-      );
-      final input = inputOf(backend);
-      expect(input['platform'], 'fb');
-      expect(input['channel_id'], 'channel-1');
-      expect(input['to_chat_room_id'], 'psid-1');
-      expect(jsonDecode(input['contents'] as String), {
-        'recipient': {'id': 'customer-1'},
-        'messaging_type': 'RESPONSE',
-        'message': {'text': '您好'},
-      });
-    });
+    test(
+      'replies to a Facebook customer in the shape every source takes',
+      () async {
+        final backend = okBackend();
+        await backend.service().sendMessage(
+          conversation: ChatConversation.fromJson(roomJson()),
+          contents: '您好',
+        );
+        final input = inputOf(backend);
+        expect(input['platform'], 'fb');
+        expect(input['channel_id'], 'channel-1');
+        expect(input['to_chat_room_id'], 'psid-1');
+        expect(jsonDecode(input['contents'] as String), {'text': '您好'});
+      },
+    );
 
-    test('replies to a WhatsApp customer through the platform', () async {
+    test('replies to a WhatsApp customer in the same shape', () async {
       final backend = okBackend();
       await backend.service().sendMessage(
         conversation: ChatConversation.fromJson(roomJson(platform: 'whatsapp')),
@@ -195,10 +194,7 @@ void main() {
       );
       final input = inputOf(backend);
       expect(input['platform'], 'whatsapp');
-      expect(jsonDecode(input['contents'] as String), {
-        'message': {'text': '您好'},
-        'recipient': 'customer-1',
-      });
+      expect(jsonDecode(input['contents'] as String), {'text': '您好'});
     });
 
     test(
@@ -212,7 +208,7 @@ void main() {
         );
         final input = inputOf(backend);
         expect(input['platform'], 'fb');
-        final message = jsonDecode(input['contents'] as String)['message'];
+        final message = jsonDecode(input['contents'] as String);
         expect(message['text'], '看這個');
         expect(message['attachments'], [
           {
@@ -286,7 +282,12 @@ void main() {
         'MessagePage': {
           'messagePage': {
             'messages': [
-              {'_id': 'm1', 'contents': '嗨', 'cursor': 'c1', 'inbound': true},
+              {
+                '_id': 'm1',
+                'body': {'text': '嗨'},
+                'cursor': 'c1',
+                'inbound': true,
+              },
             ],
             'hasOlder': true,
             'hasNewer': false,

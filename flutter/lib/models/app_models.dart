@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'chat_source.dart';
+
 class ClientUser {
   const ClientUser({
     required this.id,
@@ -47,7 +49,9 @@ class ChatConversation {
     this.unreadCount = 0,
     this.lastCustomerMessageAt,
     this.humanAgentAvailable = false,
-    this.noReplyLimit = false,
+    this.source,
+    this.capabilities = const Capabilities([]),
+    this.repliesUnsupported = false,
     this.assignee,
     this.tags = const [],
   });
@@ -74,9 +78,17 @@ class ChatConversation {
   /// Meta approved the 7-day human agent window, as the server says.
   final bool humanAgentAvailable;
 
-  /// A WhatsApp number connected by QR code: an ordinary WhatsApp account
-  /// without Meta's reply windows or templates, as the server says.
-  final bool noReplyLimit;
+  /// messenger, instagram, whatsapp_cloud, whatsapp_web, line or masterbox;
+  /// null for a platform without one, such as WeChat.
+  final String? source;
+
+  /// The optional features of the conversation's source. The chat room shows
+  /// templates, the reply window, attachments and the like only when listed.
+  final Capabilities capabilities;
+
+  /// The server can't send replies through this source yet, such as LINE
+  /// before it is connected: its reply window says unsupported.
+  final bool repliesUnsupported;
 
   /// The agent handling the conversation; null while it is unassigned.
   final RoomAgent? assignee;
@@ -117,7 +129,9 @@ class ChatConversation {
     unreadCount: unreadCount ?? this.unreadCount,
     lastCustomerMessageAt: lastCustomerMessageAt ?? this.lastCustomerMessageAt,
     humanAgentAvailable: humanAgentAvailable,
-    noReplyLimit: noReplyLimit,
+    source: source,
+    capabilities: capabilities,
+    repliesUnsupported: repliesUnsupported,
     assignee: assignee,
     tags: tags,
   );
@@ -159,7 +173,9 @@ class ChatConversation {
       lastCustomerMessageAt: parseServerDate(json['lastCustomerMessageAt']),
       humanAgentAvailable:
           window is Map && window['humanAgentAvailable'] == true,
-      noReplyLimit: window is Map && window['state'] == 'no_limit',
+      source: json['source'] as String?,
+      capabilities: Capabilities.fromJson(json['capabilities']),
+      repliesUnsupported: window is Map && window['state'] == 'unsupported',
       assignee: assignee is Map<String, dynamic>
           ? RoomAgent.fromJson(assignee)
           : null,
@@ -285,19 +301,24 @@ class LiveKitToken {
   );
 }
 
+/// A file or other attachment of a message, from its unified body.
 class MessageAttachment {
   const MessageAttachment({
     required this.type,
     this.url,
     this.caption,
     this.filename,
-    this.stickerId,
+    this.mimeType,
+    this.size,
   });
+
+  /// image, video, audio, file, document, sticker, location, contacts and the like.
   final String type;
   final String? url;
   final String? caption;
   final String? filename;
-  final String? stickerId;
+  final String? mimeType;
+  final int? size;
 
   static const _labels = {
     'image': '圖片',
@@ -308,6 +329,10 @@ class MessageAttachment {
     'sticker': '貼圖',
     'location': '位置',
     'contacts': '聯絡人',
+    'share': '分享',
+    'story_mention': '限時動態提及',
+    'ig_reel': 'Reels',
+    'reel': 'Reels',
     'order': '訂單',
     'reaction': '表情回應',
     'unknown': '不支援的訊息類型',
@@ -316,35 +341,21 @@ class MessageAttachment {
 
   String get label => _labels[type] ?? '附件';
   bool get isImage => type == 'image' || type == 'sticker';
-  bool get isSticker => type == 'sticker' || stickerId != null;
+  bool get isSticker => type == 'sticker';
 
   /// Only https links are opened or shown; anything else falls back to text.
   String? get safeUrl =>
       url != null && url!.startsWith('https://') ? url : null;
 
-  factory MessageAttachment.fromJson(Map<String, dynamic> json) {
-    final payload = json['payload'];
-    return MessageAttachment(
-      type: '${json['type'] ?? 'file'}',
-      url: payload is Map ? payload['url'] as String? : null,
-      caption: json['caption'] as String?,
-      filename: (json['filename'] ?? json['name']) as String?,
-      stickerId: payload is Map && payload['sticker_id'] != null
-          ? '${payload['sticker_id']}'
-          : null,
-    );
-  }
-
-  /// Meta sends a Messenger sticker, such as the Like button, as an image and a
-  /// sticker with the same sticker_id.
-  static List<MessageAttachment> withoutRepeatedStickers(
-    Iterable<MessageAttachment> attachments,
-  ) {
-    final seen = <String>{};
-    return attachments
-        .where((a) => a.stickerId == null || seen.add(a.stickerId!))
-        .toList();
-  }
+  factory MessageAttachment.fromJson(Map<String, dynamic> json) =>
+      MessageAttachment(
+        type: '${json['type'] ?? 'file'}',
+        url: json['url'] as String?,
+        caption: json['caption'] as String?,
+        filename: json['filename'] as String?,
+        mimeType: json['mime_type'] as String?,
+        size: (json['size'] as num?)?.toInt(),
+      );
 }
 
 const unsupportedMessageText = '[此訊息類型暫不支援顯示]';
@@ -357,8 +368,9 @@ class ChatMessage {
     this.isMine = false,
     this.failed = false,
     this.sending = false,
-    this.attachment,
     this.attachments = const [],
+    this.templateName,
+    this.encrypted = false,
     this.deliveryError,
     this.sendError,
     this.roomId,
@@ -378,8 +390,13 @@ class ChatMessage {
   final bool isMine;
   final bool failed;
   final bool sending;
-  final Map<String, dynamic>? attachment;
   final List<MessageAttachment> attachments;
+
+  /// The WhatsApp template the message was sent from.
+  final String? templateName;
+
+  /// End-to-end encrypted: only its devices can read it, so it has no body here.
+  final bool encrypted;
 
   /// Why the platform could not deliver a reply it had accepted.
   final String? deliveryError;
@@ -428,8 +445,9 @@ class ChatMessage {
     isMine: isMine,
     failed: failed ?? this.failed,
     sending: sending ?? this.sending,
-    attachment: attachment,
     attachments: attachments,
+    templateName: templateName,
+    encrypted: encrypted,
     deliveryError: deliveryError,
     sendError: sendError,
     roomId: roomId,
@@ -444,38 +462,25 @@ class ChatMessage {
     templateRequired: templateRequired ?? this.templateRequired,
   );
 
+  /// Reads the message's unified body, which the server builds the same way
+  /// for every source and however the message was stored.
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
-    final raw = json['text'] ?? json['message'] ?? json['contents'] ?? '';
-    Map<String, dynamic>? parsed = raw is Map<String, dynamic> ? raw : null;
-    if (raw is String) {
-      try {
-        final decoded = jsonDecode(raw);
-        if (decoded is Map<String, dynamic>) parsed = decoded;
-      } catch (_) {
-        // Contents can be plain text as well as serialized JSON.
-      }
-    }
-    final nested = parsed?['message'];
-    final nestedMap = nested is Map<String, dynamic> ? nested : null;
-    final attachmentList = parsed?['attachments'] ?? nestedMap?['attachments'];
+    final body = json['body'];
+    final attachmentList = body is Map ? body['attachments'] : null;
     final attachments = attachmentList is List
-        ? MessageAttachment.withoutRepeatedStickers(
-            attachmentList.whereType<Map<String, dynamic>>().map(
-              MessageAttachment.fromJson,
-            ),
-          )
+        ? attachmentList
+              .whereType<Map<String, dynamic>>()
+              .map(MessageAttachment.fromJson)
+              .toList()
         : const <MessageAttachment>[];
-    Object? value = parsed == null
-        ? raw
-        : parsed['text'] ??
-              nestedMap?['text'] ??
-              nestedMap?['body'] ??
-              parsed['body'] ??
-              parsed['content'];
-    // WhatsApp keeps its text one level down.
-    if (value is Map) value = value['body'];
-    var text = value == null ? '' : '$value';
-    if (text.isEmpty && attachments.isEmpty && parsed != null) {
+    final template = body is Map ? body['template'] : null;
+    final templateName = template is Map ? template['name'] as String? : null;
+    var text = body is Map ? '${body['text'] ?? ''}' : '';
+    final encrypted = body == null && json.containsKey('body');
+    if (body is Map &&
+        text.isEmpty &&
+        attachments.isEmpty &&
+        templateName == null) {
       text = unsupportedMessageText;
     }
     final inbound = json['inbound'];
@@ -486,6 +491,8 @@ class ChatMessage {
       // The team's replies, whoever sent them, sit on the right as on the admin site.
       isMine: inbound is bool ? !inbound : json['isMine'] == true,
       attachments: attachments,
+      templateName: templateName,
+      encrypted: encrypted,
       deliveryError: json['delivery_error'] as String?,
       roomId: json['to_chat_room_id'] as String?,
       channelId: json['channel_id'] as String?,
@@ -835,6 +842,8 @@ class SocialChannel {
     required this.platform,
     required this.name,
     required this.enabled,
+    this.source,
+    this.capabilities = const Capabilities([]),
     this.phone,
     this.connection,
     this.whatsappWeb,
@@ -844,8 +853,17 @@ class SocialChannel {
   final String name;
   final bool enabled;
 
+  /// messenger, instagram, whatsapp_cloud, whatsapp_web and so on.
+  final String? source;
+  final Capabilities capabilities;
+
   /// The WhatsApp number; null for other platforms and for lists that didn't ask.
   final String? phone;
+
+  /// What a channel list shows under the name: the phone number of a WhatsApp
+  /// channel, never an internal id. Null when there is nothing more to say
+  /// than the name (a Facebook page's or Instagram account's name is the name).
+  String? get detail => phone;
 
   /// Only the channel management page asks for it; null for QR-connected numbers.
   final ChannelConnection? connection;
@@ -862,6 +880,8 @@ class SocialChannel {
     platform: platform,
     name: name,
     enabled: enabled ?? this.enabled,
+    source: source,
+    capabilities: capabilities,
     phone: phone ?? this.phone,
     connection: connection ?? this.connection,
     whatsappWeb: whatsappWeb,
@@ -872,6 +892,8 @@ class SocialChannel {
     platform: '${json['platform'] ?? ''}',
     name: '${json['name'] ?? ''}',
     enabled: json['enabled'] != false,
+    source: json['source'] as String?,
+    capabilities: Capabilities.fromJson(json['capabilities']),
     phone: json['phone'] is String && (json['phone'] as String).isNotEmpty
         ? json['phone'] as String
         : null,
@@ -905,6 +927,7 @@ class Customer {
     required this.channelId,
     required this.channelName,
     required this.conversation,
+    this.source,
     this.avatarUrl,
     this.lastInteraction,
   });
@@ -913,6 +936,9 @@ class Customer {
   final String name;
   final String? avatarUrl;
   final String platform;
+
+  /// messenger, instagram, whatsapp_cloud, whatsapp_web and so on.
+  final String? source;
   final String channelId;
   final String channelName;
   final ChatConversation conversation;
@@ -945,6 +971,7 @@ List<Customer> customersFromRooms(
       name: customer.name,
       avatarUrl: customer.avatarUrl,
       platform: room.platform ?? channel.first.platform,
+      source: room.source ?? channel.first.source,
       channelId: channel.first.id,
       channelName: channel.first.name,
       conversation: room,

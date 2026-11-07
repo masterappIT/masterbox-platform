@@ -10,17 +10,31 @@ import 'package:url_launcher/url_launcher.dart';
 import '../call_page.dart';
 import '../models/app_models.dart';
 import '../models/attachment_rules.dart';
+import '../models/chat_source.dart';
 import '../models/reply_window.dart';
 import '../services/graphql_service.dart';
-import '../widgets/common.dart';
+import '../theme/chat_colors.dart';
+import '../widgets/chat/chat_add_ons.dart';
+import '../widgets/chat/chat_composer.dart';
+import '../widgets/chat/chat_header.dart';
+import '../widgets/chat/chat_message_list.dart';
+import '../widgets/chat/chat_parts.dart';
+import '../widgets/chat/customer_info_sheet.dart';
+import '../widgets/chat/quick_reply_sheet.dart';
 import 'whatsapp_template_page.dart';
 
-/// Platforms whose conversations can be answered from MasterBox.
-const _replyPlatforms = ['fb', 'ig', 'whatsapp'];
+export '../widgets/chat/quick_reply_sheet.dart' show showQuickReplies;
 
-/// One conversation: its newest messages first, older ones as the agent
-/// scrolls up (without the view jumping), new ones live, and whatever was sent
-/// while the connection was down caught up on afterwards, each message once.
+/// One conversation, the chat room every source shares: its newest messages
+/// first, older ones as the agent scrolls up (without the view jumping), new
+/// ones live, and whatever was sent while the connection was down caught up on
+/// afterwards, each message once.
+///
+/// The basic parts (header, message list, input, quick replies) are the same
+/// for every source. What a source adds — files, templates, the 24-hour
+/// notice, calls, disappearing messages — shows only when its capabilities
+/// list it (widgets/chat/chat_add_ons.dart); nothing here checks a platform's
+/// name.
 class ConversationPage extends StatefulWidget {
   const ConversationPage({
     required this.graphQL,
@@ -73,22 +87,26 @@ class _ConversationPageState extends State<ConversationPage> {
   bool _resumed = true;
   final _subscriptions = <StreamSubscription<Object?>>[];
 
-  bool get _canReplyHere => _replyPlatforms.contains(room.platform);
-  // Templates are a Cloud API feature; a number connected by QR code just replies.
-  bool get _isWhatsapp => room.platform == 'whatsapp' && !room.noReplyLimit;
+  ChatAddOns get _addOns => ChatAddOns(room.capabilities);
 
-  /// Rooms of a social platform follow Meta's rules; the rest only the app's.
+  /// Rooms of a social platform are the customers' conversations, which the
+  /// server keeps unread counts for.
   bool get _isPlatformRoom => room.platform != null && room.platform != 'app';
 
-  ReplyWindow? get _window => _isPlatformRoom && !room.noReplyLimit
+  /// Only for sources with the reply_window capability.
+  ReplyWindow? get _window => _addOns.replyWindow
       ? replyWindowOf(
-          platform: room.platform,
+          capabilities: room.capabilities,
           lastCustomerMessageAt: room.lastCustomerMessageAt,
           humanAgentAvailable: room.humanAgentAvailable,
         )
       : null;
 
-  bool get _canWrite => _window?.canSendFreeform ?? true;
+  bool get _canWrite =>
+      !room.repliesUnsupported && (_window?.canSendFreeform ?? true);
+
+  bool get _templatesOnly =>
+      _addOns.templates && (_window?.templateRequired ?? false);
 
   @override
   void initState() {
@@ -392,7 +410,7 @@ class _ConversationPageState extends State<ConversationPage> {
         conversation: room,
         contents: current.text,
         attachment: file?.uploaded,
-        disappearingSeconds: _isPlatformRoom ? 0 : _disappearingSeconds,
+        disappearingSeconds: _addOns.disappearing ? _disappearingSeconds : 0,
       );
       if (!mounted) return;
       setState(() => _replaceLocal(message.id, null));
@@ -433,7 +451,7 @@ class _ConversationPageState extends State<ConversationPage> {
     final file = pendingFile;
     if (text.isEmpty && file == null) return;
     if (!_canWrite) {
-      if (_isWhatsapp) _openTemplates();
+      if (_templatesOnly) _openTemplates();
       return;
     }
     final outgoing = ChatMessage(
@@ -504,6 +522,7 @@ class _ConversationPageState extends State<ConversationPage> {
   }
 
   Future<void> _openTemplates() async {
+    if (!_addOns.templates) return;
     final sent = await Navigator.of(context).push<ChatMessage>(
       MaterialPageRoute(
         fullscreenDialog: true,
@@ -545,6 +564,13 @@ class _ConversationPageState extends State<ConversationPage> {
       setState(() => _pickError = '無法附加「$name」：${sized.reason}');
       return;
     }
+    if (!room.capabilities.canSendKind(sized.kind!)) {
+      setState(
+        () => _pickError =
+            '無法附加「$name」：${sourceLabel(room.source)} 不能傳送${kindLabel(sized.kind!)}',
+      );
+      return;
+    }
     setState(() {
       _pickError = null;
       pendingFile = PendingAttachment(
@@ -556,83 +582,74 @@ class _ConversationPageState extends State<ConversationPage> {
     });
   }
 
-  Future<void> _showAttachmentOptions() async {
-    // Say so straight away rather than letting the agent pick a file that can't go.
-    final supported = checkAttachment(room.platform, mime: 'application/pdf');
-    if (!supported.ok && supported.reason!.contains('尚未支援')) {
-      setState(() => _pickError = supported.reason);
-      return;
-    }
-    Future<void> pickMedia(Future<XFile?> Function() pick) async {
-      final navigator = Navigator.of(context);
-      final file = await pick();
-      navigator.pop();
-      if (file == null) return;
-      await _attach(
-        name: file.name,
-        mime: file.mimeType,
-        read: file.readAsBytes,
-      );
-    }
+  Future<void> _pickMedia(Future<XFile?> Function() pick) async {
+    final file = await pick();
+    if (file == null) return;
+    await _attach(name: file.name, mime: file.mimeType, read: file.readAsBytes);
+  }
 
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.attach_file),
-              title: const Text('新增附件'),
-              subtitle: Text(
-                '會傳給客戶。${platformLabel(room.platform)} 的限制會在選擇後檢查',
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('選擇圖片'),
-              // Re-encoded as JPEG, which every platform takes, and kept small.
-              onTap: () => pickMedia(
-                () => imagePicker.pickImage(
-                  source: ImageSource.gallery,
-                  imageQuality: 85,
-                  maxWidth: 2560,
-                  maxHeight: 2560,
-                ),
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.video_library_outlined),
-              title: const Text('選擇影片'),
-              onTap: () => pickMedia(
-                () => imagePicker.pickVideo(source: ImageSource.gallery),
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.insert_drive_file_outlined),
-              title: const Text('選擇檔案'),
-              onTap: () async {
-                final navigator = Navigator.of(context);
-                final result = await FilePicker.platform.pickFiles(
-                  type: FileType.custom,
-                  allowedExtensions: allowedExtensions,
-                  withData: true,
-                );
-                navigator.pop();
-                final file = result?.files.singleOrNull;
-                if (file == null) return;
-                await _attach(
-                  name: file.name,
-                  read: () async =>
-                      file.bytes ?? await XFile(file.path!).readAsBytes(),
-                );
-              },
-            ),
-          ],
-        ),
-      ),
+  Future<void> _pickFile() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: allowedExtensions,
+      withData: true,
     );
+    final file = result?.files.singleOrNull;
+    if (file == null) return;
+    await _attach(
+      name: file.name,
+      read: () async => file.bytes ?? await XFile(file.path!).readAsBytes(),
+    );
+  }
+
+  /// The ＋ panel: quick replies for every source, and what the source adds.
+  List<SendOption> get _sendOptions {
+    final addOns = _addOns;
+    return [
+      if (addOns.photos)
+        SendOption(
+          icon: Icons.image_outlined,
+          label: '相片',
+          addOn: true,
+          // Re-encoded as JPEG, which every platform takes, and kept small.
+          onTap: () => _pickMedia(
+            () => imagePicker.pickImage(
+              source: ImageSource.gallery,
+              imageQuality: 85,
+              maxWidth: 2560,
+              maxHeight: 2560,
+            ),
+          ),
+        ),
+      if (addOns.videos)
+        SendOption(
+          icon: Icons.videocam_outlined,
+          label: '影片',
+          addOn: true,
+          onTap: () => _pickMedia(
+            () => imagePicker.pickVideo(source: ImageSource.gallery),
+          ),
+        ),
+      if (addOns.files)
+        SendOption(
+          icon: Icons.attach_file_rounded,
+          label: '檔案',
+          addOn: true,
+          onTap: _pickFile,
+        ),
+      SendOption(
+        icon: Icons.bolt_outlined,
+        label: '快速回覆',
+        onTap: _openQuickReplies,
+      ),
+      if (addOns.templates)
+        SendOption(
+          icon: Icons.description_outlined,
+          label: '範本',
+          addOn: true,
+          onTap: _openTemplates,
+        ),
+    ];
   }
 
   Future<void> _openAttachment(String url) async {
@@ -646,12 +663,13 @@ class _ConversationPageState extends State<ConversationPage> {
     }
   }
 
-  // ---- Settings, customer, calls ----
+  // ---- Add-ons: calls and the room's settings ----
 
   String get _disappearingKey => 'room_disappearing_${room.messageRoomId}';
 
   // The backend applies this per message, so the choice is kept on the device.
   Future<void> _loadDisappearing() async {
+    if (!_addOns.disappearing) return;
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getInt(_disappearingKey);
     if (saved != null && mounted) {
@@ -659,105 +677,19 @@ class _ConversationPageState extends State<ConversationPage> {
     }
   }
 
-  void _showCustomerInfo() {
-    final customer = room.customer;
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (_) => SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              PersonAvatar(
-                name: room.title,
-                imageUrl: customer?.avatarUrl,
-                radius: 36,
-              ),
-              const SizedBox(height: 10),
-              Text(
-                room.title,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 8),
-              ListTile(
-                leading: Icon(platformIcon(room.platform), color: primaryColor),
-                title: const Text('社群平台'),
-                subtitle: Text(platformLabel(room.platform)),
-              ),
-              if (room.channelName?.isNotEmpty == true)
-                ListTile(
-                  leading: const Icon(Icons.hub_outlined, color: primaryColor),
-                  title: const Text('頻道'),
-                  subtitle: Text(room.channelName!),
-                ),
-              if (customer != null)
-                ListTile(
-                  leading: const Icon(
-                    Icons.badge_outlined,
-                    color: primaryColor,
-                  ),
-                  title: const Text('帳號ID'),
-                  subtitle: Text(customer.id),
-                ),
-              ListTile(
-                leading: const Icon(
-                  Icons.support_agent_outlined,
-                  color: primaryColor,
-                ),
-                title: const Text('負責人'),
-                subtitle: Text(room.assignee?.name ?? '未指派'),
-              ),
-              if (room.tags.isNotEmpty)
-                ListTile(
-                  leading: const Icon(Icons.sell_outlined, color: primaryColor),
-                  title: const Text('標籤'),
-                  subtitle: Text(room.tags.join('、')),
-                ),
-              ListTile(
-                leading: const Icon(Icons.schedule, color: primaryColor),
-                title: const Text('最後互動時間'),
-                subtitle: Text(
-                  formatDateTime(room.lastMessageAt ?? room.updatedAt),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+  Future<void> _showChatSettings() async {
+    final seconds = await showChatSettings(
+      context,
+      addOns: _addOns,
+      disappearingSeconds: _disappearingSeconds,
     );
-  }
-
-  /// Customers on a social platform have no way to join, so say so first.
-  Future<bool> _confirmInternalCall() async {
-    final platform = room.platform;
-    if (platform == null) return true;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('這是 MasterBox 內部通話'),
-        content: Text('客戶無法從 ${platformLabel(platform)} 加入，也不會收到來電。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('繼續'),
-          ),
-        ],
-      ),
-    );
-    return confirmed == true;
+    if (seconds == null || !mounted) return;
+    setState(() => _disappearingSeconds = seconds);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_disappearingKey, seconds);
   }
 
   Future<void> _startCall(String kind) async {
-    if (!await _confirmInternalCall()) return;
     CallSession? call;
     try {
       call = await widget.graphQL.startCall(
@@ -784,701 +716,149 @@ class _ConversationPageState extends State<ConversationPage> {
     }
   }
 
-  Future<void> _showChatSettings() async {
-    var seconds = _disappearingSeconds;
-    final saved = await showModalBottomSheet<bool>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) => SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                DropdownButtonFormField<EncryptionMode>(
-                  initialValue: EncryptionMode.standard,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: '加密模式',
-                    helperText: '目前傳輸時會加密。端對端加密需要雙方都支援，尚未開放。',
-                    helperMaxLines: 2,
-                  ),
-                  items: const [
-                    DropdownMenuItem(
-                      value: EncryptionMode.standard,
-                      child: Text('傳輸加密'),
-                    ),
-                    DropdownMenuItem(
-                      value: EncryptionMode.endToEnd,
-                      enabled: false,
-                      child: Text('端對端加密（尚未開放）'),
-                    ),
-                  ],
-                  onChanged: (_) {},
-                ),
-                const SizedBox(height: 14),
-                DropdownButtonFormField<int>(
-                  initialValue: disappearingOptions.contains(seconds)
-                      ? seconds
-                      : 0,
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                    labelText: '消失訊息',
-                    helperText: _isPlatformRoom
-                        ? '傳給客戶的訊息會留在 ${platformLabel(room.platform)}，'
-                              '無法設定消失訊息。'
-                        : '訊息顯示後開始倒數，時間到就不再顯示。',
-                    helperMaxLines: 3,
-                  ),
-                  items: disappearingOptions
-                      .map(
-                        (item) => DropdownMenuItem(
-                          value: item,
-                          child: Text(
-                            item == 0 ? '關閉' : '${disappearingLabel(item)}後刪除',
-                          ),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: _isPlatformRoom
-                      ? null
-                      : (value) =>
-                            setSheetState(() => seconds = value ?? seconds),
-                ),
-                const SizedBox(height: 12),
-                FilledButton(
-                  onPressed: () => Navigator.pop(sheetContext, true),
-                  child: const Text('儲存設定'),
-                ),
-              ],
-            ),
-          ),
+  List<Widget> get _headerActions {
+    final addOns = _addOns;
+    return [
+      if (addOns.calls) ...[
+        IconButton(
+          onPressed: () => _startCall('voice'),
+          tooltip: '語音通話',
+          icon: const Icon(Icons.call_outlined),
         ),
-      ),
-    );
-    if (saved == true && mounted) {
-      setState(() => _disappearingSeconds = seconds);
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt(_disappearingKey, seconds);
-    }
+        IconButton(
+          onPressed: () => _startCall('video'),
+          tooltip: '視訊通話',
+          icon: const Icon(Icons.videocam_outlined),
+        ),
+      ],
+      if (addOns.settings)
+        IconButton(
+          onPressed: _showChatSettings,
+          tooltip: '聊天室設定',
+          icon: const Icon(Icons.more_vert_rounded),
+        ),
+    ];
   }
 
   // ---- Drawing ----
 
-  Widget _attachmentView(MessageAttachment attachment) {
-    final url = attachment.safeUrl;
-    final fallback = Text(
-      '[${attachment.label}'
-      '${attachment.filename == null ? '' : '：${attachment.filename}'}]'
-      '${attachment.caption == null ? '' : ' ${attachment.caption}'}',
-    );
-    if (url == null) return fallback;
-    if (attachment.isImage) {
-      return GestureDetector(
-        onTap: () => _openAttachment(url),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(6),
-          // Stickers keep their own size, so a small one stays sharp.
-          child: ConstrainedBox(
-            constraints: attachment.isSticker
-                ? const BoxConstraints(maxWidth: 120, maxHeight: 120)
-                : const BoxConstraints(),
-            child: Image.network(
-              url,
-              width: attachment.isSticker ? null : 220,
-              fit: attachment.isSticker ? BoxFit.contain : BoxFit.cover,
-              webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
-              // Meta's attachment links expire.
-              errorBuilder: (_, _, _) => fallback,
-            ),
-          ),
-        ),
-      );
-    }
-    return TextButton.icon(
-      onPressed: () => _openAttachment(url),
-      icon: Icon(switch (attachment.type) {
-        'video' => Icons.play_circle_outline,
-        'audio' => Icons.audiotrack,
-        _ => Icons.insert_drive_file_outlined,
-      }),
-      label: Text(
-        attachment.filename ?? '查看${attachment.label}',
-        overflow: TextOverflow.ellipsis,
-      ),
-    );
-  }
-
-  Widget _pendingView(PendingAttachment file, {bool compact = false}) {
-    final thumb = file.kind == 'image'
-        ? ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: Image.memory(
-              Uint8List.fromList(file.bytes),
-              width: compact ? 120 : 48,
-              height: compact ? null : 48,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => const Icon(Icons.image_outlined),
-            ),
-          )
-        : Icon(switch (file.kind) {
-            'video' => Icons.movie_outlined,
-            'audio' => Icons.audiotrack,
-            _ => Icons.insert_drive_file_outlined,
-          });
-    if (compact) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          thumb,
-          Text(
-            '${file.name}（${formatFileSize(file.size)}）',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ],
-      );
-    }
-    return Card(
-      child: ListTile(
-        leading: thumb,
-        title: Text(file.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-        subtitle: Text('${formatFileSize(file.size)}・送出時上傳並傳給客戶'),
-        trailing: IconButton(
-          tooltip: '移除附件',
-          icon: const Icon(Icons.close),
-          onPressed: () => setState(() => pendingFile = null),
-        ),
-      ),
-    );
-  }
-
-  Widget _bubble(ChatMessage message) {
-    final theme = Theme.of(context);
-    return Align(
-      alignment: message.isMine ? Alignment.centerRight : Alignment.centerLeft,
-      child: GestureDetector(
-        onLongPress: message.failed ? () => _deliver(message) : null,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.sizeOf(context).width * 0.8,
-          ),
-          child: Card(
-            color: message.failed
-                ? Colors.red.withValues(alpha: 0.15)
-                : (message.isMine
-                      ? primaryColor.withValues(alpha: 0.2)
-                      : theme.colorScheme.surfaceContainerHighest),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  if (message.pending != null)
-                    _pendingView(message.pending!, compact: true),
-                  if (message.text.isNotEmpty ||
-                      (message.attachments.isEmpty && message.pending == null))
-                    Text(message.text.isEmpty ? '附件' : message.text),
-                  for (final attachment in message.attachments)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: _attachmentView(attachment),
-                    ),
-                  if (message.sending)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const SizedBox(
-                            width: 12,
-                            height: 12,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            message.pending != null &&
-                                    message.pending!.uploaded == null
-                                ? '上傳中…'
-                                : '傳送中…',
-                            style: theme.textTheme.bodySmall,
-                          ),
-                        ],
-                      ),
-                    ),
-                  if (message.deliveryError != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        '未送達：${message.deliveryError}',
-                        style: const TextStyle(color: Colors.red, fontSize: 12),
-                      ),
-                    ),
-                  if (message.failed && message.sendError != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        message.sendError!.startsWith('附件已送出')
-                            ? message.sendError!
-                            : '訊息未送出：${message.sendError}',
-                        style: const TextStyle(color: Colors.red, fontSize: 12),
-                      ),
-                    ),
-                  if (!message.sending && !message.failed)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        formatTime(message.sentAt),
-                        style: theme.textTheme.bodySmall,
-                      ),
-                    ),
-                  if (message.failed && message.templateRequired && _isWhatsapp)
-                    TextButton(
-                      onPressed: _openTemplates,
-                      child: const Text('使用範本發送'),
-                    )
-                  else if (message.failed)
-                    TextButton(
-                      onPressed: () => _deliver(message),
-                      child: const Text('重試'),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _messages() {
+    final colors = context.chat;
     if (_loading && _older.isEmpty && _newer.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_loadError != null && _older.isEmpty && _newer.isEmpty) {
-      return ErrorRetry(message: _loadError!, onRetry: _loadNewest);
+      return ColoredBox(
+        color: colors.surfaceChat,
+        child: const Center(child: CircularProgressIndicator()),
+      );
     }
     if (_older.isEmpty && _newer.isEmpty) {
-      return const EmptyState(icon: Icons.forum_outlined, message: '尚無訊息');
-    }
-    final top = _hasOlder
-        ? Padding(
-            padding: const EdgeInsets.all(8),
-            child: Center(
-              child: _loadOlderFailed
-                  ? TextButton.icon(
-                      onPressed: _loadOlder,
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('較舊的訊息載入失敗，點此重試'),
-                    )
-                  : TextButton(
-                      onPressed: _loadingOlder ? null : _loadOlder,
-                      child: Text(_loadingOlder ? '載入較舊的訊息…' : '載入較舊的訊息'),
-                    ),
-            ),
-          )
-        : const SizedBox(height: 8);
-    return Stack(
-      children: [
-        CustomScrollView(
-          controller: _scroll,
-          center: _centerKey,
-          // Messages there when it opened end at the bottom; older ones go up,
-          // newer ones down, so neither moves what the agent is reading.
-          anchor: 1,
-          slivers: [
-            SliverToBoxAdapter(child: top),
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              sliver: SliverList.builder(
-                itemCount: _older.length,
-                // Before the centre, items are laid out upwards: newest first.
-                itemBuilder: (_, i) => _bubble(_older[_older.length - 1 - i]),
-              ),
-            ),
-            SliverPadding(
-              key: _centerKey,
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              sliver: SliverList.builder(
-                itemCount: _newer.length,
-                itemBuilder: (_, i) => _bubble(_newer[i]),
-              ),
-            ),
-          ],
-        ),
-        if (_unseenBelow > 0)
-          Positioned(
-            bottom: 12,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: FilledButton.tonalIcon(
-                onPressed: _jumpToLatest,
-                icon: const Icon(Icons.arrow_downward),
-                label: Text('$_unseenBelow 則新訊息'),
-              ),
-            ),
+      return ColoredBox(
+        color: colors.surfaceChat,
+        child: Center(
+          child: SingleChildScrollView(
+            child: _loadError != null
+                ? ChatEmptyState(
+                    icon: Icons.cloud_off_outlined,
+                    tone: EmptyTone.alert,
+                    title: '訊息載入失敗',
+                    detail: _loadError,
+                    actionLabel: '重試',
+                    onAction: _loadNewest,
+                  )
+                : const ChatEmptyState(
+                    icon: Icons.forum_outlined,
+                    title: '尚無訊息',
+                  ),
           ),
-      ],
-    );
-  }
-
-  Widget _notice(ReplyWindow window) {
-    final notice = replyNotice(window, room.platform);
-    final (
-      Color background,
-      Color foreground,
-      IconData icon,
-    ) = switch (notice.tone) {
-      NoticeTone.info => (
-        Colors.green.withValues(alpha: 0.12),
-        Colors.green.shade800,
-        Icons.schedule,
-      ),
-      NoticeTone.warning => (
-        Colors.orange.withValues(alpha: 0.14),
-        Colors.orange.shade900,
-        Icons.warning_amber_rounded,
-      ),
-      NoticeTone.blocked => (
-        Colors.red.withValues(alpha: 0.12),
-        Colors.red.shade800,
-        Icons.block,
-      ),
-    };
-    return Semantics(
-      liveRegion: notice.tone != NoticeTone.info,
-      child: Container(
-        width: double.infinity,
-        color: background,
-        padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
-        child: Row(
-          children: [
-            Icon(icon, size: 18, color: foreground),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(notice.text, style: TextStyle(color: foreground)),
-                  if (notice.detail != null)
-                    Text(
-                      notice.detail!,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                ],
-              ),
-            ),
-            if (window.templateRequired && _isWhatsapp)
-              TextButton(
-                onPressed: _openTemplates,
-                child: const Text('使用範本發送'),
-              ),
-          ],
         ),
-      ),
-    );
-  }
-
-  Widget _composer() {
-    final canWrite = _canWrite;
+      );
+    }
     final window = _window;
-    final hint = canWrite
-        ? '輸入訊息，或輸入 / 插入快速回覆'
-        : window?.state == ReplyState.unsupported
-        ? '目前無法回覆這個平台的訊息'
-        : '已超過回覆期限，請改用 WhatsApp 範本';
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_pickError != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        _pickError!,
-                        style: const TextStyle(color: Colors.red, fontSize: 13),
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: '關閉',
-                      icon: const Icon(Icons.close, size: 18),
-                      onPressed: () => setState(() => _pickError = null),
-                    ),
-                  ],
-                ),
-              ),
-            if (pendingFile != null) _pendingView(pendingFile!),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                IconButton(
-                  onPressed: canWrite && (_canReplyHere || !_isPlatformRoom)
-                      ? _showAttachmentOptions
-                      : null,
-                  tooltip: '新增附件',
-                  icon: const Icon(Icons.attach_file),
-                ),
-                IconButton(
-                  onPressed: canWrite ? _openQuickReplies : null,
-                  tooltip: '插入快速回覆',
-                  icon: const Icon(Icons.short_text),
-                ),
-                if (_isWhatsapp)
-                  IconButton(
-                    onPressed: _openTemplates,
-                    tooltip: '使用 WhatsApp 範本發送',
-                    icon: const Icon(Icons.description_outlined),
-                  ),
-                Expanded(
-                  child: Focus(
-                    onKeyEvent: _onKey,
-                    child: TextField(
-                      controller: controller,
-                      focusNode: _inputFocus,
-                      enabled: canWrite,
-                      minLines: 1,
-                      maxLines: 5,
-                      keyboardType: TextInputType.multiline,
-                      textInputAction: TextInputAction.newline,
-                      onChanged: _onTextChanged,
-                      decoration: InputDecoration(
-                        hintText: hint,
-                        hintMaxLines: 2,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                IconButton.filled(
-                  key: const ValueKey('send-message'),
-                  tooltip: !canWrite && _isWhatsapp ? '使用範本' : '發送',
-                  onPressed: canWrite || _isWhatsapp ? _send : null,
-                  icon: const Icon(Icons.send),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
+    final passed =
+        window != null &&
+        (window.state == ReplyState.closed ||
+            window.state == ReplyState.humanAgent);
+    return ChatMessageList(
+      older: _older,
+      newer: _newer,
+      controller: _scroll,
+      centerKey: _centerKey,
+      onOpenAttachment: _openAttachment,
+      onRetry: _deliver,
+      onUseTemplate: _addOns.templates ? _openTemplates : null,
+      hasOlder: _hasOlder,
+      loadingOlder: _loadingOlder,
+      loadOlderFailed: _loadOlderFailed,
+      onLoadOlder: _loadOlder,
+      unseenBelow: _unseenBelow,
+      onJumpToLatest: _jumpToLatest,
+      endEvent: passed ? '24 小時回覆期限已過' : null,
     );
+  }
+
+  /// What sits above the input: the connection, the reply window, and why
+  /// replying here isn't possible at all.
+  List<Widget> _notices() {
+    final window = _window;
+    return [
+      if (_connectionMessage != null)
+        NoticeBar(kind: NoticeKind.connection, text: _connectionMessage!),
+      if (room.repliesUnsupported)
+        NoticeBar(
+          kind: NoticeKind.platformRule,
+          text: '目前還不支援回覆 ${sourceLabel(room.source)} 的訊息',
+        )
+      else if (window != null && noticeWorthShowing(replyNotice(window)))
+        ReplyWindowNotice(window: window, onTemplates: _openTemplates),
+      if (_addOns.disappearing && _disappearingSeconds > 0)
+        NoticeBar(
+          kind: NoticeKind.permission,
+          text: '消失訊息：${disappearingLabel(_disappearingSeconds)}',
+        ),
+    ];
   }
 
   @override
   Widget build(BuildContext context) {
-    final window = _window;
-    final subtitle = [
-      if (room.channelName?.isNotEmpty == true) room.channelName!,
-      if (room.assignee != null)
-        room.assignee!.id == widget.graphQL.accountId
-            ? '我負責'
-            : '負責人：${room.assignee!.name}',
-    ].join(' · ');
+    final colors = context.chat;
+    final canWrite = _canWrite;
+    final templatesOnly = _templatesOnly;
     return Scaffold(
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(room.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-            if (subtitle.isNotEmpty)
-              Text(
-                subtitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-          ],
-        ),
-        actions: [
-          if (room.platform != null)
-            IconButton(
-              onPressed: _showCustomerInfo,
-              tooltip: '客戶資訊',
-              icon: const Icon(Icons.person_outline),
-            ),
-          IconButton(
-            onPressed: () => _startCall('voice'),
-            tooltip: '語音通話',
-            icon: const Icon(Icons.call),
-          ),
-          IconButton(
-            onPressed: () => _startCall('video'),
-            tooltip: '視訊通話',
-            icon: const Icon(Icons.videocam),
-          ),
-          IconButton(
-            onPressed: _showChatSettings,
-            tooltip: '聊天室設定',
-            icon: const Icon(Icons.security),
-          ),
-        ],
+      backgroundColor: colors.surfaceChat,
+      appBar: ChatHeader(
+        room: room,
+        onCustomerInfo: room.platform != null
+            ? () => showCustomerInfo(context, room)
+            : null,
+        actions: _headerActions,
       ),
       body: Column(
         children: [
-          if (_disappearingSeconds > 0 && !_isPlatformRoom)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              child: Text(
-                '消失訊息：${disappearingLabel(_disappearingSeconds)}',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ),
-          if (_connectionMessage != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  _connectionMessage!,
-                  style: const TextStyle(color: Colors.orange),
-                ),
-              ),
-            ),
+          if (_isPlatformRoom)
+            AssigneeStrip(room: room, myId: widget.graphQL.accountId),
           Expanded(child: _messages()),
-          if (window != null) _notice(window),
-          _composer(),
+          ..._notices(),
+          ChatComposer(
+            controller: controller,
+            focusNode: _inputFocus,
+            enabled: canWrite,
+            templatesOnly: templatesOnly,
+            onTemplates: _openTemplates,
+            hint: templatesOnly
+                ? '只能傳送範本'
+                : room.repliesUnsupported
+                ? '目前無法回覆這個來源的訊息'
+                : '訊息',
+            onChanged: _onTextChanged,
+            onKeyEvent: _onKey,
+            onSend: _send,
+            onPlus: () => showSendOptions(context, options: _sendOptions),
+            pendingFile: pendingFile,
+            onRemovePending: () => setState(() => pendingFile = null),
+            pickError: _pickError,
+            onDismissError: () => setState(() => _pickError = null),
+          ),
         ],
       ),
     );
   }
-}
-
-/// Picks one of the company's templates to put into the reply. Opens from the
-/// button or by typing / in an empty box. The conversation's platform comes
-/// first. Returns the text to insert, or null.
-Future<String?> showQuickReplies(
-  BuildContext context, {
-  required GraphQLService graphQL,
-  required String? platform,
-}) => showModalBottomSheet<String>(
-  context: context,
-  showDragHandle: true,
-  isScrollControlled: true,
-  builder: (_) => _QuickReplySheet(graphQL: graphQL, platform: platform),
-);
-
-class _QuickReplySheet extends StatefulWidget {
-  const _QuickReplySheet({required this.graphQL, required this.platform});
-  final GraphQLService graphQL;
-  final String? platform;
-  @override
-  State<_QuickReplySheet> createState() => _QuickReplySheetState();
-}
-
-class _QuickReplySheetState extends State<_QuickReplySheet> {
-  // Read again each time, so a template an admin just added is there.
-  late Future<List<MessageTemplate>> _templates = widget.graphQL
-      .fetchQuickReplies();
-  String _query = '';
-
-  @override
-  Widget build(BuildContext context) => SafeArea(
-    child: SizedBox(
-      height: MediaQuery.sizeOf(context).height * 0.7,
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          16,
-          0,
-          16,
-          MediaQuery.viewInsetsOf(context).bottom,
-        ),
-        child: Column(
-          children: [
-            Text('插入快速回覆', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            TextField(
-              autofocus: true,
-              decoration: const InputDecoration(
-                hintText: '搜尋範本名稱或內容',
-                prefixIcon: Icon(Icons.search),
-              ),
-              onChanged: (value) => setState(() => _query = value),
-            ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: FutureBuilder<List<MessageTemplate>>(
-                future: _templates,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState != ConnectionState.done) {
-                    return const Center(child: Text('正在讀取範本…'));
-                  }
-                  if (snapshot.hasError) {
-                    return ErrorRetry(
-                      message: '目前無法讀取範本，請稍後再試',
-                      onRetry: () => setState(
-                        () => _templates = widget.graphQL.fetchQuickReplies(),
-                      ),
-                    );
-                  }
-                  final all = snapshot.data ?? const <MessageTemplate>[];
-                  if (all.isEmpty) {
-                    return EmptyState(
-                      icon: Icons.short_text,
-                      message: '還沒有範本',
-                      detail: widget.graphQL.account?.isAdmin == true
-                          ? '可以到「Manage › 訊息範本」新增'
-                          : '請管理員到「訊息範本」新增',
-                    );
-                  }
-                  final words = _query.trim().toLowerCase();
-                  final items =
-                      all
-                          .map((t) => (template: t, text: quickReplyText(t)))
-                          .where((item) => item.text.trim().isNotEmpty)
-                          .where(
-                            (item) =>
-                                words.isEmpty ||
-                                item.template.name.toLowerCase().contains(
-                                  words,
-                                ) ||
-                                item.text.toLowerCase().contains(words),
-                          )
-                          .toList()
-                        ..sort((a, b) {
-                          final mine =
-                              (b.template.platform == widget.platform ? 1 : 0) -
-                              (a.template.platform == widget.platform ? 1 : 0);
-                          return mine != 0
-                              ? mine
-                              : a.template.name.compareTo(b.template.name);
-                        });
-                  if (items.isEmpty) {
-                    return const Center(child: Text('找不到符合的範本'));
-                  }
-                  return ListView.separated(
-                    itemCount: items.length,
-                    separatorBuilder: (_, _) => const Divider(),
-                    itemBuilder: (context, index) {
-                      final item = items[index];
-                      return ListTile(
-                        title: Text(item.template.name),
-                        subtitle: Text(
-                          item.text,
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        trailing: item.template.platform != widget.platform
-                            ? Text(platformLabel(item.template.platform))
-                            : null,
-                        onTap: () => Navigator.pop(context, item.text),
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
 }

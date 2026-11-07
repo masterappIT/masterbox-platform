@@ -49,9 +49,9 @@ const _teamAccountFields =
 const _templateFields =
     'id name category platform contents createdAt updatedAt';
 const _messageFields =
-    '_id contents platform channel_id to_chat_room_id sentAt inbound isMine delivery_error preview cursor disappearing_after_seconds readAt';
+    '_id body { text attachments { type url filename mime_type size caption } template { id name } } platform channel_id to_chat_room_id sentAt inbound isMine delivery_error preview cursor disappearing_after_seconds readAt';
 const _roomFields =
-    'id title platform channel_id channel_name chat_room_id users { id name first_name last_name avatar } customer { id name avatar username phone } tags { id name } lastMessage lastMessageAt lastMessageInbound unreadCount lastCustomerMessageAt replyWindow { state closesAt templateRequired humanAgentAvailable } assignee { id name email role } assignedAt createdAt updatedAt';
+    'id title platform source capabilities channel_id channel_name chat_room_id users { id name first_name last_name avatar } customer { id name avatar username phone } tags { id name } lastMessage lastMessageAt lastMessageInbound unreadCount lastCustomerMessageAt replyWindow { state closesAt templateRequired humanAgentAvailable } assignee { id name email role } assignedAt createdAt updatedAt';
 const _whatsappWebFields =
     'channel_id state qr phone name error updated_at progress { chats_total chats_done messages }';
 const _channelConnectionFields = 'state message checked_at';
@@ -75,11 +75,15 @@ class ConversationFilter {
   const ConversationFilter({
     this.search = '',
     this.channelId,
+    this.source,
     this.unreadOnly = false,
     this.assignment = 'all',
   });
   final String search;
   final String? channelId;
+
+  /// Only conversations from this source, such as whatsapp_web.
+  final String? source;
   final bool unreadOnly;
 
   /// all, mine or unassigned
@@ -90,6 +94,7 @@ class ConversationFilter {
   bool admits(ChatConversation room, {String? myId}) =>
       search.trim().isEmpty &&
       (channelId == null || room.channelId == channelId) &&
+      (source == null || room.source == source) &&
       (!unreadOnly || room.unreadCount > 0) &&
       switch (assignment) {
         'mine' => room.assignee?.id == myId,
@@ -100,6 +105,7 @@ class ConversationFilter {
   Map<String, dynamic> toJson() => {
     if (search.trim().isNotEmpty) 'search': search.trim(),
     'channel_id': ?channelId,
+    'source': ?source,
     if (unreadOnly) 'unread_only': true,
     if (assignment != 'all') 'assignment': assignment,
   };
@@ -109,12 +115,37 @@ class ConversationFilter {
       other is ConversationFilter &&
       other.search.trim() == search.trim() &&
       other.channelId == channelId &&
+      other.source == source &&
       other.unreadOnly == unreadOnly &&
       other.assignment == assignment;
 
   @override
   int get hashCode =>
-      Object.hash(search.trim(), channelId, unreadOnly, assignment);
+      Object.hash(search.trim(), channelId, source, unreadOnly, assignment);
+
+  ConversationFilter copyWith({
+    String? search,
+    String? channelId,
+    String? source,
+    bool clearChannel = false,
+    bool clearSource = false,
+    bool? unreadOnly,
+    String? assignment,
+  }) => ConversationFilter(
+    search: search ?? this.search,
+    channelId: clearChannel ? null : (channelId ?? this.channelId),
+    source: clearSource ? null : (source ?? this.source),
+    unreadOnly: unreadOnly ?? this.unreadOnly,
+    assignment: assignment ?? this.assignment,
+  );
+
+  /// Something narrows the list beyond everything.
+  bool get narrowed =>
+      search.trim().isNotEmpty ||
+      unreadOnly ||
+      assignment != 'all' ||
+      channelId != null ||
+      source != null;
 }
 
 /// A page of a conversation's messages, oldest first.
@@ -373,9 +404,11 @@ class GraphQLService {
     return true;
   }
 
-  /// Replies go out through the conversation's platform, as they do in the
-  /// admin inbox, file and all. The platform's refusal comes back as an error,
-  /// so nothing looks sent when it wasn't.
+  /// Replies go out through the conversation's source, as they do in the
+  /// admin inbox, file and all: the same `{text, attachments}` for every
+  /// source, which the server's connector turns into what the platform takes.
+  /// The platform's refusal comes back as an error, so nothing looks sent
+  /// when it wasn't.
   /// @returns the stored message, or the last one when it went as two
   Future<ChatMessage?> sendMessage({
     required ChatConversation conversation,
@@ -386,25 +419,15 @@ class GraphQLService {
     final platform = conversation.platform;
     final Map<String, dynamic> input;
     if (platform != null && platform != 'app') {
-      final message = {
-        if (contents.isNotEmpty) 'text': contents,
-        if (attachment != null)
-          'attachments': [attachment.toMessageAttachment()],
-      };
-      final recipient = conversation.customer?.id;
       input = {
         'to_chat_room_id': conversation.messageRoomId,
         'platform': platform,
         'channel_id': conversation.channelId,
-        'contents': jsonEncode(
-          platform == 'fb' || platform == 'ig'
-              ? {
-                  'recipient': {'id': recipient},
-                  'messaging_type': 'RESPONSE',
-                  'message': message,
-                }
-              : {'message': message, 'recipient': recipient},
-        ),
+        'contents': jsonEncode({
+          if (contents.isNotEmpty) 'text': contents,
+          if (attachment != null)
+            'attachments': [attachment.toMessageAttachment()],
+        }),
       };
     } else {
       input = {
@@ -796,7 +819,7 @@ class GraphQLService {
   Future<List<ChatConversation>> fetchConversations() async {
     final result = await _request(r'''query ChatRooms {
       chatRooms {
-        id title lastMessage platform channel_id chat_room_id updatedAt
+        id title lastMessage platform source capabilities channel_id chat_room_id updatedAt
         users { id name first_name last_name avatar }
       }
     }''', const {});
@@ -822,13 +845,13 @@ class GraphQLService {
     final result = withConnection
         ? await _request('''query GetChannelsWithConnection {
       getUserSubscribedChannels {
-        platform name channel_id enabled phone
+        platform source capabilities name channel_id enabled phone
         connection { $_channelConnectionFields }
         whatsapp_web { $_whatsappWebFields }
       }
     }''', const {})
         : await _request(r'''query GetUserSubscribedChannels {
-      getUserSubscribedChannels { platform name channel_id enabled }
+      getUserSubscribedChannels { platform source capabilities name channel_id enabled phone }
     }''', const {});
     return _list(result, const [
       'data',
