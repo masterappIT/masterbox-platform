@@ -9,9 +9,9 @@ typedef SocketConnector = WebSocketChannel Function(
 );
 
 const _messageFields =
-    '_id contents platform channel_id to_chat_room_id sentAt inbound isMine delivery_error preview cursor disappearing_after_seconds readAt';
+    '_id body { text attachments { type url filename mime_type size caption } template { id name } } platform channel_id to_chat_room_id sentAt inbound isMine delivery_error preview cursor disappearing_after_seconds readAt';
 const _roomFields =
-    'id title platform channel_id channel_name chat_room_id users { id name first_name last_name avatar } customer { id name avatar username phone } tags { id name } lastMessage lastMessageAt lastMessageInbound unreadCount lastCustomerMessageAt replyWindow { state closesAt templateRequired humanAgentAvailable } assignee { id name email role } assignedAt createdAt updatedAt';
+    'id title platform source capabilities channel_id channel_name chat_room_id users { id name first_name last_name avatar } customer { id name avatar username phone } tags { id name } lastMessage lastMessageAt lastMessageInbound unreadCount lastCustomerMessageAt replyWindow { state closesAt templateRequired humanAgentAvailable } assignee { id name email role } assignedAt createdAt updatedAt';
 
 /// Follows the backend's live feeds over graphql-ws, the same ones the admin
 /// inbox uses: new and changed messages, and conversations that changed (such

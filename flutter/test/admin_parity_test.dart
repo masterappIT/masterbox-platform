@@ -15,8 +15,10 @@ import 'support/fake_backend.dart';
 
 Widget _app(Widget page) => MaterialApp(home: page);
 
-final _myRooms = [
-  roomJson(),
+/// The rooms this account can see. [capabilities] replaces what the first
+/// room's source declares, for add-ons no source has yet.
+List<Map<String, dynamic>> _myRooms({List<String>? capabilities}) => [
+  roomJson(capabilities: capabilities),
   roomJson(
     id: 'room-row-2',
     chatRoomId: 'psid-2',
@@ -27,6 +29,19 @@ final _myRooms = [
     lastName: null,
   ),
 ];
+
+/// A message as the server sends it, with only its unified body.
+Map<String, dynamic> _message(
+  String id,
+  String text, {
+  bool inbound = true,
+  String sentAt = '2026-11-05T10:00:00.000Z',
+}) => {
+  '_id': id,
+  'body': {'text': text, 'attachments': <Object>[], 'template': null},
+  'inbound': inbound,
+  'sentAt': sentAt,
+};
 
 /// A page of messages, as messagePage answers.
 Map<String, Object?> _page(List<Map<String, dynamic>> messages) => {
@@ -40,75 +55,81 @@ Map<String, Object?> _page(List<Map<String, dynamic>> messages) => {
   },
 };
 
-Map<String, Object?> _inbox({List<Map<String, dynamic>>? messages}) => {
-  'GetUserSubscribedChannels': {
-    'getUserSubscribedChannels': [
-      channelJson(),
-      channelJson(id: 'channel-2', platform: 'ig', name: 'IG 帳號'),
-    ],
-  },
-  'ChatRooms': {
-    'chatRooms': [
-      roomJson(),
-      roomJson(
-        id: 'room-row-2',
-        chatRoomId: 'psid-2',
-        platform: 'ig',
-        channelId: 'channel-2',
-        customerId: 'customer-2',
-        firstName: '阿明',
-        lastName: null,
-      ),
-      // Another team's channel: this account can't use it.
-      roomJson(
-        id: 'room-row-3',
-        chatRoomId: 'psid-3',
-        channelId: 'not-mine',
-        customerId: 'customer-3',
-        firstName: '別人的客戶',
-        lastName: null,
-      ),
-    ],
-  },
-  'Messages': {'messages': messages ?? const []},
-  // The server lists only this account's channels, narrowed by the filter.
-  'ChatRoomPage': (Map<String, dynamic> variables) {
-    final channel = (variables['filter'] as Map?)?['channel_id'];
-    return {
-      'chatRoomPage': {
-        'rooms': _myRooms
-            .where((room) => channel == null || room['channel_id'] == channel)
-            .toList(),
-        'nextCursor': null,
-        'hasMore': false,
-      },
-    };
-  },
-  'ChatRoom': (Map<String, dynamic> variables) => {
-    'chatRoom': _myRooms
-        .where(
-          (room) =>
-              room['id'] == variables['id'] ||
-              room['chat_room_id'] == variables['chatRoomId'],
-        )
-        .firstOrNull,
-  },
-  'MessagePage': _page(messages ?? const []),
-  'MarkChatRoomRead': {
-    'markChatRoomRead': {'id': 'room-row-1', 'unreadCount': 0},
-  },
-  'Users': {
-    'listAccounts': {
-      'items': [
-        accountJson(id: 'member-1', email: 'a@example.com', name: '小組員'),
+Map<String, Object?> _inbox({
+  List<Map<String, dynamic>>? messages,
+  List<String>? capabilities,
+}) {
+  final myRooms = _myRooms(capabilities: capabilities);
+  return {
+    'GetUserSubscribedChannels': {
+      'getUserSubscribedChannels': [
+        channelJson(),
+        channelJson(id: 'channel-2', platform: 'ig', name: 'IG 帳號'),
       ],
     },
-  },
-  'SendMessage': {
-    'appSendMessage': {'_id': 'm-new'},
-  },
-  'Ping': {'__typename': 'Query'},
-};
+    'ChatRooms': {
+      'chatRooms': [
+        roomJson(),
+        roomJson(
+          id: 'room-row-2',
+          chatRoomId: 'psid-2',
+          platform: 'ig',
+          channelId: 'channel-2',
+          customerId: 'customer-2',
+          firstName: '阿明',
+          lastName: null,
+        ),
+        // Another team's channel: this account can't use it.
+        roomJson(
+          id: 'room-row-3',
+          chatRoomId: 'psid-3',
+          channelId: 'not-mine',
+          customerId: 'customer-3',
+          firstName: '別人的客戶',
+          lastName: null,
+        ),
+      ],
+    },
+    'Messages': {'messages': messages ?? const []},
+    // The server lists only this account's channels, narrowed by the filter.
+    'ChatRoomPage': (Map<String, dynamic> variables) {
+      final channel = (variables['filter'] as Map?)?['channel_id'];
+      return {
+        'chatRoomPage': {
+          'rooms': myRooms
+              .where((room) => channel == null || room['channel_id'] == channel)
+              .toList(),
+          'nextCursor': null,
+          'hasMore': false,
+        },
+      };
+    },
+    'ChatRoom': (Map<String, dynamic> variables) => {
+      'chatRoom': myRooms
+          .where(
+            (room) =>
+                room['id'] == variables['id'] ||
+                room['chat_room_id'] == variables['chatRoomId'],
+          )
+          .firstOrNull,
+    },
+    'MessagePage': _page(messages ?? const []),
+    'MarkChatRoomRead': {
+      'markChatRoomRead': {'id': 'room-row-1', 'unreadCount': 0},
+    },
+    'Users': {
+      'listAccounts': {
+        'items': [
+          accountJson(id: 'member-1', email: 'a@example.com', name: '小組員'),
+        ],
+      },
+    },
+    'SendMessage': {
+      'appSendMessage': {'_id': 'm-new'},
+    },
+    'Ping': {'__typename': 'Query'},
+  };
+}
 
 Future<void> _signIn(WidgetTester tester, {required String role}) async {
   SharedPreferences.setMockInitialValues({
@@ -191,10 +212,16 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('小美王'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('客戶資訊'));
+      await tester.tap(find.byTooltip('客戶資訊').first);
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      expect(find.text('Facebook'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(BottomSheet),
+          matching: find.text('Facebook'),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('the registration form', (tester) async {
@@ -276,7 +303,12 @@ void main() {
 
       await tester.tap(find.byIcon(Icons.tune));
       await tester.pumpAndSettle();
-      expect(find.text('LINE'), findsOneWidget);
+      // By source, with WhatsApp's two kinds apart, and no LINE.
+      expect(find.text('WhatsApp 官方'), findsOneWidget);
+      expect(find.text('WhatsApp 掃碼'), findsOneWidget);
+      expect(find.text('LINE'), findsNothing);
+      // A channel says its source, never its internal id.
+      expect(find.text('channel-2'), findsNothing);
       await tester.tap(find.text('IG 帳號'));
       await tester.pumpAndSettle();
 
@@ -320,10 +352,54 @@ void main() {
       expect(find.text('別人的客戶'), findsNothing);
       expect(find.text('示範聊天室'), findsNothing);
 
-      await tester.tap(find.widgetWithText(ChoiceChip, '官方粉專'));
+      await tester.tap(find.byKey(const ValueKey('source-filter')));
       await tester.pumpAndSettle();
+      for (final source in const [
+        'Facebook',
+        'Instagram',
+        'WhatsApp 官方',
+        'WhatsApp 掃碼',
+      ]) {
+        expect(
+          find.widgetWithText(ListTile, source),
+          findsWidgets,
+          reason: source,
+        );
+      }
+      await tester.tap(find.widgetWithText(ListTile, '官方粉專'));
+      await tester.pumpAndSettle();
+      expect(backend.named('ChatRoomPage').last.variables['filter'], {
+        'channel_id': 'channel-1',
+      });
       expect(find.text('小美王'), findsOneWidget);
       expect(find.text('阿明'), findsNothing);
+    });
+
+    _screenTest('the inbox narrows to one source', (tester) async {
+      await _signIn(tester, role: 'admin');
+      final backend = FakeBackend(_inbox());
+      await tester.pumpWidget(
+        MasterBoxApp(graphQL: backend.service(token: null)),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Chat'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('source-filter')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ListTile, 'Instagram').first);
+      await tester.pumpAndSettle();
+      expect(
+        (backend.named('ChatRoomPage').last.variables['filter']
+            as Map)['source'],
+        'instagram',
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('source-filter')),
+          matching: find.text('Instagram'),
+        ),
+        findsOneWidget,
+      );
     });
 
     _screenTest('an inbox without channels points admins at the channels', (
@@ -345,7 +421,7 @@ void main() {
       await tester.tap(find.text('Chat'));
       await tester.pumpAndSettle();
 
-      expect(find.text('還沒有可用的社群平台'), findsOneWidget);
+      expect(find.text('還沒有連接頻道'), findsOneWidget);
       await tester.tap(find.text('前往社群平台管理'));
       await tester.pumpAndSettle();
       expect(find.byType(ChannelsPage), findsOneWidget);
@@ -491,17 +567,14 @@ void main() {
       final backend = await open(
         tester,
         messages: [
+          _message('m1', '請問有貨嗎'),
           {
-            '_id': 'm1',
-            'contents': '{"message":{"text":"請問有貨嗎"}}',
-            'inbound': true,
-            'sentAt': '2026-11-05T10:00:00.000Z',
-          },
-          {
-            '_id': 'm2',
-            'contents': '{"message":{"text":"有的"}}',
-            'inbound': false,
-            'sentAt': '2026-11-05T10:01:00.000Z',
+            ..._message(
+              'm2',
+              '有的',
+              inbound: false,
+              sentAt: '2026-11-05T10:01:00.000Z',
+            ),
             'delivery_error': '已超過 24 小時回覆期限',
           },
         ],
@@ -542,13 +615,15 @@ void main() {
       final sockets = <FakeSocket>[];
       await _signIn(tester, role: 'admin');
       final stored = {
-        '_id': 'm-new',
-        'contents': '{"message":{"text":"您好"}}',
+        ..._message(
+          'm-new',
+          '您好',
+          inbound: false,
+          sentAt: '2026-11-05T10:02:00.000Z',
+        ),
         'to_chat_room_id': 'psid-1',
         'channel_id': 'channel-1',
-        'inbound': false,
         'cursor': 'c-new',
-        'sentAt': '2026-11-05T10:02:00.000Z',
       };
       final backend = FakeBackend({
         ..._inbox(),
@@ -615,20 +690,28 @@ void main() {
       await tester.enterText(find.byType(TextField), '您好');
       await tester.tap(find.byKey(const ValueKey('send-message')));
       await tester.pumpAndSettle();
-      expect(find.text('訊息未送出：頻道授權已失效'), findsOneWidget);
+      const refused = '未送出：頻道授權已失效，點一下重試';
+      expect(find.text(refused), findsOneWidget);
 
-      await tester.tap(find.text('重試'));
+      await tester.tap(find.text(refused));
       await tester.pumpAndSettle();
-      expect(find.text('訊息未送出：頻道授權已失效'), findsNothing);
+      expect(find.text(refused), findsNothing);
       expect(backend.named('SendMessage'), hasLength(2));
     });
 
     _screenTest('shows the customer from the room', (tester) async {
       await open(tester);
-      await tester.tap(find.byTooltip('客戶資訊'));
+      await tester.tap(find.byTooltip('客戶資訊').first);
       await tester.pumpAndSettle();
-      expect(find.text('customer-1'), findsOneWidget);
-      expect(find.text('Facebook'), findsOneWidget);
+      final sheet = find.byType(BottomSheet);
+      expect(
+        find.descendant(of: sheet, matching: find.text('customer-1')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: sheet, matching: find.text('Facebook')),
+        findsOneWidget,
+      );
     });
   });
 
@@ -637,9 +720,13 @@ void main() {
       WidgetTester tester, {
       Map<String, Object?> overrides = const {},
       Map<String, (int, Object?)> rest = const {},
+      List<String>? capabilities,
     }) async {
       await _signIn(tester, role: 'admin');
-      final backend = FakeBackend({..._inbox(), ...overrides}, rest: rest);
+      final backend = FakeBackend({
+        ..._inbox(capabilities: capabilities),
+        ...overrides,
+      }, rest: rest);
       await tester.pumpWidget(
         MasterBoxApp(graphQL: backend.service(token: null)),
       );
@@ -651,14 +738,14 @@ void main() {
       return backend;
     }
 
-    _screenTest('calling a social customer warns first', (tester) async {
+    _screenTest('a Facebook conversation offers no calls or room settings', (
+      tester,
+    ) async {
+      // Facebook declares neither, so the customer could never join a call.
       final backend = await openRoom(tester);
-      await tester.tap(find.byTooltip('語音通話'));
-      await tester.pumpAndSettle();
-      expect(find.text('這是 MasterBox 內部通話'), findsOneWidget);
-      expect(find.text('客戶無法從 Facebook 加入，也不會收到來電。'), findsOneWidget);
-      await tester.tap(find.text('取消'));
-      await tester.pumpAndSettle();
+      expect(find.byTooltip('語音通話'), findsNothing);
+      expect(find.byTooltip('視訊通話'), findsNothing);
+      expect(find.byTooltip('聊天室設定'), findsNothing);
       expect(backend.restCalls, isEmpty);
     });
 
@@ -667,15 +754,15 @@ void main() {
     ) async {
       final backend = await openRoom(
         tester,
+        capabilities: const ['calls'],
         rest: {
           '/calls': (201, {'id': 'call-1', 'kind': 'voice'}),
           '/livekit-token': (503, {'error': 'LiveKit is not configured'}),
           '/events': (201, {'id': 'e1'}),
         },
       );
+      expect(find.byTooltip('視訊通話'), findsOneWidget);
       await tester.tap(find.byTooltip('語音通話'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('繼續'));
       await tester.pumpAndSettle();
       expect(find.text('通話服務尚未設定，暫時無法通話'), findsOneWidget);
       expect(
@@ -684,26 +771,31 @@ void main() {
       );
     });
 
-    _screenTest('room settings only offer what the platform allows', (
+    _screenTest('room settings offer only what the source declares', (
       tester,
     ) async {
-      await openRoom(tester);
+      await openRoom(tester, capabilities: const ['disappearing']);
+      expect(find.byTooltip('語音通話'), findsNothing);
+      await tester.tap(find.byTooltip('聊天室設定'));
+      await tester.pumpAndSettle();
+      expect(find.text('消失訊息'), findsOneWidget);
+      expect(find.text('加密模式'), findsNothing);
+
+      await tester.tap(find.byType(DropdownButton<int>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('1 小時後刪除').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('儲存設定'));
+      await tester.pumpAndSettle();
+      expect(find.text('消失訊息：1 小時'), findsOneWidget);
+    });
+
+    _screenTest('a source with encryption says what it covers', (tester) async {
+      await openRoom(tester, capabilities: const ['e2ee']);
       await tester.tap(find.byTooltip('聊天室設定'));
       await tester.pumpAndSettle();
       expect(find.textContaining('端對端加密需要雙方都支援'), findsOneWidget);
-      expect(find.textContaining('傳給客戶的訊息會留在 Facebook'), findsOneWidget);
-
-      // The platform keeps its own copy, so a timer here would be a promise
-      // MasterBox can't keep.
-      expect(
-        tester
-            .widget<DropdownButton<int>>(find.byType(DropdownButton<int>))
-            .onChanged,
-        isNull,
-      );
-      await tester.tap(find.text('儲存設定'));
-      await tester.pumpAndSettle();
-      expect(find.textContaining('消失訊息：'), findsNothing);
+      expect(find.text('消失訊息'), findsNothing);
     });
 
     _screenTest('showing a disappearing message starts its countdown once', (
@@ -714,19 +806,11 @@ void main() {
         overrides: {
           'MessagePage': _page([
             {
-              '_id': 'gone-soon',
-              'contents': '紀錄',
-              'inbound': false,
-              'sentAt': '2026-11-05T10:00:00.000Z',
+              ..._message('gone-soon', '紀錄', inbound: false),
               'disappearing_after_seconds': 30,
               'readAt': null,
             },
-            {
-              '_id': 'normal',
-              'contents': '一般',
-              'inbound': true,
-              'sentAt': '2026-11-05T10:00:00.000Z',
-            },
+            _message('normal', '一般'),
           ]),
           'MarkMessageRead': {
             'markMessageRead': {'_id': 'gone-soon'},
@@ -738,24 +822,28 @@ void main() {
       });
     });
 
-    _screenTest('the search icon goes to the search box', (tester) async {
+    _screenTest('the inbox search asks the server and can be cleared', (
+      tester,
+    ) async {
       await _signIn(tester, role: 'admin');
+      final backend = FakeBackend(_inbox());
       await tester.pumpWidget(
-        MasterBoxApp(graphQL: FakeBackend(_inbox()).service(token: null)),
+        MasterBoxApp(graphQL: backend.service(token: null)),
       );
       await tester.pumpAndSettle();
       await tester.tap(find.text('Chat'));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), '小美');
+      await tester.pump(const Duration(milliseconds: 400));
       await tester.pumpAndSettle();
-      FocusManager.instance.primaryFocus?.unfocus();
-      await tester.pumpAndSettle();
+      expect(backend.named('ChatRoomPage').last.variables['filter'], {
+        'search': '小美',
+      });
 
-      await tester.tap(find.byTooltip('搜尋聊天室'));
+      await tester.tap(find.byTooltip('清除搜尋'));
       await tester.pumpAndSettle();
-      expect(find.text('小美'), findsOneWidget, reason: 'keeps what was typed');
-      final field = tester.widget<TextField>(find.byType(TextField));
-      expect(field.focusNode?.hasFocus, isTrue);
+      expect(find.text('小美'), findsNothing);
+      expect(backend.named('ChatRoomPage').last.variables['filter'], isEmpty);
     });
 
     _screenTest('team members show their email, not an internal id', (
@@ -790,30 +878,43 @@ void main() {
         await tester.pumpAndSettle();
       }
 
-      bool darkSwitch(WidgetTester tester) => tester
-          .widget<SwitchListTile>(find.widgetWithText(SwitchListTile, '深色模式'))
-          .value;
+      ThemeMode themeChoice(WidgetTester tester) => tester
+          .widget<DropdownButton<ThemeMode>>(
+            find.byType(DropdownButton<ThemeMode>),
+          )
+          .value!;
+      Brightness shown(WidgetTester tester) =>
+          Theme.of(tester.element(find.text('深色模式'))).brightness;
 
-      _screenTest('the dark mode switch matches the theme on a dark system', (
+      _screenTest('by default the app follows the phone', (tester) async {
+        tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
+        addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+        await openSettings(tester);
+        expect(themeChoice(tester), ThemeMode.system);
+        expect(find.text('跟隨系統'), findsOneWidget);
+        expect(shown(tester), Brightness.dark);
+      });
+
+      _screenTest('a saved dark mode still applies', (tester) async {
+        await openSettings(tester, prefs: {'dark_mode': true});
+        expect(themeChoice(tester), ThemeMode.dark);
+        expect(shown(tester), Brightness.dark);
+      });
+
+      _screenTest('choosing light keeps it light on a dark phone', (
         tester,
       ) async {
         tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
         addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
         await openSettings(tester);
-        expect(darkSwitch(tester), isFalse);
-        expect(
-          Theme.of(tester.element(find.text('深色模式'))).brightness,
-          Brightness.light,
-        );
-      });
-
-      _screenTest('a saved dark mode still applies', (tester) async {
-        await openSettings(tester, prefs: {'dark_mode': true});
-        expect(darkSwitch(tester), isTrue);
-        expect(
-          Theme.of(tester.element(find.text('深色模式'))).brightness,
-          Brightness.dark,
-        );
+        await tester.tap(find.byType(DropdownButton<ThemeMode>));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('淺色').last);
+        await tester.pumpAndSettle();
+        expect(themeChoice(tester), ThemeMode.light);
+        expect(shown(tester), Brightness.light);
+        final prefs = await SharedPreferences.getInstance();
+        expect(prefs.getString('theme_mode'), isNotNull);
       });
 
       _screenTest('logging out asks first', (tester) async {
@@ -884,11 +985,8 @@ void main() {
       }
 
       Map<String, dynamic> event({String id = 'm1', bool inbound = true}) => {
-        '_id': id,
-        'contents': '請問有貨嗎',
+        ..._message(id, '請問有貨嗎', inbound: inbound),
         'to_chat_room_id': 'psid-1',
-        'inbound': inbound,
-        'sentAt': '2026-11-05T10:00:00.000Z',
       };
 
       _screenTest('announce a customer message once, and open it', (

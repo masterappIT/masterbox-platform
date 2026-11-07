@@ -9,11 +9,13 @@ import 'services/graphql_service.dart';
 import 'services/dynamic_island_service.dart';
 import 'services/push_service.dart';
 import 'models/app_models.dart';
+import 'models/chat_source.dart';
 import 'pages/channels_page.dart';
 import 'pages/conversation_page.dart';
 import 'pages/inbox_page.dart';
 import 'pages/manage_page.dart';
 import 'pages/users_page.dart';
+import 'theme/chat_colors.dart';
 import 'widgets/common.dart';
 
 const authBlue = primaryColor;
@@ -34,25 +36,22 @@ class MasterBoxApp extends StatefulWidget {
 }
 
 class _MasterBoxAppState extends State<MasterBoxApp> {
-  ThemeMode themeMode = ThemeMode.light;
+  /// Follows the phone's light or dark setting unless chosen in Settings.
+  ThemeMode themeMode = ThemeMode.system;
 
   @override
   void initState() {
     super.initState();
     SharedPreferences.getInstance().then((prefs) {
       if (!mounted) return;
-      setState(
-        () => themeMode = prefs.getBool('dark_mode') == true
-            ? ThemeMode.dark
-            : ThemeMode.light,
-      );
+      setState(() => themeMode = savedThemeMode(prefs));
     });
   }
 
-  Future<void> setThemeMode(bool dark) async {
-    setState(() => themeMode = dark ? ThemeMode.dark : ThemeMode.light);
+  Future<void> setThemeMode(ThemeMode mode) async {
+    setState(() => themeMode = mode);
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('dark_mode', dark);
+    await prefs.setString(themeModeKey, mode.name);
   }
 
   @override
@@ -79,6 +78,25 @@ class _MasterBoxAppState extends State<MasterBoxApp> {
   }
 }
 
+/// The Settings choice of light, dark or following the phone.
+const themeModeKey = 'theme_mode';
+
+/// The saved choice; the old dark mode switch still counts, and without
+/// either the app follows the phone.
+ThemeMode savedThemeMode(SharedPreferences prefs) {
+  final saved = prefs.getString(themeModeKey);
+  for (final mode in ThemeMode.values) {
+    if (mode.name == saved) return mode;
+  }
+  return prefs.getBool('dark_mode') == true ? ThemeMode.dark : ThemeMode.system;
+}
+
+const themeModeLabels = {
+  ThemeMode.system: '跟隨系統',
+  ThemeMode.light: '淺色',
+  ThemeMode.dark: '深色',
+};
+
 ThemeData _masterBoxTheme(Brightness brightness) {
   final isDark = brightness == Brightness.dark;
   final scheme = ColorScheme.fromSeed(
@@ -88,6 +106,7 @@ ThemeData _masterBoxTheme(Brightness brightness) {
   return ThemeData(
     colorScheme: scheme,
     useMaterial3: true,
+    extensions: [isDark ? ChatColors.dark : ChatColors.light],
     scaffoldBackgroundColor: isDark
         ? const Color(0xff121212)
         : const Color(0xfff6f7f9),
@@ -158,7 +177,7 @@ class AppRoot extends StatefulWidget {
     this.pushClient,
     super.key,
   });
-  final ValueChanged<bool> onThemeModeChanged;
+  final ValueChanged<ThemeMode> onThemeModeChanged;
   final GraphQLService? graphQL;
   final PushClient? pushClient;
   @override
@@ -673,7 +692,7 @@ class MainShell extends StatefulWidget {
   });
   final GraphQLService graphQL;
   final PushService push;
-  final ValueChanged<bool> onThemeModeChanged;
+  final ValueChanged<ThemeMode> onThemeModeChanged;
   final VoidCallback onLogout;
   @override
   State<MainShell> createState() => _MainShellState();
@@ -1082,23 +1101,23 @@ class _BottomBarItem extends StatelessWidget {
 
 /// What the Client page's channel switcher has picked.
 class _CustomerFilter {
-  const _CustomerFilter({required this.label, this.platform, this.channelId});
+  const _CustomerFilter({required this.label, this.source, this.channel});
   final String label;
-  final String? platform;
-  final String? channelId;
+  final String? source;
+  final SocialChannel? channel;
 
   bool matches(Customer customer) =>
-      (platform == null || customer.platform == platform) &&
-      (channelId == null || customer.channelId == channelId);
+      (source == null || customer.source == source) &&
+      (channel == null || customer.channelId == channel!.id);
 }
 
 const _allChannelsFilter = _CustomerFilter(label: '全部頻道');
-const _platformFilters = [
+
+/// All channels, then each source: WhatsApp 官方 and 掃碼 apart.
+final _sourceFilters = [
   _allChannelsFilter,
-  _CustomerFilter(label: 'Facebook', platform: 'fb'),
-  _CustomerFilter(label: 'Instagram', platform: 'ig'),
-  _CustomerFilter(label: 'LINE', platform: 'line'),
-  _CustomerFilter(label: 'WhatsApp', platform: 'whatsapp'),
+  for (final source in filterableSources)
+    _CustomerFilter(label: sourceLabel(source), source: source),
 ];
 
 class ClientPage extends StatefulWidget {
@@ -1207,12 +1226,21 @@ class _ClientPageState extends State<ClientPage> {
             children: [
               const ListTile(title: Text('切換頻道'), subtitle: Text('選擇要查看的社群頻道')),
               for (final option in [
-                ..._platformFilters,
+                ..._sourceFilters,
                 for (final channel in channels)
-                  _CustomerFilter(label: channel.name, channelId: channel.id),
+                  _CustomerFilter(label: channel.name, channel: channel),
               ])
                 ListTile(
                   title: Text(option.label),
+                  // A channel's phone number, never its internal id.
+                  subtitle: option.channel == null
+                      ? null
+                      : Text(
+                          [
+                            sourceLabel(option.channel!.source),
+                            ?option.channel!.detail,
+                          ].join(' · '),
+                        ),
                   leading: Icon(
                     option.label == filter.label
                         ? Icons.radio_button_checked
@@ -1290,7 +1318,7 @@ class _ClientPageState extends State<ClientPage> {
                 ConversationTile(
                   name: customer.displayName,
                   preview:
-                      '${platformLabel(customer.platform)} · ${customer.channelName}',
+                      '${sourceLabel(customer.source)} · ${customer.channelName}',
                   time: formatRelativeTime(customer.lastInteraction),
                   avatarUrl: customer.avatarUrl,
                   platform: customer.platform,
@@ -1350,7 +1378,7 @@ class SettingsPage extends StatefulWidget {
   });
   final GraphQLService graphQL;
   final PushService? push;
-  final ValueChanged<bool> onThemeModeChanged;
+  final ValueChanged<ThemeMode> onThemeModeChanged;
   final VoidCallback onLogout;
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -1359,7 +1387,7 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   bool notifications = true;
   bool pushEnabled = true;
-  bool darkMode = false;
+  ThemeMode themeMode = ThemeMode.system;
   bool? apiReachable;
 
   /// Live Activities exist only on iPhones.
@@ -1378,7 +1406,7 @@ class _SettingsPageState extends State<SettingsPage> {
       setState(() {
         notifications = prefs.getBool('notifications') ?? true;
         pushEnabled = prefs.getBool(pushPreferenceKey) ?? true;
-        darkMode = prefs.getBool('dark_mode') ?? false;
+        themeMode = savedThemeMode(prefs);
       });
     });
   }
@@ -1482,14 +1510,25 @@ class _SettingsPageState extends State<SettingsPage> {
                 },
               ),
               if (widget.push != null) _pushSwitch(widget.push!),
-              SwitchListTile(
+              ListTile(
+                leading: const Icon(Icons.dark_mode_outlined),
                 title: const Text('深色模式'),
-                value: darkMode,
-                onChanged: (v) {
-                  setState(() => darkMode = v);
-                  widget.onThemeModeChanged(v);
-                  _save('dark_mode', v);
-                },
+                trailing: DropdownButton<ThemeMode>(
+                  value: themeMode,
+                  underline: const SizedBox.shrink(),
+                  items: [
+                    for (final entry in themeModeLabels.entries)
+                      DropdownMenuItem(
+                        value: entry.key,
+                        child: Text(entry.value),
+                      ),
+                  ],
+                  onChanged: (mode) {
+                    if (mode == null) return;
+                    setState(() => themeMode = mode);
+                    widget.onThemeModeChanged(mode);
+                  },
+                ),
               ),
               ListTile(
                 leading: const Icon(Icons.language),

@@ -174,6 +174,51 @@ class FakeError {
   final Map<String, Object?> extensions;
 }
 
+const _sendFiles = ['send_image', 'send_video', 'send_audio', 'send_document'];
+
+/// What backend/lib/connectors declares for each source.
+const sourceCapabilities = <String, List<String>>{
+  'messenger': [..._sendFiles, 'reply_window'],
+  'instagram': [..._sendFiles, 'reply_window'],
+  'whatsapp_cloud': [..._sendFiles, 'caption', 'reply_window', 'templates'],
+  'whatsapp_web': [..._sendFiles, 'caption'],
+  'line': [],
+  'masterbox': [],
+};
+
+/// The source a platform's channel has by default, as the migration filled in.
+String? defaultSource(String? platform) => switch (platform) {
+  'fb' => 'messenger',
+  'ig' => 'instagram',
+  'whatsapp' => 'whatsapp_cloud',
+  'line' => 'line',
+  _ => null,
+};
+
+/// A message as the server sends it: the unified body, and the old contents
+/// older apps read.
+Map<String, dynamic> messageJson(
+  String id,
+  String text, {
+  bool inbound = true,
+  String sentAt = '2026-11-05T10:00:00.000Z',
+  String roomId = 'psid-1',
+  String channelId = 'channel-1',
+  List<Map<String, dynamic>> attachments = const [],
+  Map<String, dynamic>? template,
+}) => {
+  '_id': id,
+  'body': {'text': text, 'attachments': attachments, 'template': template},
+  'contents': jsonEncode({
+    'message': {'text': text},
+  }),
+  'to_chat_room_id': roomId,
+  'channel_id': channelId,
+  'inbound': inbound,
+  'cursor': 'cursor-$id',
+  'sentAt': sentAt,
+};
+
 Map<String, dynamic> roomJson({
   String id = 'room-row-1',
   String chatRoomId = 'psid-1',
@@ -183,11 +228,20 @@ Map<String, dynamic> roomJson({
   String? firstName = '小美',
   String? lastName = '王',
   String updatedAt = '2026-11-05T10:00:00.000Z',
+  String? source,
+
+  /// Overrides what the source declares, for add-ons no source has yet.
+  List<String>? capabilities,
 }) => {
   'id': id,
   'title': chatRoomId,
   'lastMessage': null,
   'platform': platform,
+  'source': source ?? defaultSource(platform),
+  'capabilities':
+      capabilities ??
+      sourceCapabilities[source ?? defaultSource(platform)] ??
+      [],
   'channel_id': channelId,
   'chat_room_id': chatRoomId,
   'updatedAt': updatedAt,
@@ -217,9 +271,17 @@ Map<String, dynamic> channelJson({
   String? phone,
   Map<String, dynamic>? connection,
   Map<String, dynamic>? whatsappWeb,
+  String? source,
 }) => {
   'channel_id': id,
   'platform': platform,
+  'source':
+      source ??
+      (whatsappWeb != null ? 'whatsapp_web' : defaultSource(platform)),
+  'capabilities':
+      sourceCapabilities[source ??
+          (whatsappWeb != null ? 'whatsapp_web' : defaultSource(platform))] ??
+      [],
   'name': name,
   'enabled': enabled,
   'phone': ?phone,

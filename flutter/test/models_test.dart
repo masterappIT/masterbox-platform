@@ -29,66 +29,87 @@ void main() {
     });
   });
 
-  group('ChatMessage reads stored contents like the admin inbox', () {
-    ChatMessage read(String contents, {bool? inbound}) => ChatMessage.fromJson({
+  group('ChatMessage reads the unified body every source shares', () {
+    ChatMessage read(Object? body, {bool? inbound}) => ChatMessage.fromJson({
       '_id': 'm1',
-      'contents': contents,
+      'body': body,
+      // What older apps read; the app no longer guesses from it.
+      'contents': '{"message":{"text":"舊格式"}}',
       'inbound': ?inbound,
       'sentAt': '2026-11-05T10:00:00.000Z',
     });
 
-    test('plain text', () => expect(read('你好').text, '你好'));
-
-    test('a JSON message', () => expect(read('{"text":"哈囉"}').text, '哈囉'));
-
-    test('a Meta payload', () {
-      expect(read('{"message":{"text":"嗨"},"recipient":"x"}').text, '嗨');
-    });
-
-    test('WhatsApp keeps its text one level down', () {
-      expect(read('{"text":{"body":"早安"}}').text, '早安');
-    });
-
-    test('a sticker Meta sends twice shows once', () {
-      final message = ChatMessage.fromJson({
-        'id': 'm1',
-        'contents': '{"attachments":[{"type":"image","payload":{"url":"https://x/a.jpg","sticker_id":369239263222822}},{"type":"sticker","payload":{"url":"https://x/b.jpg","sticker_id":369239263222822}},{"type":"image","payload":{"url":"https://x/c.jpg"}},{"type":"image","payload":{"url":"https://x/d.jpg"}}]}',
-      });
-      expect(message.attachments.map((a) => a.url), [
-        'https://x/a.jpg',
-        'https://x/c.jpg',
-        'https://x/d.jpg',
-      ]);
-      expect(message.attachments.first.isSticker, isTrue);
-      expect(message.attachments.last.isSticker, isFalse);
-    });
+    test('text', () => expect(read({'text': '你好'}).text, '你好'));
 
     test('attachments, and their label when the link is unusable', () {
-      final message = read(
-        '{"message":{"attachments":[{"type":"image","payload":{"url":"https://x/a.png"}},{"type":"audio","payload":{"url":"http://x/a.mp3"}}]}}',
-      );
+      final message = read({
+        'text': null,
+        'attachments': [
+          {'type': 'image', 'url': 'https://x/a.png', 'mime_type': 'image/png'},
+          {'type': 'audio', 'url': 'http://x/a.mp3', 'size': 2048},
+          {'type': 'sticker', 'url': 'https://x/s.png'},
+        ],
+      });
       expect(message.text, '');
-      expect(message.attachments, hasLength(2));
+      expect(message.attachments, hasLength(3));
       expect(message.attachments.first.isImage, isTrue);
+      expect(message.attachments.first.mimeType, 'image/png');
       expect(message.attachments.first.safeUrl, 'https://x/a.png');
-      expect(message.attachments.last.label, '語音訊息');
-      expect(message.attachments.last.safeUrl, isNull);
+      expect(message.attachments[1].label, '語音訊息');
+      expect(message.attachments[1].size, 2048);
+      expect(message.attachments[1].safeUrl, isNull);
+      expect(message.attachments.last.isSticker, isTrue);
+    });
+
+    test('a file sent with a caption keeps it', () {
+      final message = read({
+        'text': '報價單',
+        'attachments': [
+          {
+            'type': 'file',
+            'url': 'https://x/a.pdf',
+            'filename': 'a.pdf',
+            'caption': '報價單',
+          },
+        ],
+      });
+      expect(message.attachments.single.caption, '報價單');
+      expect(message.attachments.single.filename, 'a.pdf');
+    });
+
+    test('a WhatsApp template message names its template', () {
+      final message = read({
+        'text': '您的訂單已到貨',
+        'attachments': <Object>[],
+        'template': {'id': 'tpl-1', 'name': 'order_ready'},
+      });
+      expect(message.text, '您的訂單已到貨');
+      expect(message.templateName, 'order_ready');
     });
 
     test('types with nothing to show say so', () {
-      expect(read('{"foo":1}').text, unsupportedMessageText);
+      expect(
+        read({'text': null, 'attachments': <Object>[]}).text,
+        unsupportedMessageText,
+      );
+    });
+
+    test('an end-to-end encrypted message has no body here', () {
+      final message = read(null);
+      expect(message.encrypted, isTrue);
+      expect(message.text, '');
     });
 
     test('inbound decides the side', () {
-      expect(read('a', inbound: true).isMine, isFalse);
-      expect(read('a', inbound: false).isMine, isTrue);
-      expect(read('a').isMine, isFalse);
+      expect(read({'text': 'a'}, inbound: true).isMine, isFalse);
+      expect(read({'text': 'a'}, inbound: false).isMine, isTrue);
+      expect(read({'text': 'a'}).isMine, isFalse);
     });
 
     test('keeps why a reply was not delivered', () {
       final message = ChatMessage.fromJson({
         '_id': 'm1',
-        'contents': 'a',
+        'body': {'text': 'a'},
         'delivery_error': '已超過 24 小時回覆期限',
       });
       expect(message.deliveryError, '已超過 24 小時回覆期限');

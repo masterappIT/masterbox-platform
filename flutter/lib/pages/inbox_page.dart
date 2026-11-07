@@ -1,15 +1,20 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/app_models.dart';
+import '../models/chat_source.dart';
 import '../services/graphql_service.dart';
+import '../theme/chat_colors.dart';
+import '../widgets/chat/chat_parts.dart';
 import '../widgets/common.dart';
 import 'conversation_page.dart';
 
-/// The conversation list, a page at a time, as the admin inbox has it: the
-/// server only lists the channels this account works in, counts each account's
-/// unread messages, searches names and message text, and keeps it live.
+/// 即時訊息: the conversation list, a page at a time, as the admin inbox has
+/// it. The server only lists the channels this account works in, counts each
+/// account's unread messages, searches names and message text, filters by
+/// source or channel, and keeps it live (Figma App/1 訊息列表).
 class ChatPage extends StatefulWidget {
   const ChatPage({
     required this.graphQL,
@@ -30,11 +35,6 @@ enum _Status { loading, ready, failed }
 
 class _ChatPageState extends State<ChatPage> {
   static const _pageSize = 30;
-  static const _assignments = {
-    'all': '全部',
-    'mine': '我負責的',
-    'unassigned': '未指派',
-  };
 
   final searchController = TextEditingController();
   final searchFocus = FocusNode();
@@ -306,27 +306,14 @@ class _ChatPageState extends State<ChatPage> {
   void _onSearchChanged(String value) {
     _searchDebounce?.cancel();
     _searchDebounce = Timer(const Duration(milliseconds: 350), () {
-      _changeFilter(
-        ConversationFilter(
-          search: value,
-          channelId: filter.channelId,
-          unreadOnly: filter.unreadOnly,
-          assignment: filter.assignment,
-        ),
-      );
+      _changeFilter(filter.copyWith(search: value));
     });
   }
 
   void _clearSearch() {
     searchController.clear();
     _searchDebounce?.cancel();
-    _changeFilter(
-      ConversationFilter(
-        channelId: filter.channelId,
-        unreadOnly: filter.unreadOnly,
-        assignment: filter.assignment,
-      ),
-    );
+    _changeFilter(filter.copyWith(search: ''));
   }
 
   Future<void> _refreshAll() async {
@@ -368,130 +355,186 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  Widget _chips() {
-    final known = channels;
-    final myFilter = filter;
-    ConversationFilter copy({
-      String? channelId,
-      bool clearChannel = false,
-      bool? unreadOnly,
-      String? assignment,
-    }) => ConversationFilter(
-      search: myFilter.search,
-      channelId: clearChannel ? null : (channelId ?? myFilter.channelId),
-      unreadOnly: unreadOnly ?? myFilter.unreadOnly,
-      assignment: assignment ?? myFilter.assignment,
+  /// What the source button says: everything, a source, or a channel.
+  String get _sourceButtonLabel {
+    final channelId = filter.channelId;
+    if (channelId != null) {
+      return channels?.where((c) => c.id == channelId).firstOrNull?.name ??
+          '頻道';
+    }
+    final source = filter.source;
+    return source == null ? '全部來源' : sourceLabel(source);
+  }
+
+  /// Picks a source, or one channel: Facebook, Instagram, WhatsApp 官方 and
+  /// WhatsApp 掃碼 apart, each channel with its phone number under the name.
+  Future<void> _pickSource() async {
+    final picked = await showModalBottomSheet<ConversationFilter>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      backgroundColor: context.chat.surfaceCard,
+      builder: (sheetContext) =>
+          SourcePickerSheet(filter: filter, channels: channels ?? const []),
     );
-    return Column(
-      children: [
-        if (known != null && known.isNotEmpty)
-          SizedBox(
-            height: 48,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    label: const Text('全部頻道'),
-                    selected: myFilter.channelId == null,
-                    onSelected: (_) => _changeFilter(copy(clearChannel: true)),
-                  ),
-                ),
-                for (final channel in known)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ChoiceChip(
-                      avatar: Icon(platformIcon(channel.platform), size: 16),
-                      label: Text(channel.name),
-                      selected: myFilter.channelId == channel.id,
-                      onSelected: (_) =>
-                          _changeFilter(copy(channelId: channel.id)),
+    if (picked != null) _changeFilter(picked);
+  }
+
+  Widget _filters() {
+    final colors = context.chat;
+    final current = filter;
+    void toggleAssignment(String value) => _changeFilter(
+      current.copyWith(assignment: current.assignment == value ? 'all' : value),
+    );
+    return Container(
+      color: colors.surfaceNav,
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: searchController,
+                  focusNode: searchFocus,
+                  onChanged: _onSearchChanged,
+                  textInputAction: TextInputAction.search,
+                  style: TextStyle(fontSize: 15, color: colors.textPrimary),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: '搜尋客戶名稱、帳號或訊息',
+                    hintStyle: TextStyle(color: colors.textTertiary),
+                    prefixIcon: Icon(Icons.search, color: colors.textTertiary),
+                    suffixIcon: searchController.text.isEmpty
+                        ? null
+                        : IconButton(
+                            onPressed: _clearSearch,
+                            tooltip: '清除搜尋',
+                            icon: Icon(Icons.clear, color: colors.textTertiary),
+                          ),
+                    filled: true,
+                    fillColor: colors.surfacePage,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide.none,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide.none,
                     ),
                   ),
-              ],
-            ),
-          ),
-        SizedBox(
-          height: 48,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            children: [
-              for (final entry in _assignments.entries)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    label: Text(entry.value),
-                    selected: myFilter.assignment == entry.key,
-                    onSelected: (_) =>
-                        _changeFilter(copy(assignment: entry.key)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Material(
+                color: current.source != null || current.channelId != null
+                    ? colors.brandPrimarySoft
+                    : colors.surfacePage,
+                borderRadius: BorderRadius.circular(10),
+                child: InkWell(
+                  key: const ValueKey('source-filter'),
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: _pickSource,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 10,
+                    ),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 120),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.filter_alt_outlined,
+                            size: 18,
+                            color: colors.textPrimary,
+                          ),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              _sourceButtonLabel,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: colors.textPrimary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
-              FilterChip(
-                label: const Text('只看未讀'),
-                selected: myFilter.unreadOnly,
-                onSelected: (value) => _changeFilter(copy(unreadOnly: value)),
               ),
             ],
           ),
-        ),
-      ],
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            children: [
+              QuickFilterChip(
+                label: '未讀',
+                selected: current.unreadOnly,
+                onTap: () => _changeFilter(
+                  current.copyWith(unreadOnly: !current.unreadOnly),
+                ),
+              ),
+              QuickFilterChip(
+                label: '我的',
+                selected: current.assignment == 'mine',
+                onTap: () => toggleAssignment('mine'),
+              ),
+              QuickFilterChip(
+                label: '未指派',
+                selected: current.assignment == 'unassigned',
+                onTap: () => toggleAssignment('unassigned'),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
   Widget _noRooms() {
     final known = channels;
     if (known != null && known.isEmpty) {
-      return EmptyState(
-        icon: Icons.hub_outlined,
-        message: '還沒有可用的社群平台',
+      return ChatEmptyState(
+        icon: Icons.link_rounded,
+        title: '還沒有連接頻道',
         detail: widget.onManageChannels != null
-            ? '連接 Facebook、Instagram 等社群平台後，客戶傳來的訊息就會出現在這裡。'
-            : '請聯絡公司管理員連接社群平台，並開放給你的帳號使用。',
+            ? '連接 Facebook、Instagram 或 WhatsApp 後，客戶傳來的訊息就會出現在這裡。'
+            : '請聯絡公司管理員連接頻道，並開放給你的帳號使用。',
         actionLabel: widget.onManageChannels != null ? '前往社群平台管理' : null,
         onAction: widget.onManageChannels,
       );
     }
-    final narrowed =
-        filter.search.trim().isNotEmpty ||
-        filter.unreadOnly ||
-        filter.assignment != 'all' ||
-        filter.channelId != null;
-    if (narrowed) {
-      return const EmptyState(
-        icon: Icons.chat_bubble_outline,
-        message: '找不到聊天室',
-        detail: '沒有符合條件的對話',
+    if (filter.narrowed) {
+      return ChatEmptyState(
+        icon: Icons.search_off_rounded,
+        title: '找不到符合的對話',
+        detail: '換個關鍵字，或清除篩選條件。',
+        actionLabel: '清除篩選',
+        onAction: () {
+          searchController.clear();
+          _changeFilter(const ConversationFilter());
+        },
       );
     }
-    return const EmptyState(
-      icon: Icons.chat_bubble_outline,
-      message: '目前還沒有對話',
-      detail: '客戶傳訊息到這個社群平台後，對話就會出現在這裡。',
+    return const ChatEmptyState(
+      icon: Icons.chat_bubble_outline_rounded,
+      title: '目前還沒有對話',
+      detail: '客戶傳訊息到你的頻道後，對話就會出現在這裡。',
     );
   }
 
-  String? _detail(ChatConversation room) {
-    final parts = [
-      if (room.channelName?.isNotEmpty == true) room.channelName!,
-      if (room.assignee != null)
-        room.assignee!.id == widget.graphQL.accountId
-            ? '我負責'
-            : '負責人：${room.assignee!.name}',
-    ];
-    return parts.isEmpty ? null : parts.join(' · ');
-  }
-
-  Widget _tile(ChatConversation room) => ConversationTile(
-    name: room.title,
-    preview: room.lastMessage.isNotEmpty
-        ? room.lastMessage
-        : (room.channelName ?? platformLabel(room.platform)),
-    time: formatRelativeTime(room.lastMessageAt ?? room.updatedAt),
-    avatarUrl: room.customer?.avatarUrl,
-    platform: room.platform,
-    unreadCount: room.unreadCount,
-    detail: _detail(room),
+  Widget _tile(ChatConversation room) => ConversationRow(
+    room: room,
+    myId: widget.graphQL.accountId,
     onTap: () => _open(room),
   );
 
@@ -521,35 +564,7 @@ class _ChatPageState extends State<ChatPage> {
 
   @override
   Widget build(BuildContext context) {
-    final header = <Widget>[
-      TextField(
-        controller: searchController,
-        focusNode: searchFocus,
-        onChanged: _onSearchChanged,
-        textInputAction: TextInputAction.search,
-        decoration: InputDecoration(
-          hintText: '搜尋聊天室',
-          helperText: '客戶名稱、帳號或訊息內容',
-          prefixIcon: const Icon(Icons.search),
-          suffixIcon: IconButton(
-            onPressed: _clearSearch,
-            tooltip: '清除搜尋',
-            icon: const Icon(Icons.clear),
-          ),
-        ),
-      ),
-      const SizedBox(height: 8),
-      _chips(),
-      const SizedBox(height: 8),
-      if (_connectionMessage != null)
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Text(
-            _connectionMessage!,
-            style: const TextStyle(color: Colors.orange),
-          ),
-        ),
-    ];
+    final colors = context.chat;
     final Widget? state = switch (_status) {
       _Status.loading => const Center(
         child: Padding(
@@ -557,34 +572,282 @@ class _ChatPageState extends State<ChatPage> {
           child: CircularProgressIndicator(),
         ),
       ),
-      _Status.failed => ErrorRetry(
-        message: _error ?? '目前無法讀取對話',
-        onRetry: _load,
+      _Status.failed => ChatEmptyState(
+        icon: Icons.cloud_off_outlined,
+        tone: EmptyTone.alert,
+        title: '對話載入失敗',
+        detail: _error ?? '目前無法讀取對話',
+        actionLabel: '重試',
+        onAction: _load,
       ),
       _Status.ready when rooms.isEmpty => _noRooms(),
       _ => null,
     };
-    return PageFrame(
-      title: 'Chat',
-      subtitle: '所有聊天室',
-      action: IconButton(
-        onPressed: searchFocus.requestFocus,
-        tooltip: '搜尋聊天室',
-        icon: const Icon(Icons.search, color: Colors.white),
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: dark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+      child: ColoredBox(
+        color: colors.surfaceCard,
+        child: Column(
+          children: [
+            Container(
+              color: colors.surfaceNav,
+              padding: EdgeInsets.fromLTRB(
+                16,
+                MediaQuery.paddingOf(context).top + 12,
+                16,
+                12,
+              ),
+              child: Row(
+                children: [
+                  Text(
+                    '即時訊息',
+                    style: TextStyle(
+                      fontSize: 26,
+                      height: 1.3,
+                      fontWeight: FontWeight.w700,
+                      color: colors.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            _filters(),
+            Divider(height: 1, color: colors.borderDefault),
+            if (_connectionMessage != null)
+              NoticeBar(kind: NoticeKind.connection, text: _connectionMessage!),
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: _refreshAll,
+                child: ListView.builder(
+                  controller: _scroll,
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  itemCount: state != null ? 1 : rooms.length + 1,
+                  itemBuilder: (context, index) {
+                    if (state != null) return state;
+                    return index < rooms.length
+                        ? _tile(rooms[index])
+                        : _listEnd();
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
-      child: RefreshIndicator(
-        onRefresh: _refreshAll,
-        child: ListView.builder(
-          controller: _scroll,
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(16),
-          itemCount: header.length + (state != null ? 1 : rooms.length + 1),
-          itemBuilder: (context, index) {
-            if (index < header.length) return header[index];
-            if (state != null) return state;
-            final at = index - header.length;
-            return at < rooms.length ? _tile(rooms[at]) : _listEnd();
-          },
+    );
+  }
+}
+
+/// One conversation in the list: the customer, the last message and when,
+/// the unread count, where it comes from and who handles it.
+class ConversationRow extends StatelessWidget {
+  const ConversationRow({
+    required this.room,
+    required this.onTap,
+    this.myId,
+    super.key,
+  });
+  final ChatConversation room;
+  final VoidCallback onTap;
+  final String? myId;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.chat;
+    final unread = room.unreadCount > 0;
+    final assignee = room.assignee;
+    final preview = room.lastMessage.isNotEmpty ? room.lastMessage : '尚無訊息';
+    final small = TextStyle(fontSize: 12, color: colors.textTertiary);
+    return Material(
+      color: colors.surfaceCard,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          decoration: BoxDecoration(
+            border: Border(bottom: BorderSide(color: colors.borderDefault)),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ChatAvatar(name: room.title, imageUrl: room.customer?.avatarUrl),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            room.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 16,
+                              height: 1.4,
+                              fontWeight: FontWeight.w700,
+                              color: colors.textPrimary,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          formatRelativeTime(
+                            room.lastMessageAt ?? room.updatedAt,
+                          ),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: unread
+                                ? colors.brandPrimaryDark
+                                : colors.textTertiary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            preview,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 14,
+                              height: 1.4,
+                              color: unread
+                                  ? colors.textPrimary
+                                  : colors.textSecondary,
+                            ),
+                          ),
+                        ),
+                        if (unread) ...[
+                          const SizedBox(width: 8),
+                          ChatUnreadBadge(count: room.unreadCount),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        if (room.source != null) SourceTag(source: room.source),
+                        if (room.channelName?.isNotEmpty == true)
+                          Text(room.channelName!, style: small),
+                        if (assignee != null)
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.person_outline_rounded,
+                                size: 13,
+                                color: colors.textTertiary,
+                              ),
+                              const SizedBox(width: 2),
+                              Text(
+                                assignee.id == myId ? '我負責' : assignee.name,
+                                style: small,
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The source and channel picker: all, one source, or one channel. Channels
+/// show their phone number under the name rather than an internal id.
+class SourcePickerSheet extends StatelessWidget {
+  const SourcePickerSheet({
+    required this.filter,
+    required this.channels,
+    super.key,
+  });
+  final ConversationFilter filter;
+  final List<SocialChannel> channels;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.chat;
+    Widget heading(String text) => Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          color: colors.textSecondary,
+        ),
+      ),
+    );
+    Widget dot(String? source) => Container(
+      width: 10,
+      height: 10,
+      decoration: BoxDecoration(
+        color: colors.sourceColor(source),
+        shape: BoxShape.circle,
+      ),
+    );
+    Widget check(bool selected) => selected
+        ? Icon(Icons.check_rounded, color: colors.brandPrimaryDark)
+        : const SizedBox(width: 24);
+    final all = filter.source == null && filter.channelId == null;
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.75,
+        ),
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            heading('來源'),
+            ListTile(
+              title: const Text('全部來源'),
+              trailing: check(all),
+              onTap: () => Navigator.pop(
+                context,
+                filter.copyWith(clearSource: true, clearChannel: true),
+              ),
+            ),
+            for (final source in filterableSources)
+              ListTile(
+                leading: dot(source),
+                title: Text(sourceLabel(source)),
+                trailing: check(
+                  filter.channelId == null && filter.source == source,
+                ),
+                onTap: () => Navigator.pop(
+                  context,
+                  filter.copyWith(source: source, clearChannel: true),
+                ),
+              ),
+            if (channels.isNotEmpty) heading('頻道'),
+            for (final channel in channels)
+              ListTile(
+                leading: dot(channel.source),
+                title: Text(channel.name),
+                subtitle: Text(
+                  [sourceLabel(channel.source), ?channel.detail].join(' · '),
+                  style: TextStyle(color: colors.textTertiary),
+                ),
+                trailing: check(filter.channelId == channel.id),
+                onTap: () => Navigator.pop(
+                  context,
+                  filter.copyWith(channelId: channel.id, clearSource: true),
+                ),
+              ),
+          ],
         ),
       ),
     );

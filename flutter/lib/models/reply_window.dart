@@ -1,27 +1,21 @@
-/// Whether a conversation can still be answered, by Meta's rules. The server
-/// works this out too (backend/lib/messaging/replyWindow.js); the app repeats it
-/// the way the admin site does (admin/src/utils/replyWindow.js), so the notice
-/// counts down and follows live messages without asking again.
+/// Whether a conversation can still be answered, for sources that declare the
+/// reply_window capability. The server works this out too (each connector's
+/// replyRule); the app repeats it so the notice counts down and follows live
+/// messages without asking again.
 ///
-/// WhatsApp: 24 hours after the customer's last message, then only an approved
-/// template. Messenger and Instagram: 24 hours, or 7 days for a person replying
-/// with the human agent tag once Meta has approved it.
+/// 24 hours after the customer's last message. Then a source with templates
+/// only takes an approved template; the others allow 7 days for a person
+/// replying with the human agent tag once Meta has approved it.
 library;
+
+import 'chat_source.dart';
 
 const _hour = Duration(hours: 1);
 const standardWindow = Duration(hours: 24);
 const humanAgentWindow = Duration(days: 7);
 const _endingSoon = Duration(hours: 3);
 
-const _platformNames = {
-  'fb': 'Facebook',
-  'ig': 'Instagram',
-  'whatsapp': 'WhatsApp',
-  'line': 'LINE',
-  'wechat': 'WeChat',
-};
-
-enum ReplyState { open, humanAgent, closed, noCustomerMessage, unsupported }
+enum ReplyState { open, humanAgent, closed, noCustomerMessage }
 
 class ReplyWindow {
   const ReplyWindow({
@@ -29,38 +23,41 @@ class ReplyWindow {
     this.closesAt,
     required this.templateRequired,
     required this.humanAgentAvailable,
+    this.templates = false,
   });
   final ReplyState state;
   final DateTime? closesAt;
 
-  /// WhatsApp only accepts an approved template now.
+  /// Only an approved template can go now.
   final bool templateRequired;
   final bool humanAgentAvailable;
 
+  /// The source has templates to fall back on.
+  final bool templates;
+
   /// Whether a typed reply may go out at all.
-  bool get canSendFreeform =>
-      !templateRequired && state != ReplyState.unsupported;
+  bool get canSendFreeform => !templateRequired;
 }
 
-/// [humanAgentAvailable] comes from the server's replyWindow.
+/// The reply window of a source that declares reply_window. Sources with
+/// templates take only a template once it closes; the others still let the
+/// agent try. [humanAgentAvailable] comes from the server's replyWindow.
 ReplyWindow replyWindowOf({
-  required String? platform,
+  required Capabilities capabilities,
   required DateTime? lastCustomerMessageAt,
   bool humanAgentAvailable = false,
   DateTime? now,
 }) {
   final current = now ?? DateTime.now();
-  final isMeta = platform == 'fb' || platform == 'ig';
-  final humanAgent = isMeta && humanAgentAvailable;
+  final templates = capabilities.hasTemplates;
+  final humanAgent = !templates && humanAgentAvailable;
   ReplyWindow result(ReplyState state, [DateTime? closesAt]) => ReplyWindow(
     state: state,
     closesAt: closesAt,
-    templateRequired: platform == 'whatsapp' && state != ReplyState.open,
+    templateRequired: templates && state != ReplyState.open,
     humanAgentAvailable: humanAgent,
+    templates: templates,
   );
-  if (!const ['fb', 'ig', 'whatsapp'].contains(platform)) {
-    return result(ReplyState.unsupported);
-  }
   final last = lastCustomerMessageAt;
   if (last == null) return result(ReplyState.noCustomerMessage);
   if (current.isBefore(last.add(standardWindow))) {
@@ -99,8 +96,8 @@ class ReplyNotice {
   final String? detail;
 }
 
-/// What the chat tells the agent about replying now, in the admin site's words.
-ReplyNotice replyNotice(ReplyWindow window, String? platform, {DateTime? now}) {
+/// What the chat tells the agent about replying now.
+ReplyNotice replyNotice(ReplyWindow window, {DateTime? now}) {
   final current = now ?? DateTime.now();
   final left = window.closesAt?.difference(current) ?? Duration.zero;
   switch (window.state) {
@@ -108,48 +105,38 @@ ReplyNotice replyNotice(ReplyWindow window, String? platform, {DateTime? now}) {
       return ReplyNotice(
         left <= _endingSoon ? NoticeTone.warning : NoticeTone.info,
         '可回覆，還剩 ${formatRemaining(left)}（${_deadline(window.closesAt!)} 前）',
-        'Meta 規定客戶最後一則訊息後 24 小時內可以回覆'
-            '${platform == 'whatsapp' ? '，之後只能用已核准的範本' : ''}。',
+        '客戶最後一則訊息後 24 小時內可以回覆'
+            '${window.templates ? '，之後只能傳送範本' : ''}。',
       );
     case ReplyState.humanAgent:
       return ReplyNotice(
         NoticeTone.warning,
-        '已超過 24 小時，還能以真人客服身分回覆 ${formatRemaining(left)}'
-            '（${_deadline(window.closesAt!)} 前）',
+        '超過 24 小時，以真人客服身分還能回覆 ${formatRemaining(left)}',
         '這段期間的訊息會加上 Meta 的 Human Agent 標籤，只能由真人回覆，不能用於自動回覆或行銷。',
       );
     case ReplyState.closed:
-      if (platform == 'whatsapp') {
+      if (window.templates) {
         return const ReplyNotice(
           NoticeTone.blocked,
-          '已超過 24 小時回覆期限，只能用已核准的 WhatsApp 範本發送',
+          '超過 24 小時，只能傳送範本',
           '客戶再傳訊息後，就能恢復一般回覆。',
         );
       }
       return ReplyNotice(
         NoticeTone.warning,
-        '已超過 Meta 的回覆期限（客戶最後一則訊息後 '
-            '${window.humanAgentAvailable ? '7 天' : '24 小時'}），訊息很可能會被拒絕',
-        '${window.humanAgentAvailable ? '' : '要延長到 7 天，需要 Meta 核准 App 的 Human Agent 權限。'}'
-            '若對話來自 Facebook／Instagram 廣告，Meta 可能給更長的期限，仍可試著傳送。',
+        '已超過回覆期限（${window.humanAgentAvailable ? '7 天' : '24 小時'}），訊息可能會被拒絕',
+        '若對話來自 Facebook／Instagram 廣告，Meta 可能給更長的期限，仍可試著傳送。',
       );
     case ReplyState.noCustomerMessage:
-      return platform == 'whatsapp'
-          ? const ReplyNotice(
-              NoticeTone.blocked,
-              '這位客戶還沒傳訊息給你，只能用已核准的 WhatsApp 範本開啟對話',
-            )
-          : const ReplyNotice(
-              NoticeTone.warning,
-              '這位客戶還沒傳訊息給你，Meta 不允許商家先傳訊息，訊息很可能會被拒絕',
-            );
-    case ReplyState.unsupported:
-      return ReplyNotice(
-        NoticeTone.blocked,
-        '目前還不支援回覆 ${_platformNames[platform] ?? platform ?? '這個平台'} 的訊息',
-      );
+      return window.templates
+          ? const ReplyNotice(NoticeTone.blocked, '客戶還沒傳訊息，只能用範本開啟對話')
+          : const ReplyNotice(NoticeTone.warning, '客戶還沒傳訊息，商家先傳的訊息可能會被拒絕');
   }
 }
+
+/// Whether the notice shows above the input: a closed or closing window, not
+/// an open one with plenty of time left.
+bool noticeWorthShowing(ReplyNotice notice) => notice.tone != NoticeTone.info;
 
 /// How often the notice needs redrawing: every minute near the end, otherwise
 /// every few minutes is plenty.
